@@ -1,0 +1,120 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+    sort_order: int = 0
+
+
+class CategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None
+    sort_order: int
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    deadline: datetime | None = None
+    location: str | None = None
+    price: float = Field(gt=0)
+    category_id: int | None = None
+    contact_visibility: ContactVisibility = ContactVisibility.AFTER_ACCEPT
+    contact_info: str | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    deadline: datetime | None = None
+    location: str | None = None
+    price: float | None = Field(default=None, gt=0)
+    category_id: int | None = None
+    contact_visibility: ContactVisibility | None = None
+    contact_info: str | None = None
+
+
+class TaskOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    description: str
+    deadline: datetime | None
+    location: str | None
+    price: float
+    status: TaskStatus
+    category_id: int | None
+    publisher_id: int
+    assignee_id: int | None
+    contact_visibility: ContactVisibility
+    contact_info: str | None
+    publisher_display_name: str
+    assignee_display_name: str | None
+    created_at: datetime
+
+
+class TaskListQuery(BaseModel):
+    keyword: str | None = None
+    category_id: int | None = None
+    min_price: float | None = None
+    max_price: float | None = None
+    status: TaskStatus | None = None
+
+
+class TaskMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+
+
+class TaskMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    sender_id: int
+    sender_display_name: str
+    content: str
+    created_at: datetime
+
+
+class TaskReviewCreate(BaseModel):
+    stars: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+    target_role: RatingTargetRole
+
+
+class TaskReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    reviewer_id: int
+    reviewee_id: int
+    target_role: RatingTargetRole
+    stars: int
+    comment: str | None
+    created_at: datetime
+
+
+class TaskAttachmentCreate(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    file_url: str = Field(min_length=1, max_length=1000)
+
+
+class TaskAttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    uploader_id: int
+    file_name: str
+    file_url: str
+    created_at: datetime
