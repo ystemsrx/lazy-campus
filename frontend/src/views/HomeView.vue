@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { appConfirm } from '../components/AppConfirm.vue'
-import AppDropdown from '../components/AppDropdown.vue'
 import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, localToUTC, nowLocal, utcToLocal } from '../utils/time'
 
@@ -20,9 +19,26 @@ import {
   fetchReviews,
   fetchTasks,
   sendMessage,
-  updateTask
+  updateTask,
 } from '../api/tasks'
-import { fetchMyWorkerProfile, fetchUserReviews, fetchWorkers, updateWorkerProfile, updateProfile, uploadAvatar } from '../api/users'
+import {
+  fetchMyWorkerProfile,
+  fetchUserReviews,
+  fetchWorkers,
+  updateWorkerProfile,
+  updateProfile,
+  uploadAvatar,
+} from '../api/users'
+import HomeHallSection from '../components/home/HomeHallSection.vue'
+import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeLoadingState from '../components/home/HomeLoadingState.vue'
+import HomeMyTasksDrawer from '../components/home/HomeMyTasksDrawer.vue'
+import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
+import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
+import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
+import HomeToast from '../components/home/HomeToast.vue'
+import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
 import { useAuthStore } from '../stores/auth'
 import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerProfile } from '../types/api'
 
@@ -30,12 +46,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 
-/* -------- Navigation -------- */
 const activeTab = ref<'hall' | 'workers'>('hall')
-const activeMyTab = ref<'tasks' | 'worker' | 'reports'>('tasks')
 
-/* -------- Panels & Modals -------- */
-const showUserMenu = ref(false)
 const showPostModal = ref(false)
 const showEditModal = ref(false)
 const editingTask = ref<Task | null>(null)
@@ -43,19 +55,18 @@ const showSettingsPanel = ref(false)
 const showMyPanel = ref(false)
 const showReportsPanel = ref(false)
 const settingsTab = ref<'profile' | 'worker'>('profile')
-const userMenuRef = ref<HTMLElement | null>(null)
 
-/* -------- Toast -------- */
 const toast = ref<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
 let toastTimer = 0
 
 function showToast(text: string, type: 'success' | 'error' | 'info' = 'info') {
   toast.value = { text, type }
   clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { toast.value = null }, 3500)
+  toastTimer = window.setTimeout(() => {
+    toast.value = null
+  }, 3500)
 }
 
-/* -------- Sort State -------- */
 const taskSort = ref('ranking')
 const workerSort = ref('ranking')
 
@@ -74,18 +85,9 @@ const workerSortOptions = [
   { value: 'worker_completed', label: '完成任务最多' },
 ]
 
-/* -------- Search & Category Filter -------- */
 const searchQuery = ref('')
 const selectedCategory = ref<number | null>(null)
-const showMobileSort = ref(false)
-const mobileSortRef = ref<HTMLElement | null>(null)
 
-/* -------- Mobile Bottom Sheet -------- */
-const isMobile = ref(false)
-const bottomSheetRef = ref<HTMLElement | null>(null)
-let sheetDragStartY = 0
-
-/* -------- Core State -------- */
 const loading = ref(false)
 const categories = ref<Category[]>([])
 const tasks = ref<Task[]>([])
@@ -99,7 +101,6 @@ const publisherHistoryReviews = ref<UserReview[]>([])
 const showReviewForm = ref(false)
 const myReports = ref<Report[]>([])
 
-/* -------- Forms -------- */
 const newTask = ref({
   title: '',
   description: '',
@@ -117,7 +118,7 @@ const workerForm = ref({
   skills: '',
   min_price: null as number | null,
   max_price: null as number | null,
-  bio: ''
+  bio: '',
 })
 
 const profileForm = ref({
@@ -140,19 +141,16 @@ const editTaskForm = ref({
 const chatContent = ref('')
 const reviewForm = ref({
   stars: 5,
-  comment: ''
+  comment: '',
 })
 const reportForm = ref({
   reason: '',
-  evidence: ''
+  evidence: '',
 })
 
 const avatarUploading = ref(false)
 
-/* -------- Computed -------- */
 const me = computed(() => auth.user)
-
-const hasAvatar = computed(() => !!me.value?.avatar_url)
 
 const isParticipant = computed(() => {
   if (!me.value || !selectedTask.value) return false
@@ -191,24 +189,18 @@ const myReviewTargetRole = computed<'worker' | 'publisher' | null>(() => {
 
 const hasAlreadyReviewed = computed(() => {
   if (!me.value) return false
-  return taskReviews.value.some(r => r.reviewer_id === me.value!.id)
+  return taskReviews.value.some((r) => r.reviewer_id === me.value!.id)
 })
 
 const bothSidesReviewed = computed(() => {
   if (!isParticipant.value) return true
-  const roles = new Set(taskReviews.value.map(r => r.target_role))
+  const roles = new Set(taskReviews.value.map((r) => r.target_role))
   return roles.has('publisher') && roles.has('worker')
 })
 
-const waitingForOtherReview = computed(() =>
-  hasAlreadyReviewed.value && !bothSidesReviewed.value
-)
+const waitingForOtherReview = computed(() => hasAlreadyReviewed.value && !bothSidesReviewed.value)
 
-const canReview = computed(() =>
-  selectedTask.value?.status === 'completed' &&
-  isParticipant.value &&
-  !hasAlreadyReviewed.value
-)
+const canReview = computed(() => selectedTask.value?.status === 'completed' && isParticipant.value && !hasAlreadyReviewed.value)
 
 const canDeleteTask = computed(() => {
   if (!isPublisher.value || !selectedTask.value) return false
@@ -225,43 +217,34 @@ const deleteBlockedByAssignee = computed(() => {
   return selectedTask.value.status === 'in_progress'
 })
 
-/* -------- Helpers -------- */
 const statusMap: Record<string, { label: string; cls: string }> = {
   open: { label: '待接取', cls: 'badge-blue' },
   in_progress: { label: '进行中', cls: 'badge-amber' },
   completed: { label: '已完成', cls: 'badge-green' },
   canceled: { label: '已取消', cls: 'badge-default' },
-  under_review: { label: '审核中', cls: 'badge-red' }
+  under_review: { label: '审核中', cls: 'badge-red' },
 }
-function statusOf(s: string) { return statusMap[s] || { label: s, cls: 'badge-default' } }
+
+function statusOf(s: string) {
+  return statusMap[s] || { label: s, cls: 'badge-default' }
+}
 
 const genderMap: Record<string, { label: string; icon: string; cls: string }> = {
   male: { label: '限男生', icon: 'fa-solid fa-mars', cls: 'badge-blue' },
   female: { label: '限女生', icon: 'fa-solid fa-venus', cls: 'badge-pink' },
 }
-function genderLabel(g: string | null) { return g ? genderMap[g] : null }
+
+function genderLabel(g: string | null) {
+  return g ? genderMap[g] : null
+}
 
 function categoryName(id: number | null) {
   if (!id) return null
-  return categories.value.find(c => c.id === id)?.name ?? null
+  return categories.value.find((c) => c.id === id)?.name ?? null
 }
 
 const totalTaskCount = computed(() => categories.value.reduce((sum, c) => sum + c.task_count, 0))
 
-function reportStatusLabel(s: string) {
-  return s === 'pending' ? '待审核' : s === 'approved' ? '已通过' : '已驳回'
-}
-
-function reportTypeLabel(s: string) {
-  return s === 'report' ? '举报' : '申诉'
-}
-
-
-function starsArray(n: number) {
-  return Array.from({ length: 5 }, (_, i) => i < n)
-}
-
-/* -------- Data Loading -------- */
 async function bootstrap() {
   loading.value = true
   try {
@@ -278,16 +261,10 @@ async function bootstrap() {
   }
 }
 
-function requireAuth(action?: () => void) {
-  if (!auth.isAuthenticated) {
-    router.push('/login')
-    return false
-  }
-  action?.()
-  return true
+async function loadCategories() {
+  categories.value = await fetchCategories()
 }
 
-async function loadCategories() { categories.value = await fetchCategories() }
 async function loadTasks() {
   const params: Record<string, string | number | undefined> = {
     status: 'open',
@@ -297,7 +274,10 @@ async function loadTasks() {
   if (selectedCategory.value !== null) params.category_id = selectedCategory.value
   tasks.value = await fetchTasks(params)
 }
-async function loadWorkers() { workers.value = await fetchWorkers({ sort: workerSort.value }) }
+
+async function loadWorkers() {
+  workers.value = await fetchWorkers({ sort: workerSort.value })
+}
 
 watch(taskSort, () => loadTasks())
 watch(workerSort, () => loadWorkers())
@@ -307,6 +287,7 @@ watch(searchQuery, () => {
   clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => loadTasks(), 300)
 })
+
 watch(selectedCategory, () => loadTasks())
 
 async function loadMyTasks() {
@@ -317,10 +298,18 @@ async function loadMyTasks() {
 
 async function loadMyWorkerProfile() {
   const p = await fetchMyWorkerProfile()
-  workerForm.value = { enabled: p.enabled, skills: p.skills || '', min_price: p.min_price, max_price: p.max_price, bio: p.bio || '' }
+  workerForm.value = {
+    enabled: p.enabled,
+    skills: p.skills || '',
+    min_price: p.min_price,
+    max_price: p.max_price,
+    bio: p.bio || '',
+  }
 }
 
-async function loadMyReports() { myReports.value = await fetchMyReports() }
+async function loadMyReports() {
+  myReports.value = await fetchMyReports()
+}
 
 function initProfileForm() {
   if (me.value) {
@@ -329,60 +318,15 @@ function initProfileForm() {
   }
 }
 
-/* -------- Task Detail Drawer -------- */
-const messagesEnd = ref<HTMLDivElement | null>(null)
-
 function openDrawer(task: Task) {
   selectedTask.value = task
   showReviewForm.value = false
   refreshTaskMeta()
   refreshPublisherReviews()
 }
-function closeDrawer() { selectedTask.value = null }
 
-function checkMobile() {
-  isMobile.value = window.matchMedia('(max-width: 900px)').matches
-}
-
-function onSheetTouchStart(e: TouchEvent) {
-  const el = bottomSheetRef.value
-  if (!el) return
-  sheetDragStartY = e.touches[0].clientY
-  el.style.transition = 'none'
-  document.addEventListener('touchmove', onSheetTouchMove, { passive: false })
-  document.addEventListener('touchend', onSheetTouchEnd)
-}
-
-function onSheetTouchMove(e: TouchEvent) {
-  const el = bottomSheetRef.value
-  if (!el) return
-  e.preventDefault()
-  const deltaY = e.touches[0].clientY - sheetDragStartY
-  if (deltaY < 0) {
-    el.style.transform = `translateY(${-Math.pow(Math.abs(deltaY), 0.7)}px)`
-  } else {
-    el.style.transform = `translateY(${deltaY}px)`
-  }
-}
-
-function onSheetTouchEnd() {
-  document.removeEventListener('touchmove', onSheetTouchMove)
-  document.removeEventListener('touchend', onSheetTouchEnd)
-  const el = bottomSheetRef.value
-  if (!el) return
-  const match = el.style.transform.match(/translateY\(([^)]+)px\)/)
-  const currentY = match ? parseFloat(match[1]) : 0
-  el.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
-  if (currentY > 120) {
-    el.style.transform = `translateY(${window.innerHeight}px)`
-    setTimeout(() => { selectedTask.value = null }, 350)
-  } else {
-    el.style.transform = 'translateY(0px)'
-    setTimeout(() => {
-      el.style.transition = ''
-      el.style.transform = ''
-    }, 350)
-  }
+function closeDrawer() {
+  selectedTask.value = null
 }
 
 async function refreshTaskMeta() {
@@ -396,8 +340,6 @@ async function refreshTaskMeta() {
     taskMessages.value = []
     taskReviews.value = await fetchReviews(taskId).catch(() => [])
   }
-  await nextTick()
-  messagesEnd.value?.scrollIntoView({ behavior: 'smooth' })
 }
 
 async function refreshPublisherReviews() {
@@ -409,7 +351,6 @@ async function refreshPublisherReviews() {
   }
 }
 
-/* -------- Actions -------- */
 async function submitCreateTask() {
   try {
     await createTask({
@@ -424,7 +365,17 @@ async function submitCreateTask() {
       required_gender: newTask.value.required_gender,
     })
     showToast('委托发布成功', 'success')
-    newTask.value = { title: '', description: '', deadline: '', location: '', price: 20, category_id: null, contact_visibility: 'after_accept', contact_info: '', required_gender: null }
+    newTask.value = {
+      title: '',
+      description: '',
+      deadline: '',
+      location: '',
+      price: 20,
+      category_id: null,
+      contact_visibility: 'after_accept',
+      contact_info: '',
+      required_gender: null,
+    }
     showPostModal.value = false
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
   } catch (error: any) {
@@ -439,7 +390,7 @@ async function submitWorkerProfile() {
       skills: workerForm.value.skills || null,
       min_price: workerForm.value.min_price,
       max_price: workerForm.value.max_price,
-      bio: workerForm.value.bio || null
+      bio: workerForm.value.bio || null,
     })
     showToast('接单资料已更新', 'success')
     await loadWorkers()
@@ -523,7 +474,7 @@ async function submitReview() {
     await createReview(selectedTask.value.id, {
       target_role: myReviewTargetRole.value,
       stars: reviewForm.value.stars,
-      comment: reviewForm.value.comment || undefined
+      comment: reviewForm.value.comment || undefined,
     })
     reviewForm.value.comment = ''
     reviewForm.value.stars = 5
@@ -603,9 +554,7 @@ const canReport = computed(() => {
 
 const reportTargetId = computed(() => {
   if (!me.value || !selectedTask.value) return null
-  return me.value.id === selectedTask.value.publisher_id
-    ? selectedTask.value.assignee_id
-    : selectedTask.value.publisher_id
+  return me.value.id === selectedTask.value.publisher_id ? selectedTask.value.assignee_id : selectedTask.value.publisher_id
 })
 
 async function submitReport() {
@@ -615,7 +564,7 @@ async function submitReport() {
       task_id: selectedTask.value.id,
       reported_user_id: reportTargetId.value,
       reason: reportForm.value.reason,
-      evidence: reportForm.value.evidence
+      evidence: reportForm.value.evidence,
     })
     reportForm.value.reason = ''
     reportForm.value.evidence = ''
@@ -631,2136 +580,170 @@ function logout() {
   router.push('/login')
 }
 
-/* -------- User Menu helpers -------- */
 function openMyPanel() {
-  showUserMenu.value = false
   showMyPanel.value = true
 }
+
 function openSettings() {
-  showUserMenu.value = false
   initProfileForm()
+  settingsTab.value = 'profile'
   showSettingsPanel.value = true
 }
-function openReports() {
-  showUserMenu.value = false
-  showReportsPanel.value = true
-}
 
-function onClickOutsideMenu(e: MouseEvent) {
-  if (userMenuRef.value && !userMenuRef.value.contains(e.target as Node)) {
-    showUserMenu.value = false
-  }
-  if (mobileSortRef.value && !mobileSortRef.value.contains(e.target as Node)) {
-    showMobileSort.value = false
-  }
+function openReports() {
+  showReportsPanel.value = true
 }
 
 onMounted(() => {
   bootstrap()
-  document.addEventListener('mousedown', onClickOutsideMenu)
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
 })
+
 onUnmounted(() => {
-  document.removeEventListener('mousedown', onClickOutsideMenu)
-  window.removeEventListener('resize', checkMobile)
+  clearTimeout(toastTimer)
+  clearTimeout(searchTimer)
 })
 </script>
 
 <template>
-  <!-- Toast -->
-  <Transition name="toast">
-    <div v-if="toast" class="hv-toast" :class="'hv-toast--' + toast.type" @click="toast = null">
-      {{ toast.text }}
-    </div>
-  </Transition>
+  <HomeToast :toast="toast" @dismiss="toast = null" />
 
-  <!-- Header -->
-  <header class="hv-header">
-    <div class="hv-header__brand">
-      <div class="hv-logo">T</div>
-      <span class="hv-header__title">{{ appTitle }}</span>
-    </div>
+  <HomeHeaderBar
+    v-model:active-tab="activeTab"
+    :app-title="appTitle"
+    :is-authenticated="auth.isAuthenticated"
+    :display-name="auth.displayName"
+    :avatar-url="me?.avatar_url"
+    :gender="me?.gender ?? null"
+    @publish="showPostModal = true"
+    @open-my-panel="openMyPanel"
+    @open-settings="openSettings"
+    @open-reports="openReports"
+    @login="router.push('/login')"
+    @logout="logout"
+  />
 
-    <nav class="hv-tabs">
-      <button
-        class="hv-tab" :class="{ 'hv-tab--active': activeTab === 'hall' }"
-        @click="activeTab = 'hall'"
-      >
-        <i class="fa-solid fa-clipboard-list"></i> 任务大厅
-      </button>
-      <button
-        class="hv-tab" :class="{ 'hv-tab--active': activeTab === 'workers' }"
-        @click="activeTab = 'workers'"
-      >
-        <i class="fa-solid fa-user-group"></i> 接单广场
-      </button>
-    </nav>
+  <HomeLoadingState v-if="loading" />
 
-    <div class="hv-header__right">
-      <template v-if="auth.isAuthenticated">
-        <button class="btn btn-primary btn-sm hv-publish-btn" @click="showPostModal = true">
-          <i class="fa-solid fa-plus"></i> 发布
-        </button>
-
-        <div ref="userMenuRef" class="hv-user-menu-wrap">
-          <button class="hv-user-trigger" @click="showUserMenu = !showUserMenu">
-            <div v-if="hasAvatar" class="hv-avatar hv-avatar--img">
-              <img :src="me!.avatar_url!" alt="avatar" />
-            </div>
-            <div v-else class="hv-avatar" :class="me?.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'">
-              <i class="fa-solid fa-user"></i>
-            </div>
-            <span class="hv-header__name">{{ auth.displayName }}</span>
-            <i class="fa-solid fa-chevron-down hv-user-trigger__arrow" :class="{ 'hv-user-trigger__arrow--open': showUserMenu }"></i>
-          </button>
-
-          <Transition name="app-dropdown">
-            <div v-if="showUserMenu" class="hv-user-dropdown">
-              <button class="hv-user-dropdown__item" @click="openMyPanel">
-                <i class="fa-solid fa-list-check"></i> 任务
-              </button>
-              <button class="hv-user-dropdown__item" @click="openSettings">
-                <i class="fa-solid fa-gear"></i> 设置
-              </button>
-              <button class="hv-user-dropdown__item" @click="openReports">
-                <i class="fa-solid fa-flag"></i> 我的举报
-              </button>
-              <div class="hv-user-dropdown__divider"></div>
-              <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="logout">
-                <i class="fa-solid fa-right-from-bracket"></i> 退出登录
-              </button>
-            </div>
-          </Transition>
-        </div>
-      </template>
-      <template v-else>
-        <button class="btn btn-primary btn-sm" @click="router.push('/login')">
-          <i class="fa-solid fa-right-to-bracket"></i> 登录
-        </button>
-      </template>
-    </div>
-  </header>
-
-  <!-- Loading -->
-  <div v-if="loading" class="hv-loading">
-    <div class="spinner"></div>
-    <span>加载中…</span>
-  </div>
-
-  <!-- Main Content -->
   <main v-else class="hv-main">
+    <HomeHallSection
+      v-if="activeTab === 'hall'"
+      v-model:search-query="searchQuery"
+      v-model:task-sort="taskSort"
+      v-model:selected-category="selectedCategory"
+      :task-sort-options="taskSortOptions"
+      :categories="categories"
+      :total-task-count="totalTaskCount"
+      :tasks="tasks"
+      :status-of="statusOf"
+      :gender-label="genderLabel"
+      :category-name="categoryName"
+      :is-expired="isExpired"
+      :format-short="formatShort"
+      @open-task="openDrawer"
+    />
 
-    <!-- ============ 任务大厅 ============ -->
-    <section v-if="activeTab === 'hall'" class="hv-section hv-hall">
-      <!-- Toolbar: search + sort -->
-      <div class="hv-hall-toolbar">
-        <div class="hv-search-wrap">
-          <i class="fa-solid fa-magnifying-glass hv-search-icon"></i>
-          <input v-model="searchQuery" class="hv-search-input" placeholder="搜索任务标题、描述..." />
-        </div>
-        <AppDropdown
-          v-model="taskSort"
-          :options="taskSortOptions"
-          width="auto"
-          min-width="160px"
-          class="hv-sort-desktop"
-        />
-        <div ref="mobileSortRef" class="hv-sort-mobile-wrap">
-          <button class="hv-sort-btn" :class="{ 'hv-sort-btn--active': showMobileSort }" @click="showMobileSort = !showMobileSort">
-            <i class="fa-solid fa-arrow-down-wide-short"></i>
-          </button>
-          <Transition name="app-dropdown">
-            <div v-if="showMobileSort" class="hv-sort-menu">
-              <button
-                v-for="opt in taskSortOptions" :key="opt.value"
-                class="hv-sort-menu__item"
-                :class="{ 'hv-sort-menu__item--active': taskSort === opt.value }"
-                @click="taskSort = opt.value; showMobileSort = false"
-              >
-                {{ opt.label }}
-                <i v-if="taskSort === opt.value" class="fa-solid fa-check" style="font-size: 12px;"></i>
-              </button>
-            </div>
-          </Transition>
-        </div>
-      </div>
-      <!-- Mobile: horizontal scrollable category chips (sticky) -->
-      <div class="hv-category-chips">
-        <button class="hv-chip" :class="{ 'hv-chip--active': selectedCategory === null }" @click="selectedCategory = null">全部 ({{ totalTaskCount }})</button>
-        <button v-for="c in categories" :key="c.id" class="hv-chip" :class="{ 'hv-chip--active': selectedCategory === c.id }" @click="selectedCategory = c.id">{{ c.name }} ({{ c.task_count }})</button>
-      </div>
-
-      <!-- Layout: sidebar (desktop) + task grid -->
-      <div class="hv-hall-layout">
-        <aside class="hv-sidebar">
-          <button class="hv-sidebar__item" :class="{ 'hv-sidebar__item--active': selectedCategory === null }" @click="selectedCategory = null">
-            <i class="fa-solid fa-layer-group"></i> 全部任务 <span class="hv-sidebar__count">({{ totalTaskCount }})</span>
-          </button>
-          <button v-for="c in categories" :key="c.id" class="hv-sidebar__item" :class="{ 'hv-sidebar__item--active': selectedCategory === c.id }" @click="selectedCategory = c.id">
-            {{ c.name }} <span class="hv-sidebar__count">({{ c.task_count }})</span>
-          </button>
-        </aside>
-
-        <div class="hv-hall-content">
-          <div v-if="tasks.length" class="hv-task-grid">
-            <div v-for="task in tasks" :key="task.id" class="card card-hover hv-task-card" @click="openDrawer(task)">
-              <div class="hv-task-card__top">
-                <div class="hv-task-card__badges">
-                  <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
-                  <span v-if="task.required_gender && genderLabel(task.required_gender)" class="badge" :class="genderLabel(task.required_gender)!.cls">
-                    <i :class="genderLabel(task.required_gender)!.icon" style="margin-right: 3px;"></i>{{ genderLabel(task.required_gender)!.label }}
-                  </span>
-                </div>
-                <span v-if="task.deadline" class="hv-task-card__deadline" :class="{ 'hv-task-card__deadline--expired': isExpired(task.deadline) }">
-                  <i class="fa-regular fa-clock"></i>
-                  {{ isExpired(task.deadline) ? '已过期' : '截止 ' + formatShort(task.deadline!) }}
-                </span>
-              </div>
-              <h4 class="hv-task-card__title">{{ task.title }}</h4>
-              <p class="hv-task-card__desc">{{ task.description }}</p>
-              <div v-if="categoryName(task.category_id) || task.location" class="hv-task-card__tags">
-                <span v-if="categoryName(task.category_id)" class="hv-task-card__tag">
-                  <i class="fa-solid fa-tag"></i> {{ categoryName(task.category_id) }}
-                </span>
-                <span v-if="task.location" class="hv-task-card__tag">
-                  <i class="fa-solid fa-location-dot"></i> {{ task.location }}
-                </span>
-              </div>
-              <div class="hv-task-card__footer">
-                <div class="hv-task-card__pub">
-                  <span class="hv-task-card__pub-label">发布者</span>
-                  <span class="hv-task-card__pub-name">{{ task.publisher_display_name }}<span v-if="task.publisher_rating_count > 0" class="hv-task-card__pub-score"> ({{ task.publisher_rating_avg.toFixed(1) }})</span></span>
-                  <span v-if="task.publisher_rating_count > 0" class="hv-task-card__pub-rating">
-                    <i class="fa-solid fa-star hv-task-card__star"></i>
-                    <span class="hv-task-card__rating-score">{{ task.publisher_rating_avg.toFixed(1) }}</span>
-                    <span class="hv-task-card__rating-count">({{ task.publisher_rating_count }}条评价)</span>
-                  </span>
-                </div>
-                <span class="hv-task-card__price">¥{{ task.price }}</span>
-              </div>
-            </div>
-          </div>
-          <div v-else class="hv-empty">
-            <i class="fa-solid fa-inbox hv-empty__icon"></i>
-            <p>{{ searchQuery || selectedCategory !== null ? '未找到匹配的任务' : '暂无可接任务' }}</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ 接单广场 ============ -->
-    <section v-if="activeTab === 'workers'" class="hv-section">
-      <div class="hv-section__header">
-        <h2>接单广场</h2>
-        <span class="hv-section__count">{{ workers.length }} 位接单者</span>
-        <AppDropdown
-          v-model="workerSort"
-          :options="workerSortOptions"
-          width="auto"
-          min-width="140px"
-          class="hv-sort-dropdown"
-        />
-      </div>
-
-      <div v-if="workers.length" class="hv-worker-grid">
-        <div v-for="w in workers" :key="w.user_id" class="card hv-worker-card">
-          <div class="hv-worker-card__header">
-            <div v-if="w.avatar_url" class="hv-avatar hv-avatar--lg hv-avatar--img">
-              <img :src="w.avatar_url" alt="" />
-            </div>
-            <div v-else class="hv-avatar hv-avatar--lg" :class="w.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'">
-              <i class="fa-solid fa-user"></i>
-            </div>
-            <div class="hv-worker-card__info">
-              <h4>{{ w.display_name }}</h4>
-              <div class="hv-worker-card__rating">
-                <span class="hv-stars">
-                  <i v-for="(filled, idx) in starsArray(Math.round(w.worker_rating_avg))" :key="idx" :class="filled ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
-                </span>
-                <span class="hv-worker-card__count">{{ w.worker_rating_avg.toFixed(1) }} 分 · {{ w.worker_rating_count }} 评价</span>
-              </div>
-            </div>
-          </div>
-          <div class="hv-worker-card__body">
-            <div class="hv-worker-card__row">
-              <span class="hv-worker-card__label">擅长</span>
-              <span>{{ w.skills || '未设置' }}</span>
-            </div>
-            <div class="hv-worker-card__row">
-              <span class="hv-worker-card__label">价格</span>
-              <span>{{ w.min_price ?? '-' }} ~ {{ w.max_price ?? '-' }} 元</span>
-            </div>
-            <div v-if="w.blocked_by_count > 0" class="hv-worker-card__row">
-              <span class="hv-worker-card__label">被拉黑</span>
-              <span class="badge badge-red">{{ w.blocked_by_count }} 次</span>
-            </div>
-            <p v-if="w.bio" class="hv-worker-card__bio">{{ w.bio }}</p>
-          </div>
-        </div>
-      </div>
-      <div v-else class="hv-empty">
-        <i class="fa-solid fa-users hv-empty__icon"></i>
-        <p>暂无接单者</p>
-      </div>
-    </section>
+    <HomeWorkersSection
+      v-if="activeTab === 'workers'"
+      v-model:worker-sort="workerSort"
+      :workers="workers"
+      :worker-sort-options="workerSortOptions"
+    />
   </main>
 
-  <!-- ============ 发布委托弹窗 ============ -->
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="showPostModal" class="hv-modal-overlay" @click.self="showPostModal = false">
-        <div class="hv-modal hv-modal--md">
-          <div class="hv-modal__header">
-            <h3>发布新委托</h3>
-            <button class="btn btn-ghost btn-sm" @click="showPostModal = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="hv-modal__body">
-            <p class="hv-hint" style="margin-bottom: 12px;">填写委托信息后发布，其他用户即可在任务大厅看到并接取。</p>
-            <form class="hv-form" @submit.prevent="submitCreateTask">
-              <div class="form-group">
-                <label class="form-label">标题</label>
-                <input v-model="newTask.title" class="form-input" placeholder="简要描述你需要完成的事项" required />
-              </div>
+  <HomeTaskEditorModal
+    v-model="showPostModal"
+    mode="create"
+    :form="newTask"
+    :categories="categories"
+    :now-local="nowLocal"
+    @submit="submitCreateTask"
+  />
 
-              <div class="form-group">
-                <label class="form-label">详细描述</label>
-                <textarea v-model="newTask.description" class="form-textarea" placeholder="详细说明需求、要求和注意事项" style="min-height: 80px;"></textarea>
-              </div>
+  <HomeTaskEditorModal
+    v-model="showEditModal"
+    mode="edit"
+    :form="editTaskForm"
+    :categories="categories"
+    :now-local="nowLocal"
+    @submit="submitEditTask"
+  />
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">地点</label>
-                  <input v-model="newTask.location" class="form-input" placeholder="任务执行地点（选填）" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">价格 (¥)</label>
-                  <input v-model.number="newTask.price" class="form-input" type="number" min="1" placeholder="报酬金额" />
-                </div>
-              </div>
+  <HomeMyTasksDrawer
+    v-model="showMyPanel"
+    :my-published="myPublished"
+    :my-accepted="myAccepted"
+    :status-of="statusOf"
+    :is-expired="isExpired"
+    @open-task="openDrawer"
+  />
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">截止时间</label>
-                  <input v-model="newTask.deadline" class="form-input" type="datetime-local" :min="nowLocal()" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">所属类目</label>
-                  <AppDropdown
-                    v-model="newTask.category_id"
-                    :options="[{ value: null, label: '选择类目' }, ...categories.map(c => ({ value: c.id, label: c.name }))]"
-                    placeholder="选择类目"
-                  />
-                </div>
-              </div>
+  <HomeSettingsDrawer
+    v-model="showSettingsPanel"
+    v-model:settings-tab="settingsTab"
+    :me="me"
+    :avatar-uploading="avatarUploading"
+    :profile-form="profileForm"
+    :worker-form="workerForm"
+    @submit-profile="submitProfileUpdate"
+    @submit-worker="submitWorkerProfile"
+    @avatar-upload="handleAvatarUpload"
+  />
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">联系方式可见性</label>
-                  <AppDropdown
-                    v-model="newTask.contact_visibility"
-                    :options="[
-                      { value: 'after_accept', label: '接取后可见联系方式' },
-                      { value: 'internal_only', label: '仅站内沟通' },
-                    ]"
-                  />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">联系方式</label>
-                  <input
-                    v-model="newTask.contact_info"
-                    class="form-input"
-                    :disabled="newTask.contact_visibility === 'internal_only'"
-                    placeholder="微信/手机号等（选填）"
-                  />
-                </div>
-              </div>
+  <HomeReportsDrawer v-model="showReportsPanel" :my-reports="myReports" />
 
-              <div class="form-group">
-                <label class="form-label">接单者性别要求</label>
-                <AppDropdown
-                  v-model="newTask.required_gender"
-                  :options="[
-                    { value: null, label: '不限性别' },
-                    { value: 'male', label: '仅限男生' },
-                    { value: 'female', label: '仅限女生' },
-                  ]"
-                  placeholder="不限性别"
-                />
-              </div>
-
-              <button class="btn btn-primary btn-block" type="submit" style="margin-top: 4px;">发布委托</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- ============ 编辑任务模态框 ============ -->
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="showEditModal" class="hv-modal-overlay" @click.self="showEditModal = false">
-        <div class="hv-modal hv-modal--md">
-          <div class="hv-modal__header">
-            <h3>编辑委托</h3>
-            <button class="btn btn-ghost btn-sm" @click="showEditModal = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="hv-modal__body">
-            <p class="hv-hint" style="margin-bottom: 12px;">任务被接取前可随时修改所有信息。</p>
-            <form class="hv-form" @submit.prevent="submitEditTask">
-              <div class="form-group">
-                <label class="form-label">标题</label>
-                <input v-model="editTaskForm.title" class="form-input" placeholder="简要描述你需要完成的事项" required />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">详细描述</label>
-                <textarea v-model="editTaskForm.description" class="form-textarea" placeholder="详细说明需求、要求和注意事项" style="min-height: 80px;"></textarea>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">地点</label>
-                  <input v-model="editTaskForm.location" class="form-input" placeholder="任务执行地点（选填）" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">价格 (¥)</label>
-                  <input v-model.number="editTaskForm.price" class="form-input" type="number" min="1" placeholder="报酬金额" />
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">截止时间</label>
-                  <input v-model="editTaskForm.deadline" class="form-input" type="datetime-local" :min="nowLocal()" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">所属类目</label>
-                  <AppDropdown
-                    v-model="editTaskForm.category_id"
-                    :options="[{ value: null, label: '选择类目' }, ...categories.map(c => ({ value: c.id, label: c.name }))]"
-                    placeholder="选择类目"
-                  />
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">联系方式可见性</label>
-                  <AppDropdown
-                    v-model="editTaskForm.contact_visibility"
-                    :options="[
-                      { value: 'after_accept', label: '接取后可见联系方式' },
-                      { value: 'internal_only', label: '仅站内沟通' },
-                    ]"
-                  />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">联系方式</label>
-                  <input
-                    v-model="editTaskForm.contact_info"
-                    class="form-input"
-                    :disabled="editTaskForm.contact_visibility === 'internal_only'"
-                    placeholder="微信/手机号等（选填）"
-                  />
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">接单者性别要求</label>
-                <AppDropdown
-                  v-model="editTaskForm.required_gender"
-                  :options="[
-                    { value: null, label: '不限性别' },
-                    { value: 'male', label: '仅限男生' },
-                    { value: 'female', label: '仅限女生' },
-                  ]"
-                  placeholder="不限性别"
-                />
-              </div>
-
-              <button class="btn btn-primary btn-block" type="submit" style="margin-top: 4px;">保存修改</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- ============ 我的任务面板 ============ -->
-  <Teleport to="body">
-    <Transition name="drawer">
-      <div v-if="showMyPanel" class="hv-drawer-overlay" @click.self="showMyPanel = false">
-        <div class="hv-drawer">
-          <div class="hv-drawer__header">
-            <h3>我的任务</h3>
-            <button class="btn btn-ghost btn-sm" @click="showMyPanel = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="hv-drawer__body" style="padding: 20px 24px;">
-            <div class="hv-my-tasks-vertical">
-              <div class="hv-my-col">
-                <h4>我发布的 <span class="badge badge-default">{{ myPublished.length }}</span></h4>
-                <div v-if="myPublished.length" class="hv-record-list">
-                  <div v-for="t in myPublished" :key="t.id" class="hv-record card card-hover" @click="showMyPanel = false; openDrawer(t)">
-                    <div class="hv-record__top">
-                      <span class="hv-record__title">{{ t.title }}</span>
-                      <div style="display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
-                        <span v-if="t.status === 'open' && isExpired(t.deadline)" class="badge badge-red">已过期</span>
-                        <span class="badge" :class="statusOf(t.status).cls">{{ statusOf(t.status).label }}</span>
-                      </div>
-                    </div>
-                    <div class="hv-record__meta">¥{{ t.price }}<template v-if="t.assignee_display_name"> · 接单者：{{ t.assignee_display_name }}</template></div>
-                  </div>
-                </div>
-                <p v-else class="hv-empty-text">暂无发布的任务</p>
-              </div>
-
-              <div class="hv-my-col">
-                <h4>我接取的 <span class="badge badge-default">{{ myAccepted.length }}</span></h4>
-                <div v-if="myAccepted.length" class="hv-record-list">
-                  <div v-for="t in myAccepted" :key="t.id" class="hv-record card card-hover" @click="showMyPanel = false; openDrawer(t)">
-                    <div class="hv-record__top">
-                      <span class="hv-record__title">{{ t.title }}</span>
-                      <span class="badge" :class="statusOf(t.status).cls">{{ statusOf(t.status).label }}</span>
-                    </div>
-                    <div class="hv-record__meta">¥{{ t.price }} · 发布者：{{ t.publisher_display_name }}</div>
-                  </div>
-                </div>
-                <p v-else class="hv-empty-text">暂无接取的任务</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- ============ 设置面板 ============ -->
-  <Teleport to="body">
-    <Transition name="drawer">
-      <div v-if="showSettingsPanel" class="hv-drawer-overlay" @click.self="showSettingsPanel = false">
-        <div class="hv-drawer">
-          <div class="hv-drawer__header">
-            <h3>设置</h3>
-            <button class="btn btn-ghost btn-sm" @click="showSettingsPanel = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="hv-drawer__body">
-            <div class="hv-settings-tabs">
-              <button class="hv-pill" :class="{ 'hv-pill--active': settingsTab === 'profile' }" @click="settingsTab = 'profile'">
-                <i class="fa-solid fa-user"></i> 个人资料
-              </button>
-              <button class="hv-pill" :class="{ 'hv-pill--active': settingsTab === 'worker' }" @click="settingsTab = 'worker'">
-                <i class="fa-solid fa-id-card"></i> 接单设置
-              </button>
-            </div>
-
-            <!-- 个人资料 -->
-            <div v-if="settingsTab === 'profile'" class="hv-drawer__section">
-              <div class="hv-avatar-section">
-                <div v-if="hasAvatar" class="hv-avatar hv-avatar--xl hv-avatar--img">
-                  <img :src="me!.avatar_url!" alt="avatar" />
-                </div>
-                <div v-else class="hv-avatar hv-avatar--xl" :class="me?.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'">
-                  <i class="fa-solid fa-user"></i>
-                </div>
-                <div class="hv-avatar-actions">
-                  <label class="btn btn-outline btn-sm hv-avatar-upload-btn">
-                    <i class="fa-solid fa-camera"></i>
-                    {{ avatarUploading ? '上传中...' : '更换头像' }}
-                    <input type="file" accept="image/*" hidden @change="handleAvatarUpload" :disabled="avatarUploading" />
-                  </label>
-                  <span class="hv-hint">支持 JPG/PNG，最大 10MB</span>
-                </div>
-              </div>
-
-              <form class="hv-form" @submit.prevent="submitProfileUpdate">
-                <div class="form-group">
-                  <label class="form-label">姓名</label>
-                  <input class="form-input" :value="me?.name" disabled />
-                  <span class="form-hint">姓名不可修改</span>
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label">昵称</label>
-                  <input v-model="profileForm.nickname" class="form-input" placeholder="输入昵称" required />
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label">性别</label>
-                  <AppDropdown
-                    v-model="profileForm.gender"
-                    :options="[
-                      { value: 'male', label: '男' },
-                      { value: 'female', label: '女' },
-                    ]"
-                    placeholder="选择性别"
-                  />
-                </div>
-
-                <button class="btn btn-primary btn-block" type="submit">保存资料</button>
-              </form>
-            </div>
-
-            <!-- 接单设置 -->
-            <div v-if="settingsTab === 'worker'" class="hv-drawer__section">
-              <p class="hv-hint" style="margin-bottom: 12px;">开启后你将出现在接单广场，其他用户可以查看你的资料。</p>
-              <form class="hv-form" @submit.prevent="submitWorkerProfile">
-                <label class="hv-switch-row">
-                  <input v-model="workerForm.enabled" type="checkbox" class="hv-switch" />
-                  <span>开启接单（对外展示）</span>
-                </label>
-
-                <div class="form-group">
-                  <label class="form-label">擅长类型</label>
-                  <input v-model="workerForm.skills" class="form-input" placeholder="如：高数、前端开发、跑腿取件" />
-                </div>
-
-                <div class="form-row">
-                  <div class="form-group">
-                    <label class="form-label">最低价 (¥)</label>
-                    <input v-model.number="workerForm.min_price" class="form-input" type="number" placeholder="最低接单价格" />
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">最高价 (¥)</label>
-                    <input v-model.number="workerForm.max_price" class="form-input" type="number" placeholder="最高接单价格" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label">个人简介</label>
-                  <textarea v-model="workerForm.bio" class="form-textarea" placeholder="介绍一下自己的能力和服务"></textarea>
-                </div>
-
-                <button class="btn btn-primary btn-block" type="submit">保存接单资料</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- ============ 举报记录面板 ============ -->
-  <Teleport to="body">
-    <Transition name="drawer">
-      <div v-if="showReportsPanel" class="hv-drawer-overlay" @click.self="showReportsPanel = false">
-        <div class="hv-drawer">
-          <div class="hv-drawer__header">
-            <h3>我的举报</h3>
-            <button class="btn btn-ghost btn-sm" @click="showReportsPanel = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-          <div class="hv-drawer__body" style="padding: 20px 24px;">
-            <div v-if="myReports.length" class="hv-record-list">
-              <div v-for="r in myReports" :key="r.id" class="card hv-report-item">
-                <div class="hv-record__top">
-                  <span class="badge badge-default">{{ reportTypeLabel(r.type) }}</span>
-                  <span class="badge" :class="r.status === 'pending' ? 'badge-amber' : r.status === 'approved' ? 'badge-green' : 'badge-red'">{{ reportStatusLabel(r.status) }}</span>
-                </div>
-                <p style="margin: 6px 0 0; color: var(--c-text-secondary); font-size: var(--text-sm);">{{ r.reason }}</p>
-              </div>
-            </div>
-            <p v-else class="hv-empty-text">暂无举报记录</p>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-
-  <!-- ============ Task Detail Drawer / Bottom Sheet ============ -->
-  <Teleport to="body">
-    <Transition name="drawer">
-      <div v-if="selectedTask" class="hv-drawer-overlay hv-task-detail-overlay" @click.self="closeDrawer">
-        <div ref="bottomSheetRef" class="hv-drawer hv-task-detail-drawer">
-          <div class="hv-sheet-handle" @touchstart.passive="onSheetTouchStart">
-            <div class="hv-sheet-handle__bar"></div>
-          </div>
-          <div class="hv-drawer__header">
-            <h3>任务详情</h3>
-            <button class="btn btn-ghost btn-sm" @click="closeDrawer" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-
-          <div class="hv-drawer__body">
-            <!-- Basic Info -->
-            <div class="hv-drawer__section">
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap;">
-                <span class="badge" :class="statusOf(selectedTask.status).cls">{{ statusOf(selectedTask.status).label }}</span>
-                <span v-if="selectedTask.required_gender && genderLabel(selectedTask.required_gender)" class="badge" :class="genderLabel(selectedTask.required_gender)!.cls">
-                  <i :class="genderLabel(selectedTask.required_gender)!.icon" style="margin-right: 3px;"></i>{{ genderLabel(selectedTask.required_gender)!.label }}
-                </span>
-                <span style="font-size: var(--text-2xl); font-weight: 700; color: var(--c-accent);">¥{{ selectedTask.price }}</span>
-              </div>
-              <h3 style="margin-bottom: 8px;">{{ selectedTask.title }}</h3>
-              <p style="color: var(--c-text-secondary); line-height: 1.7; margin-bottom: 12px;">{{ selectedTask.description }}</p>
-
-              <div class="hv-detail-grid">
-                <div class="hv-detail-item">
-                  <span class="hv-detail-label">发布者</span>
-                  <span>{{ selectedTask.publisher_display_name }}
-                    <span v-if="selectedTask.publisher_rating_count > 0" class="hv-task-card__pub-rating" style="margin-left: 6px;">
-                      <i class="fa-solid fa-star hv-task-card__star"></i>
-                      <span class="hv-task-card__rating-score">{{ selectedTask.publisher_rating_avg.toFixed(1) }}</span>
-                      <span class="hv-task-card__rating-count">({{ selectedTask.publisher_rating_count }}条评价)</span>
-                    </span>
-                  </span>
-                </div>
-                <div class="hv-detail-item">
-                  <span class="hv-detail-label">地点</span>
-                  <span>{{ selectedTask.location || '未填写' }}</span>
-                </div>
-                <div class="hv-detail-item">
-                  <span class="hv-detail-label">截止</span>
-                  <span v-if="selectedTask.deadline" :class="{ 'hv-meta--expired': isExpired(selectedTask.deadline) }">
-                    {{ formatFull(selectedTask.deadline!) }}
-                    <span v-if="isExpired(selectedTask.deadline)" class="badge badge-red" style="margin-left: 4px;">已过期</span>
-                  </span>
-                  <span v-else>未设置</span>
-                </div>
-                <div class="hv-detail-item">
-                  <span class="hv-detail-label">联系方式</span>
-                  <span>{{ selectedTask.contact_info || '仅站内沟通' }}</span>
-                </div>
-              </div>
-
-              <div v-if="!auth.isAuthenticated && selectedTask.status === 'open'" class="hv-drawer__actions">
-                <button class="btn btn-primary" @click="router.push('/login')"><i class="fa-solid fa-right-to-bracket"></i> 登录后接取任务</button>
-              </div>
-              <div v-else-if="canAccept || canConfirm || isPublisher || genderMismatch" class="hv-drawer__actions">
-                <button v-if="canAccept" class="btn btn-primary" @click="handleAcceptTask"><i class="fa-solid fa-hand-pointer"></i> 接取此任务</button>
-                <button v-if="canConfirm" class="btn btn-success" @click="handleConfirmTask"><i class="fa-solid fa-circle-check"></i> 确认完成</button>
-                <button v-if="canEditTask" class="btn btn-outline btn-sm" @click="openEditModal"><i class="fa-solid fa-pen-to-square"></i> 编辑</button>
-                <button v-if="canDeleteTask" class="btn btn-danger btn-sm" @click="handleDeleteTask"><i class="fa-solid fa-trash"></i> 删除任务</button>
-                <span v-if="deleteBlockedByAssignee" class="hv-delete-hint"><i class="fa-solid fa-lock"></i> 任务已被接取，接单者取消后方可删除</span>
-                <span v-if="genderMismatch" class="hv-delete-hint"><i class="fa-solid fa-ban"></i> 该任务限{{ selectedTask!.required_gender === 'male' ? '男生' : '女生' }}接取，您不满足要求</span>
-              </div>
-            </div>
-
-            <!-- Messages -->
-            <div class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-comment-dots"></i> 站内消息</h4>
-              <div v-if="isParticipant" class="hv-chat">
-                <div class="hv-chat__messages">
-                  <div v-for="m in taskMessages" :key="m.id" class="hv-chat__msg" :class="{ 'hv-chat__msg--mine': me && m.sender_id === me.id }">
-                    <span class="hv-chat__sender">{{ m.sender_display_name }}</span>
-                    <span class="hv-chat__text">{{ m.content }}</span>
-                  </div>
-                  <p v-if="taskMessages.length === 0" style="color: var(--c-text-muted); font-size: var(--text-sm); text-align: center; padding: 16px 0;">暂无消息</p>
-                  <div ref="messagesEnd"></div>
-                </div>
-                <form class="hv-chat__input" @submit.prevent="submitMessage">
-                  <input v-model="chatContent" class="form-input" placeholder="输入消息..." />
-                  <button class="btn btn-primary btn-sm" type="submit">发送</button>
-                </form>
-              </div>
-              <p v-else style="color: var(--c-text-muted); font-size: var(--text-sm);">仅任务参与者可查看和发送消息。</p>
-            </div>
-
-            <!-- State 1: Task open — show publisher historical reviews -->
-            <div v-if="selectedTask.status === 'open'" class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star"></i> 历史评价</h4>
-              <div class="hv-reviews">
-                <div v-for="r in publisherHistoryReviews" :key="r.id" class="hv-review">
-                  <div class="hv-review__header">
-                    <span class="hv-stars hv-stars--sm">
-                      <i v-for="(filled, idx) in starsArray(r.stars)" :key="idx" :class="filled ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
-                    </span>
-                    <span style="color: var(--c-text-muted); font-size: var(--text-xs);">来自 {{ r.reviewer_display_name }}</span>
-                  </div>
-                  <p v-if="r.comment" class="hv-review__comment">{{ r.comment }}</p>
-                </div>
-                <p v-if="publisherHistoryReviews.length === 0" style="color: var(--c-text-muted); font-size: var(--text-sm);">该发布者暂无历史评价</p>
-              </div>
-            </div>
-
-            <!-- State 2: Task accepted but not completed — show hint -->
-            <div v-else-if="selectedTask.status === 'in_progress' || selectedTask.status === 'under_review'" class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star-half-stroke"></i> 双向互评</h4>
-              <div class="hv-reviewed-hint hv-reviewed-hint--waiting">
-                <i class="fa-solid fa-clock"></i> 任务完成后可评价
-              </div>
-            </div>
-
-            <!-- State 3: Task completed — full mutual review -->
-            <div v-else-if="selectedTask.status === 'completed'" class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star-half-stroke"></i> 双向互评</h4>
-              <div class="hv-reviews">
-                <div v-for="r in taskReviews" :key="r.id" class="hv-review">
-                  <div class="hv-review__header">
-                    <span class="badge badge-default">{{ r.target_role === 'worker' ? '评价接单者' : '评价发布者' }}</span>
-                    <span class="hv-stars hv-stars--sm">
-                      <i v-for="(filled, idx) in starsArray(r.stars)" :key="idx" :class="filled ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
-                    </span>
-                    <span v-if="me && r.reviewer_id === me.id" class="hv-review__mine">我的评价</span>
-                  </div>
-                  <p v-if="r.comment" class="hv-review__comment">{{ r.comment }}</p>
-                </div>
-                <p v-if="taskReviews.length === 0 && !canReview" style="color: var(--c-text-muted); font-size: var(--text-sm);">暂无评价</p>
-              </div>
-
-              <div v-if="waitingForOtherReview" class="hv-reviewed-hint hv-reviewed-hint--waiting">
-                <i class="fa-solid fa-hourglass-half"></i> 您已评价，等待对方评价后双方评价互相可见
-              </div>
-              <div v-else-if="isParticipant && hasAlreadyReviewed && bothSidesReviewed" class="hv-reviewed-hint">
-                <i class="fa-solid fa-circle-check"></i> 互评已完成
-              </div>
-
-              <div v-if="canReview && !showReviewForm" style="margin-top: 10px;">
-                <button class="btn btn-primary btn-sm" @click="showReviewForm = true"><i class="fa-solid fa-pen-to-square"></i> 立即评价</button>
-              </div>
-              <div v-if="canReview && showReviewForm" class="hv-review-form">
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                  <span class="badge badge-default">{{ myReviewTargetRole === 'worker' ? '评价接单者' : '评价发布者' }}</span>
-                  <div class="hv-star-input">
-                    <button v-for="n in 5" :key="n" type="button" class="hv-star-btn" :class="{ active: n <= reviewForm.stars }" @click="reviewForm.stars = n">
-                      <i :class="n <= reviewForm.stars ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
-                    </button>
-                  </div>
-                </div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                  <input v-model="reviewForm.comment" class="form-input" placeholder="评价内容（选填）" />
-                  <button class="btn btn-primary btn-sm" @click="submitReview">提交</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Report -->
-            <div v-if="canReport" class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-solid fa-flag"></i> 举报对方</h4>
-              <input v-model="reportForm.reason" class="form-input" placeholder="问题描述（必填）" style="margin-bottom: 8px;" />
-              <textarea v-model="reportForm.evidence" class="form-textarea" style="min-height: 64px;" placeholder="证据说明（链接、截图描述等）"></textarea>
-              <button class="btn btn-outline btn-sm" style="margin-top: 6px;" @click="submitReport">提交举报</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <HomeTaskDetailDrawer
+    :task="selectedTask"
+    :is-authenticated="auth.isAuthenticated"
+    :me-id="me?.id ?? null"
+    :is-participant="isParticipant"
+    :is-publisher="isPublisher"
+    :can-accept="canAccept"
+    :gender-mismatch="genderMismatch"
+    :can-confirm="canConfirm"
+    :can-edit-task="canEditTask"
+    :can-delete-task="canDeleteTask"
+    :delete-blocked-by-assignee="deleteBlockedByAssignee"
+    :task-messages="taskMessages"
+    :task-reviews="taskReviews"
+    :publisher-history-reviews="publisherHistoryReviews"
+    :chat-content="chatContent"
+    :show-review-form="showReviewForm"
+    :review-form="reviewForm"
+    :my-review-target-role="myReviewTargetRole"
+    :has-already-reviewed="hasAlreadyReviewed"
+    :both-sides-reviewed="bothSidesReviewed"
+    :waiting-for-other-review="waitingForOtherReview"
+    :can-review="canReview"
+    :can-report="canReport"
+    :report-form="reportForm"
+    :status-of="statusOf"
+    :gender-label="genderLabel"
+    :is-expired="isExpired"
+    :format-full="formatFull"
+    @close="closeDrawer"
+    @login="router.push('/login')"
+    @accept-task="handleAcceptTask"
+    @confirm-task="handleConfirmTask"
+    @edit-task="openEditModal"
+    @delete-task="handleDeleteTask"
+    @update:chat-content="chatContent = $event"
+    @submit-message="submitMessage"
+    @update:show-review-form="showReviewForm = $event"
+    @submit-review="submitReview"
+    @submit-report="submitReport"
+  />
 </template>
 
 <style scoped>
-/* ===== Header ===== */
-.hv-header {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  height: 60px;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--c-border);
-}
-
-.hv-header__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.hv-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--c-accent);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.hv-header__title {
-  font-weight: 700;
-  font-size: var(--text-lg);
-  color: var(--c-text);
-}
-
-.hv-header__right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.hv-header__name {
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-}
-
-.hv-publish-btn {
-  border-radius: var(--radius-full);
-  padding: 6px 18px;
-}
-
-/* ===== Avatar ===== */
-.hv-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--c-accent-soft), var(--c-accent));
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.hv-avatar--lg {
-  width: 44px;
-  height: 44px;
-  font-size: 17px;
-}
-
-.hv-avatar--xl {
-  width: 72px;
-  height: 72px;
-  font-size: 28px;
-}
-
-.hv-avatar--male {
-  background: linear-gradient(135deg, #93c5fd, #3b82f6);
-}
-
-.hv-avatar--female {
-  background: linear-gradient(135deg, #f9a8d4, #ec4899);
-}
-
-.hv-avatar--img {
-  background: none;
-}
-
-.hv-avatar--img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* ===== User Menu ===== */
-.hv-user-menu-wrap {
-  position: relative;
-}
-
-.hv-user-trigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-full);
-  transition: background var(--dur-fast) var(--ease);
-}
-
-.hv-user-trigger:hover {
-  background: var(--c-border-light);
-}
-
-.hv-user-trigger__arrow {
-  font-size: 10px;
-  color: var(--c-text-muted);
-  transition: transform var(--dur-normal) var(--ease);
-}
-
-.hv-user-trigger__arrow--open {
-  transform: rotate(180deg);
-}
-
-.hv-user-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 180px;
-  background: #ffffff;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
-  z-index: 1000;
-  padding: 5px;
-  transform-origin: top right;
-}
-
-.hv-user-dropdown__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 14px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--c-text);
-  font-size: var(--text-base);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-
-.hv-user-dropdown__item i {
-  width: 16px;
-  text-align: center;
-  color: var(--c-text-muted);
-}
-
-.hv-user-dropdown__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
-}
-
-.hv-user-dropdown__item:hover i {
-  color: var(--c-accent);
-}
-
-.hv-user-dropdown__item--danger:hover {
-  background: var(--c-danger-light);
-  color: var(--c-danger);
-}
-
-.hv-user-dropdown__item--danger:hover i {
-  color: var(--c-danger);
-}
-
-.hv-user-dropdown__divider {
-  height: 1px;
-  background: var(--c-border-light);
-  margin: 4px 8px;
-}
-
-/* ===== Tabs ===== */
-.hv-tabs {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 4px;
-}
-
-.hv-tab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 20px;
-  border: none;
-  background: transparent;
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  border-radius: var(--radius-sm);
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-
-.hv-tab:hover {
-  color: var(--c-text);
-  background: var(--c-border-light);
-}
-
-.hv-tab--active {
-  color: var(--c-accent);
-  background: var(--c-accent-light);
-}
-
-/* ===== Pills (sub-tabs) ===== */
-.hv-settings-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--c-border-light);
-}
-
-.hv-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 18px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--c-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  transition: all var(--dur-fast) var(--ease);
-}
-
-.hv-pill:hover {
-  border-color: var(--c-text-muted);
-}
-
-.hv-pill--active {
-  background: var(--c-primary);
-  color: var(--c-text-inverse);
-  border-color: transparent;
-}
-
-/* ===== Main ===== */
 .hv-main {
   padding: 24px;
   max-width: 1200px;
   margin: 0 auto;
 }
 
-.hv-section__header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.hv-section__count {
-  font-size: var(--text-sm);
-  color: var(--c-text-muted);
-}
-
-.hv-sort-dropdown {
-  margin-left: auto;
-}
-
-/* ===== Loading ===== */
-.hv-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  height: calc(100vh - 60px);
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-}
-
-/* ===== Task Card Grid ===== */
-.hv-task-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.hv-task-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 22px;
-}
-
-.hv-task-card__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.hv-task-card__badges {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.hv-task-card__deadline {
-  font-size: var(--text-xs);
-  color: var(--c-text-muted);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.hv-task-card__deadline--expired {
-  color: var(--c-danger);
-  font-weight: 600;
-}
-
-.hv-task-card__title {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  margin: 2px 0 0;
-  line-height: 1.4;
-  transition: color 0.2s;
-}
-
-.hv-task-card:hover .hv-task-card__title {
-  color: var(--c-accent);
-}
-
-.hv-task-card__desc {
-  color: var(--c-text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin: 0;
-}
-
-.hv-task-card__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hv-task-card__tag {
-  background: var(--c-border-light);
-  color: var(--c-text-secondary);
-  padding: 3px 10px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--c-border);
-}
-
-.hv-task-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--c-border-light);
-}
-
-.hv-task-card__pub {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.hv-task-card__pub-label {
-  font-size: var(--text-xs);
-  color: var(--c-text-muted);
-}
-
-.hv-task-card__pub-name {
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.hv-task-card__pub-score {
-  display: none;
-}
-
-.hv-task-card__pub-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: var(--text-xs);
-  margin-top: 1px;
-}
-
-.hv-task-card__star {
-  color: #f5a623;
-  font-size: 11px;
-}
-
-.hv-task-card__rating-score {
-  font-weight: 600;
-  color: var(--c-text);
-}
-
-.hv-task-card__rating-count {
-  color: var(--c-text-muted);
-}
-
-.hv-task-card__price {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--c-accent);
-}
-
-/* ===== Worker Grid ===== */
-.hv-worker-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
-}
-
-.hv-worker-card__header {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  margin-bottom: 14px;
-}
-
-.hv-worker-card__info h4 {
-  margin: 0 0 2px;
-}
-
-.hv-worker-card__rating {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hv-worker-card__count {
-  font-size: var(--text-xs);
-  color: var(--c-text-muted);
-}
-
-.hv-worker-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.hv-worker-card__row {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-}
-
-.hv-worker-card__label {
-  color: var(--c-text-muted);
-  flex-shrink: 0;
-}
-
-.hv-worker-card__bio {
-  margin: 6px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--c-border-light);
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-  line-height: 1.55;
-}
-
-/* ===== Stars ===== */
-.hv-stars {
-  color: #f59e0b;
-  font-size: var(--text-sm);
-  letter-spacing: 1px;
-}
-
-.hv-stars--sm {
-  font-size: var(--text-xs);
-}
-
-.hv-star-input {
-  display: flex;
-  gap: 2px;
-}
-
-.hv-star-btn {
-  border: none;
-  background: transparent;
-  font-size: 22px;
-  color: var(--c-border);
-  padding: 0 2px;
-  transition: color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.hv-star-btn.active {
-  color: #f59e0b;
-}
-
-.hv-star-btn:hover {
-  transform: scale(1.2);
-}
-
-/* ===== My Tasks (vertical layout in drawer) ===== */
-.hv-my-tasks-vertical {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.hv-my-col h4 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.hv-record-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.hv-record {
-  padding: 14px 16px !important;
-}
-
-.hv-record__top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.hv-record__title {
-  font-weight: 600;
-  font-size: var(--text-base);
-}
-
-.hv-record__meta {
-  font-size: var(--text-sm);
-  color: var(--c-text-muted);
-  margin-top: 4px;
-}
-
-.hv-report-item {
-  padding: 14px 16px !important;
-}
-
-/* ===== Empty States ===== */
-.hv-empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--c-text-muted);
-}
-
-.hv-empty__icon {
-  display: block;
-  font-size: 44px;
-  margin-bottom: 14px;
-  color: var(--c-border);
-}
-
-.hv-empty-text {
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  padding: 20px 0;
-}
-
-/* ===== Form Card ===== */
-.hv-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.hv-hint {
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  margin: 0;
-}
-
-.hv-switch-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  font-size: var(--text-base);
-}
-
-.hv-switch {
-  appearance: none;
-  width: 40px;
-  height: 22px;
-  border-radius: 11px;
-  background: var(--c-border);
-  position: relative;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
-  flex-shrink: 0;
-}
-
-.hv-switch::after {
-  content: '';
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  top: 2px;
-  left: 2px;
-  transition: transform var(--dur-fast) var(--ease);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-}
-
-.hv-switch:checked {
-  background: var(--c-accent);
-}
-
-.hv-switch:checked::after {
-  transform: translateX(18px);
-}
-
-/* ===== Avatar Section ===== */
-.hv-avatar-section {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--c-border-light);
-}
-
-.hv-avatar-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.hv-avatar-upload-btn {
-  cursor: pointer;
-}
-
-/* ===== Toast ===== */
-.hv-toast {
-  position: fixed;
-  top: 20px;
-  right: 24px;
-  z-index: 200;
-  padding: 12px 22px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  box-shadow: var(--shadow-lg);
-  cursor: pointer;
-  max-width: 420px;
-}
-
-.hv-toast--info { background: var(--c-primary); color: var(--c-text-inverse); }
-.hv-toast--success { background: var(--c-success); color: var(--c-text-inverse); }
-.hv-toast--error { background: var(--c-danger); color: var(--c-text-inverse); }
-
-.toast-enter-active { transition: all var(--dur-normal) var(--ease); }
-.toast-leave-active { transition: all var(--dur-fast) var(--ease); }
-.toast-enter-from { opacity: 0; transform: translateX(40px); }
-.toast-leave-to { opacity: 0; transform: translateY(-12px); }
-
-/* ===== Modal ===== */
-.hv-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: rgba(15, 23, 42, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hv-modal {
-  background: var(--c-surface);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.hv-modal--md {
-  width: min(640px, 92vw);
-}
-
-.hv-modal__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--c-border);
-  flex-shrink: 0;
-}
-
-.hv-modal__header h3 { margin: 0; }
-
-.hv-modal__body {
-  padding: 20px 24px 24px;
-  overflow-y: auto;
-}
-
-/* ===== Drawer ===== */
-.hv-drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: rgba(15, 23, 42, 0.35);
-  display: flex;
-  justify-content: flex-end;
-}
-
-.hv-drawer {
-  width: min(540px, 92vw);
-  height: 100vh;
-  background: var(--c-surface);
-  display: flex;
-  flex-direction: column;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
-}
-
-.hv-drawer__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--c-border);
-  flex-shrink: 0;
-}
-
-.hv-drawer__header h3 { margin: 0; }
-
-.hv-drawer__body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0;
-}
-
-.hv-drawer__section {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--c-border-light);
-}
-
-.hv-drawer__section:last-child { border-bottom: none; }
-
-.hv-drawer__subtitle {
-  margin: 0 0 12px;
-  font-size: var(--text-base);
-  color: var(--c-text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.hv-drawer__actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.hv-detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.hv-detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--text-sm);
-}
-
-.hv-detail-label {
-  color: var(--c-text-muted);
-  font-size: var(--text-xs);
-}
-
-/* ===== Chat ===== */
-.hv-chat__messages {
-  max-height: 220px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 4px 0;
-}
-
-.hv-chat__msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 85%;
-}
-
-.hv-chat__msg--mine {
-  align-self: flex-end;
-  align-items: flex-end;
-}
-
-.hv-chat__sender {
-  font-size: var(--text-xs);
-  color: var(--c-text-muted);
-}
-
-.hv-chat__text {
-  display: inline-block;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: var(--c-border-light);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.hv-chat__msg--mine .hv-chat__text {
-  background: var(--c-accent);
-  color: #fff;
-}
-
-.hv-chat__input {
-  display: flex;
-  gap: 8px;
-}
-
-/* ===== Reviews ===== */
-.hv-reviews {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.hv-review {
-  padding: 10px 14px;
-  background: var(--c-border-light);
-  border-radius: var(--radius-md);
-}
-
-.hv-review__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hv-review__comment {
-  margin: 6px 0 0;
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-}
-
-.hv-review-form {
-  padding: 12px 14px;
-  background: var(--c-border-light);
-  border-radius: var(--radius-md);
-}
-
-.hv-review__mine {
-  font-size: var(--text-xs);
-  color: var(--c-accent);
-  margin-left: auto;
-}
-
-.hv-reviewed-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  color: var(--c-success);
-  padding: 8px 0;
-}
-
-.hv-reviewed-hint--waiting {
-  color: var(--c-text-muted);
-}
-
-.hv-delete-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--c-text-muted);
-}
-
-/* ===== Hall Layout ===== */
-.hv-hall-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.hv-search-wrap {
-  flex: 1;
-  max-width: 320px;
-  position: relative;
-}
-
-.hv-search-icon {
-  position: absolute;
-  left: 13px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  pointer-events: none;
-}
-
-.hv-search-input {
-  width: 100%;
-  padding: 9px 13px 9px 38px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-full);
-  background: var(--c-surface);
-  color: var(--c-text);
-  font-size: var(--text-base);
-  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
-}
-
-.hv-search-input:focus {
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-soft);
-}
-
-.hv-search-input::placeholder {
-  color: var(--c-text-muted);
-}
-
-/* Desktop sort dropdown */
-.hv-sort-desktop {
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-/* Mobile sort button (hidden on desktop) */
-.hv-sort-mobile-wrap {
-  display: none;
-  position: relative;
-}
-
-.hv-sort-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1.5px solid var(--c-border);
-  background: var(--c-surface);
-  color: var(--c-text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  transition: all var(--dur-fast) var(--ease);
-  flex-shrink: 0;
-}
-
-.hv-sort-btn:hover,
-.hv-sort-btn--active {
-  border-color: var(--c-accent);
-  color: var(--c-accent);
-  background: var(--c-accent-light);
-}
-
-.hv-sort-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 170px;
-  background: #ffffff;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
-  z-index: 1000;
-  padding: 5px;
-  transform-origin: top right;
-}
-
-.hv-sort-menu__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--c-text);
-  font-size: var(--text-base);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-
-.hv-sort-menu__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
-}
-
-.hv-sort-menu__item--active {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
-  font-weight: 500;
-}
-
-/* Category chips (mobile only, hidden on desktop) */
-.hv-category-chips {
-  display: none;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  gap: 8px;
-  padding: 10px 0 2px;
-  scrollbar-width: none;
-}
-
-.hv-category-chips::-webkit-scrollbar {
-  display: none;
-}
-
-.hv-chip {
-  flex-shrink: 0;
-  padding: 6px 16px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--c-border);
-  background: var(--c-surface);
-  color: var(--c-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  font-family: var(--font-sans);
-  white-space: nowrap;
-  transition: all var(--dur-fast) var(--ease);
-}
-
-.hv-chip:hover {
-  border-color: var(--c-text-muted);
-}
-
-.hv-chip--active {
-  background: var(--c-accent);
-  color: var(--c-text-inverse);
-  border-color: var(--c-accent);
-}
-
-/* Hall layout: sidebar + content */
-.hv-hall-layout {
-  display: flex;
-  gap: 24px;
-}
-
-.hv-hall-content {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Sidebar (desktop only) */
-.hv-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 160px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 84px;
-  align-self: flex-start;
-}
-
-.hv-sidebar__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--c-text-secondary);
-  font-size: var(--text-base);
-  font-weight: 500;
-  font-family: var(--font-sans);
-  text-align: left;
-  transition: all var(--dur-fast) var(--ease);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.hv-sidebar__item:hover {
-  background: var(--c-border-light);
-  color: var(--c-text);
-}
-
-.hv-sidebar__item--active {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
-  font-weight: 600;
-}
-
-.hv-sidebar__count {
-  color: var(--c-text-muted);
-  font-weight: 400;
-  font-size: var(--text-xs);
-  margin-left: auto;
-}
-
-.hv-sidebar__item--active .hv-sidebar__count {
-  color: var(--c-accent);
-  opacity: 0.7;
-}
-
-/* ===== Expired ===== */
-.hv-meta--expired {
-  color: var(--c-danger) !important;
-}
-
-.hv-expired-badge {
-  font-size: 10px;
-  padding: 1px 5px;
-  vertical-align: middle;
-  margin-left: 3px;
-}
-
-/* ===== Gender Badge ===== */
-.badge-pink {
-  background: #fce7f3;
-  color: #be185d;
-}
-
-/* ===== Sheet Handle (hidden on desktop) ===== */
-.hv-sheet-handle {
-  display: none;
-  justify-content: center;
-  padding: 10px 0 2px;
-  cursor: grab;
-  touch-action: none;
-  flex-shrink: 0;
-}
-
-.hv-sheet-handle__bar {
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--c-border);
-  transition: background var(--dur-fast) var(--ease);
-}
-
-.hv-sheet-handle:active .hv-sheet-handle__bar {
-  background: var(--c-text-muted);
-}
-
-/* ===== Transitions ===== */
-.drawer-enter-active { transition: all var(--dur-slow) var(--ease); }
-.drawer-leave-active { transition: all var(--dur-normal) var(--ease); }
-.drawer-enter-active .hv-drawer { transition: transform var(--dur-slow) var(--ease); }
-.drawer-leave-active .hv-drawer { transition: transform var(--dur-normal) var(--ease); }
-.drawer-enter-from,
-.drawer-leave-to { opacity: 0; }
-.drawer-enter-from .hv-drawer { transform: translateX(100%); }
-.drawer-leave-to .hv-drawer { transform: translateX(100%); }
-
-.modal-enter-active { transition: all var(--dur-normal) var(--ease); }
-.modal-leave-active { transition: all var(--dur-fast) var(--ease); }
-.modal-enter-from { opacity: 0; }
-.modal-leave-to { opacity: 0; }
-.modal-enter-from .hv-modal { transform: scale(0.95) translateY(10px); }
-.modal-leave-to .hv-modal { transform: scale(0.97) translateY(5px); }
-
-.app-dropdown-enter-active {
-  transition: opacity var(--dur-normal) var(--ease), transform var(--dur-normal) var(--ease);
-}
-.app-dropdown-leave-active {
-  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
-}
-.app-dropdown-enter-from {
-  opacity: 0;
-  transform: scaleY(0.88) translateY(-6px);
-}
-.app-dropdown-leave-to {
-  opacity: 0;
-  transform: scaleY(0.94) translateY(-3px);
-}
-
-/* ===== Responsive ===== */
 @media (max-width: 900px) {
-  .hv-header {
-    padding: 0 14px;
-  }
-  .hv-header__title { display: none; }
-  .hv-header__name { display: none; }
-  .hv-tabs {
-    position: static;
-    transform: none;
-  }
-  .hv-main { padding: 16px; }
-  .hv-worker-grid { grid-template-columns: 1fr; }
-  .hv-detail-grid { grid-template-columns: 1fr; }
-
-  /* Hall: mobile layout */
-  .hv-sidebar { display: none; }
-  .hv-sort-desktop { display: none !important; }
-  .hv-sort-mobile-wrap { display: block; }
-
-  .hv-search-wrap { max-width: none; }
-
-  .hv-category-chips {
-    display: flex;
-    position: sticky;
-    top: 60px;
-    z-index: 30;
-    background: var(--c-bg);
-    margin: 0 -16px;
-    padding: 6px 16px;
-    border-bottom: 1px solid var(--c-border-light);
-  }
-
-  .hv-hall-layout {
-    gap: 0;
-  }
-
-  /* ---- Mobile: 2-column task grid ---- */
-  .hv-task-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .hv-task-card {
-    padding: 12px;
-    gap: 6px;
-  }
-
-  .hv-task-card__top {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-  }
-
-  .hv-task-card__deadline {
-    font-size: 10px;
-  }
-
-  .hv-task-card__title {
-    font-size: var(--text-sm);
-    line-height: 1.35;
-  }
-
-  .hv-task-card__desc {
-    font-size: var(--text-xs);
-    -webkit-line-clamp: 1;
-  }
-
-  .hv-task-card__tags {
-    display: none;
-  }
-
-  .hv-task-card__footer {
-    padding-top: 8px;
-  }
-
-  .hv-task-card__pub-name {
-    font-size: var(--text-xs);
-  }
-
-  .hv-task-card__pub-score {
-    display: inline;
-    color: var(--c-text-muted);
-    font-weight: 400;
-  }
-
-  .hv-task-card__pub-rating {
-    display: none;
-  }
-
-  .hv-task-card__price {
-    font-size: var(--text-lg);
-  }
-
-  /* ---- Mobile: Task detail as bottom sheet ---- */
-  .hv-task-detail-overlay {
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: stretch;
-  }
-
-  .hv-task-detail-drawer {
-    width: 100% !important;
-    height: auto !important;
-    max-height: 92vh;
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1), 0 80px 0 0 var(--c-surface);
-    overflow: hidden;
-  }
-
-  .hv-sheet-handle {
-    display: flex;
-  }
-
-  .drawer-enter-from .hv-task-detail-drawer,
-  .drawer-leave-to .hv-task-detail-drawer {
-    transform: translateY(100%);
+  .hv-main {
+    padding: 16px;
   }
 }
 </style>
