@@ -1,21 +1,41 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { fetchRegistrationStatus } from '../api/auth'
+import { fetchRegistrationStatus, register } from '../api/auth'
 import { createAppeal, fetchBanContext } from '../api/moderation'
 import type { BanRecord } from '../types/api'
 import { useAuthStore } from '../stores/auth'
 import { extractError } from '../utils/error'
-import { formatFull, formatShort } from '../utils/time'
+import { formatBanUntil, formatShort } from '../utils/time'
 
 const router = useRouter()
 const auth = useAuthStore()
 
+const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
+
+const isLogin = ref(true)
+const showPassword = ref(false)
+
 const account = ref('')
 const password = ref('')
-const errorMsg = ref('')
+const regName = ref('')
+const regAccount = ref('')
+const regPassword = ref('')
+const confirmPassword = ref('')
+const showRegPassword = ref(false)
+
+const toast = ref<{ text: string; type: 'error' | 'success' } | null>(null)
+let toastTimer = 0
+function showToast(text: string, type: 'error' | 'success' = 'error', duration = 3000) {
+  clearTimeout(toastTimer)
+  toast.value = { text, type }
+  if (duration > 0) {
+    toastTimer = window.setTimeout(() => { toast.value = null }, duration)
+  }
+}
 const loading = ref(false)
+
 const registrationEnabled = ref(false)
 const registrationLoaded = ref(false)
 
@@ -30,8 +50,16 @@ const appealEvidence = ref('')
 const appealLoading = ref(false)
 const appealMsg = ref<{ text: string; type: 'success' | 'error' } | null>(null)
 
-async function submit() {
-  errorMsg.value = ''
+function toggleForm() {
+  isLogin.value = !isLogin.value
+  showPassword.value = false
+  showRegPassword.value = false
+  toast.value = null
+  clearTimeout(toastTimer)
+}
+
+async function submitLogin() {
+  toast.value = null
   loading.value = true
   try {
     const res = await auth.login(account.value, password.value)
@@ -47,13 +75,46 @@ async function submit() {
       showAppeal.value = true
       loadBanContext()
     } else {
-      errorMsg.value = extractError(error, '登录失败，请稍后重试')
+      showToast(extractError(error, '登录失败，请稍后重试'))
     }
   } finally {
     loading.value = false
   }
 }
 
+async function submitRegister() {
+  toast.value = null
+
+  if (!registrationEnabled.value) return
+
+  if (regPassword.value.length < 6) {
+    showToast('密码至少 6 位')
+    return
+  }
+  if (regPassword.value !== confirmPassword.value) {
+    showToast('两次输入的密码不一致')
+    return
+  }
+
+  loading.value = true
+  try {
+    await register({ account: regAccount.value, password: regPassword.value, name: regName.value })
+    showToast('注册成功！', 'success')
+    regName.value = ''
+    regAccount.value = ''
+    regPassword.value = ''
+    confirmPassword.value = ''
+    setTimeout(() => {
+      isLogin.value = true
+      toast.value = null
+    }, 1200)
+  } catch (error: any) {
+    showToast(extractError(error, '注册失败，请稍后重试'))
+    loadRegistrationStatus()
+  } finally {
+    loading.value = false
+  }
+}
 
 async function loadBanContext() {
   banContextLoading.value = true
@@ -66,7 +127,7 @@ async function loadBanContext() {
     banCount.value = ctx.ban_count
     banRecords.value = ctx.records
   } catch {
-    /* 403 info already shown; context is supplementary */
+    /* supplementary */
   } finally {
     banContextLoading.value = false
   }
@@ -96,12 +157,7 @@ async function submitAppeal() {
   }
 }
 
-function goRegister() {
-  if (!registrationEnabled.value) return
-  router.push('/register')
-}
-
-onMounted(async () => {
+async function loadRegistrationStatus() {
   try {
     const status = await fetchRegistrationStatus()
     registrationEnabled.value = status.registration_enabled
@@ -110,126 +166,330 @@ onMounted(async () => {
   } finally {
     registrationLoaded.value = true
   }
+}
+
+onMounted(loadRegistrationStatus)
+
+/* ---- Polygon spinner (canvas) ---- */
+const spinnerCanvas = ref<HTMLCanvasElement | null>(null)
+let spinnerAnimId = 0
+
+function startSpinner() {
+  const canvas = spinnerCanvas.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const size = 56
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = size * dpr
+  canvas.height = size * dpr
+  ctx.scale(dpr, dpr)
+
+  let rotation = 0
+  let points = 3
+  let direction = 1
+
+  const outerRadius = 23
+  const innerRadiusRatio = 0.75
+
+  function drawStar(cx: number, cy: number, numPoints: number, radius: number, innerRatio: number, rot: number) {
+    const innerRadius = radius * innerRatio
+    const step = Math.PI / numPoints
+    ctx!.beginPath()
+    for (let i = 0; i < 2 * Math.ceil(numPoints); i++) {
+      const r = (i % 2 === 0) ? radius : innerRadius
+      const theta = i * step + rot
+      const x = cx + r * Math.cos(theta)
+      const y = cy + r * Math.sin(theta)
+      if (i === 0) ctx!.moveTo(x, y)
+      else ctx!.lineTo(x, y)
+    }
+    ctx!.closePath()
+  }
+
+  function animate() {
+    ctx!.clearRect(0, 0, size, size)
+
+    ctx!.fillStyle = '#1c1c1c'
+    ctx!.strokeStyle = '#1c1c1c'
+    ctx!.lineWidth = 4
+    ctx!.lineJoin = 'round'
+
+    const shapeProgress = (points - 3) / 6
+    const currentSpeed = 0.01 + 0.11 * Math.pow(shapeProgress, 2)
+    rotation += currentSpeed
+
+    drawStar(size / 2, size / 2, points, outerRadius, innerRadiusRatio, rotation - Math.PI / 2)
+    ctx!.fill()
+    ctx!.stroke()
+
+    points += 0.02 * direction
+    if (points >= 9) { points = 9; direction = -1 }
+    else if (points <= 3) { points = 3; direction = 1 }
+
+    spinnerAnimId = requestAnimationFrame(animate)
+  }
+
+  animate()
+}
+
+function stopSpinner() {
+  if (spinnerAnimId) {
+    cancelAnimationFrame(spinnerAnimId)
+    spinnerAnimId = 0
+  }
+}
+
+watch(loading, (val) => {
+  if (val) nextTick(startSpinner)
+  else stopSpinner()
+})
+
+onUnmounted(() => {
+  stopSpinner()
+  clearTimeout(toastTimer)
 })
 </script>
 
 <template>
-  <div class="lv-page">
-    <div class="lv-card card">
-      <div class="lv-brand">
-        <div class="lv-logo">T</div>
-        <h1>校园任务平台</h1>
+  <div class="av-page">
+    <!-- Background decorations -->
+    <div class="av-bg">
+      <div class="av-bg__orb av-bg__orb--tl"></div>
+      <div class="av-bg__orb av-bg__orb--br"></div>
+      <div class="av-bg__orb av-bg__orb--tr"></div>
+    </div>
+
+    <!-- Main card -->
+    <div class="av-card">
+      <!-- Header -->
+      <div class="av-header">
+        <span class="av-brand">{{ appTitle }}</span>
+        <div class="av-header__right">
+          <button
+            v-if="registrationLoaded && registrationEnabled"
+            class="av-toggle"
+            @click="toggleForm"
+          >
+            {{ isLogin ? '注册账号' : '直接登录' }}
+          </button>
+        </div>
       </div>
-      <p class="lv-subtitle">登录你的账号以继续使用平台服务。</p>
 
-      <form @submit.prevent="submit" class="lv-form">
-        <div class="form-group">
-          <label class="form-label">账号</label>
-          <input v-model="account" class="form-input" placeholder="请输入账号" required />
+      <!-- Title with inline toast -->
+      <div class="av-title-wrap">
+        <div class="av-title-row" :class="isLogin ? 'av-title-row--active' : 'av-title-row--up'">
+          <h1 class="av-title">登录</h1>
+          <Transition name="av-toast">
+            <span v-if="toast && isLogin" class="av-toast" :class="'av-toast--' + toast.type">{{ toast.text }}</span>
+          </Transition>
         </div>
-        <div class="form-group">
-          <label class="form-label">密码</label>
-          <input v-model="password" class="form-input" type="password" placeholder="请输入密码" required />
+        <div class="av-title-row" :class="!isLogin ? 'av-title-row--active' : 'av-title-row--down'">
+          <h1 class="av-title">创建账号</h1>
+          <Transition name="av-toast">
+            <span v-if="toast && !isLogin" class="av-toast" :class="'av-toast--' + toast.type">{{ toast.text }}</span>
+          </Transition>
         </div>
+      </div>
 
-        <button class="btn btn-primary btn-block" type="submit" :disabled="loading">
-          <span v-if="loading" class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-          {{ loading ? '登录中...' : '登录' }}
+      <!-- Form area -->
+      <div
+        class="av-form-container"
+        :class="isLogin ? 'av-form-container--login' : 'av-form-container--register'"
+      >
+        <!-- Login form -->
+        <form
+          class="av-form"
+          :class="isLogin ? 'av-form--active' : 'av-form--left'"
+          @submit.prevent="submitLogin"
+        >
+          <div class="av-input-group">
+            <i class="fa-solid fa-user av-input-icon"></i>
+            <input
+              v-model="account"
+              type="text"
+              placeholder="账号"
+              class="av-input"
+              required
+            />
+          </div>
+          <div class="av-input-group">
+            <i class="fa-solid fa-key av-input-icon"></i>
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="密码"
+              class="av-input av-input--pw"
+              required
+            />
+            <button
+              type="button"
+              class="av-eye-btn"
+              @click.prevent="showPassword = !showPassword"
+            >
+              <i :class="showPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+            </button>
+          </div>
+        </form>
+
+        <!-- Register form -->
+        <form
+          class="av-form"
+          :class="!isLogin ? 'av-form--active' : 'av-form--right'"
+          @submit.prevent="submitRegister"
+        >
+          <div class="av-input-group">
+            <i class="fa-solid fa-id-card av-input-icon"></i>
+            <input
+              v-model="regName"
+              type="text"
+              placeholder="请输入真实姓名"
+              class="av-input"
+              required
+            />
+          </div>
+          <div class="av-input-group">
+            <i class="fa-solid fa-user av-input-icon"></i>
+            <input
+              v-model="regAccount"
+              type="text"
+              placeholder="设置登录账号"
+              class="av-input"
+              required
+            />
+          </div>
+          <div class="av-input-group">
+            <i class="fa-solid fa-key av-input-icon"></i>
+            <input
+              v-model="regPassword"
+              :type="showRegPassword ? 'text' : 'password'"
+              placeholder="设置密码（至少6位）"
+              class="av-input av-input--pw"
+              minlength="6"
+              required
+            />
+            <button
+              type="button"
+              class="av-eye-btn"
+              @click.prevent="showRegPassword = !showRegPassword"
+            >
+              <i :class="showRegPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+            </button>
+          </div>
+          <div class="av-input-group">
+            <i class="fa-solid fa-lock av-input-icon"></i>
+            <input
+              v-model="confirmPassword"
+              type="password"
+              placeholder="确认密码"
+              class="av-input"
+              minlength="6"
+              required
+            />
+          </div>
+        </form>
+      </div>
+
+      <!-- Footer -->
+      <div class="av-footer">
+        <div class="av-footer__text">
+          <span class="av-footer__hint">请安全浏览！</span>
+          <button class="av-browse-link" @click="router.push('/')">随便看看 →</button>
+        </div>
+        <button
+          class="av-submit-btn"
+          :class="{ 'av-submit-btn--loading': loading }"
+          :disabled="loading"
+          @click="isLogin ? submitLogin() : submitRegister()"
+        >
+          <canvas ref="spinnerCanvas" class="av-submit-btn__canvas"></canvas>
+          <i class="fa-solid fa-arrow-right"></i>
         </button>
-
-        <button class="btn btn-outline btn-block" type="button" :disabled="loading || !registrationEnabled" @click="goRegister">
-          {{ registrationLoaded ? (registrationEnabled ? '注册新账号' : '注册已关闭') : '加载中...' }}
-        </button>
-      </form>
-
-      <Transition name="slide-fade">
-        <p v-if="errorMsg" class="lv-error">{{ errorMsg }}</p>
-      </Transition>
-
-      <p class="lv-footer">管理员账号从后端配置读取</p>
+      </div>
     </div>
 
     <!-- Appeal Modal -->
-    <Transition name="slide-fade">
-      <div v-if="showAppeal" class="lv-appeal-overlay" @mousedown.self="showAppeal = false">
-        <div class="lv-appeal-card card">
-          <div class="lv-appeal-header">
-            <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> 账号已被封禁</h3>
-            <button class="btn btn-ghost btn-sm" @click="showAppeal = false"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-
-          <div class="lv-appeal-meta">
-            <div class="lv-appeal-meta__item">
-              <i class="fa-solid fa-clock"></i>
-              <span class="lv-appeal-meta__label">解封时间</span>
-              <span class="lv-appeal-meta__value">{{ banUntil ? formatFull(banUntil) : '永久封禁' }}</span>
+    <Transition name="av-overlay">
+      <div v-if="showAppeal" class="av-appeal-overlay" @mousedown.self="showAppeal = false">
+        <div class="av-appeal-card">
+          <div class="av-appeal-card__inner">
+            <div class="av-appeal-header">
+              <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> 账号已被封禁</h3>
+              <button class="av-appeal-close" @click="showAppeal = false"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="lv-appeal-meta__item">
-              <i class="fa-solid fa-ban"></i>
-              <span class="lv-appeal-meta__label">累计封禁</span>
-              <span class="lv-appeal-meta__value">{{ banCount }} 次</span>
+
+            <div class="av-appeal-meta">
+              <div class="av-appeal-meta__item">
+                <i class="fa-solid fa-clock"></i>
+                <span class="av-appeal-meta__label">解封时间</span>
+                <span class="av-appeal-meta__value">{{ banUntil ? formatBanUntil(banUntil) : '永久封禁' }}</span>
+              </div>
+              <div class="av-appeal-meta__item">
+                <i class="fa-solid fa-ban"></i>
+                <span class="av-appeal-meta__label">累计封禁</span>
+                <span class="av-appeal-meta__value">{{ banCount }} 次</span>
+              </div>
             </div>
-          </div>
 
-          <div class="lv-appeal-section-title">
-            <i class="fa-solid fa-file-lines"></i> 封禁原因
-          </div>
+            <div class="av-appeal-section-title">
+              <i class="fa-solid fa-file-lines"></i> 封禁原因
+            </div>
 
-          <div v-if="banContextLoading" class="lv-appeal-loading">
-            <span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            加载中...
-          </div>
+            <div v-if="banContextLoading" class="av-appeal-loading">
+              <span class="av-submit-btn__spinner" style="border-top-color: #1f2937;"></span>
+              加载中...
+            </div>
 
-          <div v-else-if="banRecords.length === 0" class="lv-appeal-empty">
-            暂无详细记录
-          </div>
+            <div v-else-if="banRecords.length === 0" class="av-appeal-empty">
+              暂无详细记录
+            </div>
 
-          <div v-else class="lv-appeal-table-wrap">
-            <table class="lv-appeal-table">
-              <thead>
-                <tr>
-                  <th>来源</th>
-                  <th>原因</th>
-                  <th>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(rec, i) in banRecords" :key="i">
-                  <td>
-                    <span v-if="rec.source === 'report'" class="lv-badge lv-badge--report">
-                      用户举报
-                    </span>
-                    <span v-else class="lv-badge lv-badge--admin">
-                      管理员
-                    </span>
-                  </td>
-                  <td>{{ rec.reason }}</td>
-                  <td class="lv-appeal-time">{{ formatShort(rec.created_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+            <div v-else class="av-appeal-table-wrap">
+              <div class="av-appeal-table-scroll">
+                <table class="av-appeal-table">
+                  <thead>
+                    <tr>
+                      <th>来源</th>
+                      <th>原因</th>
+                      <th>时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(rec, i) in banRecords" :key="i">
+                      <td>
+                        <span v-if="rec.source === 'report'" class="av-badge av-badge--report">用户举报</span>
+                        <span v-else class="av-badge av-badge--admin">管理员</span>
+                      </td>
+                      <td>{{ rec.reason }}</td>
+                      <td class="av-appeal-time">{{ formatShort(rec.created_at) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-          <div class="lv-appeal-section-title" style="margin-top: 16px;">
-            <i class="fa-solid fa-paper-plane"></i> 提交申诉
-          </div>
-          <div class="form-group">
-            <label class="form-label">申诉理由</label>
-            <input v-model="appealReason" class="form-input" placeholder="请描述你认为封禁不合理的原因（至少5字）" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">证据说明</label>
-            <textarea v-model="appealEvidence" class="form-textarea" style="min-height: 64px;" placeholder="提供相关证据（链接、截图描述等，至少5字）"></textarea>
-          </div>
-          <button class="btn btn-primary btn-block" style="margin-top: 12px;" :disabled="appealLoading" @click="submitAppeal">
-            {{ appealLoading ? '提交中...' : '提交申诉' }}
-          </button>
+            <div class="av-appeal-section-title" style="margin-top: 16px;">
+              <i class="fa-solid fa-paper-plane"></i> 提交申诉
+            </div>
+            <div class="av-appeal-form-group">
+              <label class="av-appeal-label">申诉理由</label>
+              <input v-model="appealReason" class="av-appeal-input" placeholder="请描述你认为封禁不合理的原因（至少5字）" />
+            </div>
+            <div class="av-appeal-form-group">
+              <label class="av-appeal-label">证据说明</label>
+              <textarea v-model="appealEvidence" class="av-appeal-input" style="min-height: 80px; resize: vertical;" placeholder="提供相关证据（链接、截图描述等，至少5字）"></textarea>
+            </div>
+            <button class="av-appeal-btn" style="margin-top: 12px;" :disabled="appealLoading" @click="submitAppeal">
+              {{ appealLoading ? '提交中...' : '提交申诉' }}
+            </button>
 
-          <Transition name="slide-fade">
-            <p v-if="appealMsg" class="lv-appeal-msg" :class="appealMsg.type === 'success' ? 'lv-appeal-msg--success' : 'lv-appeal-msg--error'">
-              {{ appealMsg.text }}
-            </p>
-          </Transition>
+            <Transition name="av-msg">
+              <p v-if="appealMsg" class="av-msg" :class="appealMsg.type === 'success' ? 'av-msg--success' : 'av-msg--error'" style="margin-top: 12px;">
+                {{ appealMsg.text }}
+              </p>
+            </Transition>
+          </div>
         </div>
       </div>
     </Transition>
@@ -237,242 +497,692 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.lv-page {
+/* ---- Page & Background ---- */
+.av-page {
   min-height: 100vh;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(145deg, #f8fafc 0%, #eef2ff 50%, #f0f9ff 100%);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  background: #f3e7df;
 }
 
-.lv-card {
+.av-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.av-bg__orb {
+  position: absolute;
+  border-radius: 50%;
+}
+.av-bg__orb--tl {
+  top: -15%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: rgba(255, 255, 255, 0.6);
+  filter: blur(100px);
+  opacity: 0.8;
+  mix-blend-mode: overlay;
+}
+.av-bg__orb--br {
+  bottom: -10%;
+  right: -5%;
+  width: 60vw;
+  height: 60vw;
+  background: linear-gradient(to top left, rgba(240, 144, 80, 0.4), transparent);
+  filter: blur(120px);
+}
+.av-bg__orb--tr {
+  top: 20%;
+  right: 15%;
+  width: 20vw;
+  height: 20vw;
+  background: rgba(255, 255, 255, 0.5);
+  filter: blur(60px);
+}
+
+/* ---- Card ---- */
+.av-card {
+  position: relative;
+  z-index: 10;
   width: 100%;
-  max-width: 420px;
-  padding: 36px 32px;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid rgba(226, 232, 240, 0.6);
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.05);
+  border-radius: 40px;
+  padding: 32px 36px;
+  transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.lv-brand {
+/* ---- Header ---- */
+.av-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 36px;
+}
+.av-brand {
+  color: #6b7280;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  font-size: 13px;
+}
+.av-header__right {
+  min-width: 60px;
+  text-align: right;
+}
+.av-toggle {
+  background: none;
+  border: none;
+  color: #1f2937;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+}
+.av-toggle:hover {
+  color: #000;
+}
+
+/* ---- Title ---- */
+.av-title-wrap {
+  position: relative;
+  height: 48px;
+  margin-bottom: 28px;
+}
+.av-title-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 6px;
+  transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
-.lv-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--c-accent);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 20px;
+.av-title-row--active {
+  opacity: 1;
+  transform: translateY(0);
+}
+.av-title-row--up {
+  opacity: 0;
+  transform: translateY(-16px);
+  pointer-events: none;
+}
+.av-title-row--down {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+.av-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
   flex-shrink: 0;
 }
 
-.lv-brand h1 {
-  font-size: var(--text-2xl);
-  margin: 0;
+/* ---- Toast (inline next to title) ---- */
+.av-toast {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.av-toast--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+.av-toast--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+.av-toast-enter-active,
+.av-toast-leave-active {
+  transition: all 0.3s ease;
+}
+.av-toast-enter-from,
+.av-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
 }
 
-.lv-subtitle {
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  margin: 0 0 24px;
+/* ---- Form Container ---- */
+.av-form-container {
+  position: relative;
+  transition: height 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.av-form-container--login {
+  height: 120px;
+}
+.av-form-container--register {
+  height: 232px;
 }
 
-.lv-form {
+.av-form {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.av-form--active {
+  transform: translateX(0);
+  opacity: 1;
+}
+.av-form--left {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.av-form--right {
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
-.lv-error {
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  background: var(--c-danger-light);
-  color: var(--c-danger);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+/* ---- Input ---- */
+.av-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  padding: 0 20px;
+  height: 50px;
+  box-shadow: inset 0 2px 10px rgba(255, 255, 255, 0.3);
+  transition: background 0.2s;
 }
-
-.lv-footer {
-  margin: 20px 0 0;
-  color: var(--c-text-muted);
-  font-size: var(--text-xs);
+.av-input-group:hover,
+.av-input-group:focus-within {
+  background: rgba(255, 255, 255, 0.6);
+}
+.av-input-icon {
+  color: #6b7280;
+  font-size: 14px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  width: 16px;
   text-align: center;
+}
+.av-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+.av-input::placeholder {
+  color: #6b7280;
+}
+.av-input--pw {
+  padding-right: 36px;
+}
+.av-eye-btn {
+  position: absolute;
+  right: 16px;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+  font-size: 14px;
+}
+.av-eye-btn:hover {
+  color: #374151;
+}
+
+/* ---- Messages ---- */
+.av-msg {
+  margin-top: 12px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.av-msg--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+.av-msg--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.av-msg-enter-active,
+.av-msg-leave-active {
+  transition: all 0.3s ease;
+}
+.av-msg-enter-from,
+.av-msg-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* ---- Footer ---- */
+.av-footer {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.av-footer__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.av-footer__hint {
+  font-size: 12px;
+  color: #4b5563;
+  font-weight: 500;
+}
+.av-browse-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #9ca3af;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.2s;
+}
+.av-browse-link:hover {
+  color: #6b7280;
+  text-decoration: underline;
+}
+
+/* ---- Submit Button (organic shape) ---- */
+.av-submit-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 40px;
+  background: #1c1c1c;
+  color: #fff;
+  border: none;
+  border-radius: 24px 12px 24px 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.av-submit-btn:hover:not(:disabled) {
+  border-radius: 16px 20px 16px 20px;
+  background: #000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.av-submit-btn:hover:not(:disabled) i {
+  transform: translateX(3px);
+}
+.av-submit-btn i {
+  font-size: 15px;
+  transition: transform 0.3s;
+  position: relative;
+  z-index: 1;
+}
+.av-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Loading state: polygon spinner ---- */
+.av-submit-btn--loading {
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  opacity: 1;
+}
+.av-submit-btn--loading:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+.av-submit-btn--loading:hover:not(:disabled) i {
+  transform: none;
+}
+.av-submit-btn__canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.av-submit-btn--loading .av-submit-btn__canvas {
+  opacity: 1;
+}
+
+.av-submit-btn__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: av-spin 0.6s linear infinite;
+}
+@keyframes av-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Overlay transitions ---- */
+.av-overlay-enter-active,
+.av-overlay-leave-active {
+  transition: opacity 0.3s ease;
+}
+.av-overlay-enter-from,
+.av-overlay-leave-to {
+  opacity: 0;
 }
 
 /* ---- Appeal Modal ---- */
-.lv-appeal-overlay {
+.av-appeal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 24px;
 }
-
-.lv-appeal-card {
+.av-appeal-card {
   width: 100%;
-  max-width: 560px;
-  padding: 28px 24px;
-  box-shadow: var(--shadow-xl);
+  max-width: 520px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 32px;
+  box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.1);
+  max-height: 90vh;
+  overflow: hidden;
+}
+.av-appeal-card__inner {
+  padding: 32px 36px;
   max-height: 90vh;
   overflow-y: auto;
 }
+.av-appeal-card__inner::-webkit-scrollbar {
+  width: 6px;
+}
+.av-appeal-card__inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+.av-appeal-card__inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+.av-appeal-card__inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
 
-.lv-appeal-header {
+.av-appeal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
-.lv-appeal-header h3 {
+.av-appeal-header h3 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
   margin: 0;
 }
+.av-appeal-close {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+}
+.av-appeal-close:hover {
+  color: #1f2937;
+}
 
-.lv-appeal-meta {
+.av-appeal-meta {
   display: flex;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
-.lv-appeal-meta__item {
+.av-appeal-meta__item {
   flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--c-danger-light, #fef2f2);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  font-size: var(--text-sm);
-}
-.lv-appeal-meta__item i {
-  color: var(--c-danger, #ef4444);
+  background: rgba(254, 242, 242, 0.6);
+  border: 1px solid rgba(254, 226, 226, 0.5);
+  border-radius: 16px;
+  padding: 12px 16px;
   font-size: 13px;
 }
-.lv-appeal-meta__label {
-  color: var(--c-text-muted);
+.av-appeal-meta__item i {
+  color: #ef4444;
+  font-size: 14px;
+}
+.av-appeal-meta__label {
+  color: #6b7280;
   white-space: nowrap;
 }
-.lv-appeal-meta__value {
+.av-appeal-meta__value {
   font-weight: 600;
-  color: var(--c-text);
+  color: #111827;
 }
 
-.lv-appeal-section-title {
+.av-appeal-section-title {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 10px;
-  color: var(--c-text);
+  margin-bottom: 12px;
+  color: #111827;
 }
-.lv-appeal-section-title i {
-  font-size: 13px;
-  color: var(--c-text-muted);
+.av-appeal-section-title i {
+  font-size: 14px;
+  color: #6b7280;
 }
 
-.lv-appeal-loading {
+.av-appeal-loading {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: center;
-  padding: 16px;
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
+  padding: 24px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 500;
 }
-
-.lv-appeal-empty {
+.av-appeal-empty {
   text-align: center;
-  padding: 16px;
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
+  padding: 24px;
+  color: #6b7280;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.5);
+  margin-bottom: 16px;
 }
 
-.lv-appeal-table-wrap {
-  border: 1px solid var(--c-border, #e2e8f0);
-  border-radius: var(--radius-md);
-  overflow: auto;
-  max-height: 200px;
-  margin-bottom: 4px;
+.av-appeal-table-wrap {
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 16px;
 }
-.lv-appeal-table {
+.av-appeal-table-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.av-appeal-table-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.av-appeal-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.av-appeal-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+.av-appeal-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+.av-appeal-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-sm);
+  font-size: 13px;
 }
-.lv-appeal-table th {
-  background: var(--c-bg-muted, #f8fafc);
-  padding: 8px 12px;
+.av-appeal-table th {
+  background: #f0e8e2;
+  padding: 10px 16px;
   text-align: left;
   font-weight: 600;
-  color: var(--c-text-muted);
+  color: #4b5563;
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  border-bottom: 1px solid var(--c-border, #e2e8f0);
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.lv-appeal-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--c-border-light, #f1f5f9);
+.av-appeal-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  color: #374151;
   vertical-align: top;
 }
-.lv-appeal-table tr:last-child td {
+.av-appeal-table tr:last-child td {
   border-bottom: none;
 }
 
-.lv-badge {
+.av-badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 4px 10px;
+  border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
 }
-.lv-badge--report {
-  background: #fef3c7;
+.av-badge--report {
+  background: rgba(254, 243, 199, 0.8);
   color: #92400e;
 }
-.lv-badge--admin {
-  background: #fee2e2;
+.av-badge--admin {
+  background: rgba(254, 226, 226, 0.8);
   color: #991b1b;
 }
-
-.lv-appeal-time {
+.av-appeal-time {
   white-space: nowrap;
-  color: var(--c-text-muted);
+  color: #6b7280;
   font-size: 12px;
 }
 
-.lv-appeal-msg {
-  margin: 12px 0 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+.av-appeal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
 }
-.lv-appeal-msg--success {
-  background: var(--c-success-light, #f0fdf4);
-  color: var(--c-success, #16a34a);
+.av-appeal-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-left: 4px;
 }
-.lv-appeal-msg--error {
-  background: var(--c-danger-light, #fef2f2);
-  color: var(--c-danger, #ef4444);
+.av-appeal-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  padding: 12px 16px;
+  color: #1f2937;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+.av-appeal-input::placeholder {
+  color: #9ca3af;
+}
+.av-appeal-input:hover,
+.av-appeal-input:focus {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.av-appeal-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  background: #1c1c1c;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.av-appeal-btn:hover:not(:disabled) {
+  background: #000;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.av-appeal-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.av-appeal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 480px) {
+  .av-card {
+    border-radius: 28px;
+    padding: 24px 24px;
+  }
+  .av-title {
+    font-size: 28px;
+  }
 }
 </style>

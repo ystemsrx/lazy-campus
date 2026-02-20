@@ -16,7 +16,10 @@ export function extractError(error: any, fallback = '操作失败'): string {
   const detail = error?.response?.data?.detail
   if (!detail) return fallback
 
-  if (typeof detail === 'string') return detail
+  if (typeof detail === 'string') {
+    if (detail.startsWith('Third-party auth')) return '请检查账号、密码'
+    return detail
+  }
 
   if (Array.isArray(detail)) {
     const msgs = detail.map((e: any) => {

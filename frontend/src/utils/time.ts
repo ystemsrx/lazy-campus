@@ -26,6 +26,21 @@ export function formatFull(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 解封时间：当天只显示时间，否则只显示日期 */
+export function formatBanUntil(iso: string): string {
+  const d = parseUTC(iso)
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  ) {
+    return `今天 ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /** 判断 UTC 截止时间是否已过期 */
 export function isExpired(iso: string | null | undefined): boolean {
   if (!iso) return false

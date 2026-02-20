@@ -28,6 +28,7 @@ import type { Category, Report, Task, TaskMessage, TaskReview, WorkerProfile } f
 
 const router = useRouter()
 const auth = useAuthStore()
+const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 
 /* -------- Navigation -------- */
 const activeTab = ref<'hall' | 'workers'>('hall')
@@ -244,13 +245,26 @@ function starsArray(n: number) {
 async function bootstrap() {
   loading.value = true
   try {
-    await Promise.all([loadCategories(), loadTasks(), loadWorkers(), loadMyTasks(), loadMyReports(), loadMyWorkerProfile()])
-    initProfileForm()
+    const publicLoads = [loadCategories(), loadTasks(), loadWorkers()]
+    if (auth.isAuthenticated) {
+      publicLoads.push(loadMyTasks(), loadMyReports(), loadMyWorkerProfile())
+    }
+    await Promise.all(publicLoads)
+    if (auth.isAuthenticated) initProfileForm()
   } catch (error: any) {
     showToast(extractError(error, '加载失败'), 'error')
   } finally {
     loading.value = false
   }
+}
+
+function requireAuth(action?: () => void) {
+  if (!auth.isAuthenticated) {
+    router.push('/login')
+    return false
+  }
+  action?.()
+  return true
 }
 
 async function loadCategories() { categories.value = await fetchCategories() }
@@ -568,7 +582,7 @@ onUnmounted(() => {
   <header class="hv-header">
     <div class="hv-header__brand">
       <div class="hv-logo">T</div>
-      <span class="hv-header__title">校园任务平台</span>
+      <span class="hv-header__title">{{ appTitle }}</span>
     </div>
 
     <nav class="hv-tabs">
@@ -587,40 +601,47 @@ onUnmounted(() => {
     </nav>
 
     <div class="hv-header__right">
-      <button class="btn btn-primary btn-sm hv-publish-btn" @click="showPostModal = true">
-        <i class="fa-solid fa-plus"></i> 发布
-      </button>
-
-      <div ref="userMenuRef" class="hv-user-menu-wrap">
-        <button class="hv-user-trigger" @click="showUserMenu = !showUserMenu">
-          <div v-if="hasAvatar" class="hv-avatar hv-avatar--img">
-            <img :src="me!.avatar_url!" alt="avatar" />
-          </div>
-          <div v-else class="hv-avatar" :class="me?.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'">
-            <i class="fa-solid fa-user"></i>
-          </div>
-          <span class="hv-header__name">{{ auth.displayName }}</span>
-          <i class="fa-solid fa-chevron-down hv-user-trigger__arrow" :class="{ 'hv-user-trigger__arrow--open': showUserMenu }"></i>
+      <template v-if="auth.isAuthenticated">
+        <button class="btn btn-primary btn-sm hv-publish-btn" @click="showPostModal = true">
+          <i class="fa-solid fa-plus"></i> 发布
         </button>
 
-        <Transition name="app-dropdown">
-          <div v-if="showUserMenu" class="hv-user-dropdown">
-            <button class="hv-user-dropdown__item" @click="openMyPanel">
-              <i class="fa-solid fa-list-check"></i> 任务
-            </button>
-            <button class="hv-user-dropdown__item" @click="openSettings">
-              <i class="fa-solid fa-gear"></i> 设置
-            </button>
-            <button class="hv-user-dropdown__item" @click="openReports">
-              <i class="fa-solid fa-flag"></i> 我的举报
-            </button>
-            <div class="hv-user-dropdown__divider"></div>
-            <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="logout">
-              <i class="fa-solid fa-right-from-bracket"></i> 退出登录
-            </button>
-          </div>
-        </Transition>
-      </div>
+        <div ref="userMenuRef" class="hv-user-menu-wrap">
+          <button class="hv-user-trigger" @click="showUserMenu = !showUserMenu">
+            <div v-if="hasAvatar" class="hv-avatar hv-avatar--img">
+              <img :src="me!.avatar_url!" alt="avatar" />
+            </div>
+            <div v-else class="hv-avatar" :class="me?.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'">
+              <i class="fa-solid fa-user"></i>
+            </div>
+            <span class="hv-header__name">{{ auth.displayName }}</span>
+            <i class="fa-solid fa-chevron-down hv-user-trigger__arrow" :class="{ 'hv-user-trigger__arrow--open': showUserMenu }"></i>
+          </button>
+
+          <Transition name="app-dropdown">
+            <div v-if="showUserMenu" class="hv-user-dropdown">
+              <button class="hv-user-dropdown__item" @click="openMyPanel">
+                <i class="fa-solid fa-list-check"></i> 任务
+              </button>
+              <button class="hv-user-dropdown__item" @click="openSettings">
+                <i class="fa-solid fa-gear"></i> 设置
+              </button>
+              <button class="hv-user-dropdown__item" @click="openReports">
+                <i class="fa-solid fa-flag"></i> 我的举报
+              </button>
+              <div class="hv-user-dropdown__divider"></div>
+              <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="logout">
+                <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+              </button>
+            </div>
+          </Transition>
+        </div>
+      </template>
+      <template v-else>
+        <button class="btn btn-primary btn-sm" @click="router.push('/login')">
+          <i class="fa-solid fa-right-to-bracket"></i> 登录
+        </button>
+      </template>
     </div>
   </header>
 
@@ -1140,7 +1161,10 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div v-if="canAccept || canConfirm || isPublisher || genderMismatch" class="hv-drawer__actions">
+              <div v-if="!auth.isAuthenticated && selectedTask.status === 'open'" class="hv-drawer__actions">
+                <button class="btn btn-primary" @click="router.push('/login')"><i class="fa-solid fa-right-to-bracket"></i> 登录后接取任务</button>
+              </div>
+              <div v-else-if="canAccept || canConfirm || isPublisher || genderMismatch" class="hv-drawer__actions">
                 <button v-if="canAccept" class="btn btn-primary" @click="handleAcceptTask"><i class="fa-solid fa-hand-pointer"></i> 接取此任务</button>
                 <button v-if="canConfirm" class="btn btn-success" @click="handleConfirmTask"><i class="fa-solid fa-circle-check"></i> 确认完成</button>
                 <button v-if="canEditTask" class="btn btn-outline btn-sm" @click="openEditModal"><i class="fa-solid fa-pen-to-square"></i> 编辑</button>

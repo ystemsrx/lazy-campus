@@ -205,7 +205,7 @@ def list_tasks(
         default='ranking',
         pattern='^(ranking|newest|deadline_asc|publisher_rating|publisher_completed|price_asc|price_desc)$',
     ),
-    user: User = Depends(require_user),
+    user: User | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
     query = db.query(Task, User).join(User, Task.publisher_id == User.id).filter(User.is_banned.is_(False))
@@ -270,7 +270,7 @@ def list_tasks(
                 .group_by(Task.publisher_id)
                 .all()
             )
-        user_gender = user.gender
+        user_gender = user.gender if user else None
         def _rank_key(r):
             task, pub = r
             mismatch = 1 if (task.required_gender and task.required_gender != user_gender) else 0
@@ -283,7 +283,8 @@ def list_tasks(
     if user_ids:
         assignees = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
-    return [_task_to_out(task, publisher, assignees.get(task.assignee_id), user.id) for task, publisher in rows]
+    viewer_id = user.id if user else None
+    return [_task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id) for task, publisher in rows]
 
 
 @router.post('', response_model=TaskOut)
@@ -320,13 +321,13 @@ def create_task(
 
 
 @router.get('/{task_id}', response_model=TaskOut)
-def get_task(task_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)) -> TaskOut:
+def get_task(task_id: int, user: User | None = Depends(optional_user), db: Session = Depends(get_db)) -> TaskOut:
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
     publisher = db.get(User, task.publisher_id)
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
-    return _task_to_out(task, publisher, assignee, viewer_id=user.id)
+    return _task_to_out(task, publisher, assignee, viewer_id=user.id if user else None)
 
 
 @router.put('/{task_id}', response_model=TaskOut)
