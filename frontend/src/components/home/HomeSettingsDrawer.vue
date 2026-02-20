@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import HomeDrawer from './ui/HomeDrawer.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
-import type { UserMe } from '../../types/api'
+import type { Category, UserMe } from '../../types/api'
 
 type ProfileForm = {
   nickname: string
@@ -12,10 +12,12 @@ type ProfileForm = {
 
 type WorkerForm = {
   enabled: boolean
-  skills: string
+  skill_tag_ids: number[]
   min_price: number | null
   max_price: number | null
   bio: string
+  phone: string
+  wechat: string
 }
 
 const props = defineProps<{
@@ -25,6 +27,7 @@ const props = defineProps<{
   avatarUploading: boolean
   profileForm: ProfileForm
   workerForm: WorkerForm
+  categories: Category[]
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +42,16 @@ const settingsTabValue = computed({
   get: () => props.settingsTab,
   set: (value: 'profile' | 'worker') => emit('update:settingsTab', value),
 })
+
+function toggleSkillTag(id: number) {
+  const ids = props.workerForm.skill_tag_ids
+  const idx = ids.indexOf(id)
+  if (idx >= 0) {
+    ids.splice(idx, 1)
+  } else if (ids.length < 5) {
+    ids.push(id)
+  }
+}
 </script>
 
 <template>
@@ -102,15 +115,30 @@ const settingsTabValue = computed({
         </label>
 
         <div class="form-group">
-          <label class="form-label">擅长类型</label>
-          <input v-model="workerForm.skills" class="form-input" placeholder="如：高数、前端开发、跑腿取件" />
+          <label class="form-label">擅长类别 <span class="hv-label-hint">（选择 1-5 个）</span></label>
+          <div v-if="categories.length" class="hv-skill-picker">
+            <button
+              v-for="cat in categories"
+              :key="cat.id"
+              type="button"
+              class="hv-skill-chip"
+              :class="{ 'hv-skill-chip--selected': workerForm.skill_tag_ids.includes(cat.id) }"
+              @click="toggleSkillTag(cat.id)"
+            >
+              <i v-if="workerForm.skill_tag_ids.includes(cat.id)" class="fa-solid fa-check" style="font-size: 11px;"></i>
+              {{ cat.name }}
+            </button>
+          </div>
+          <p v-else class="form-hint" style="margin-top: 4px;">管理员暂未设置类别</p>
+          <p v-if="workerForm.skill_tag_ids.length >= 5" class="form-hint" style="margin-top: 4px; color: var(--c-warning);">已达上限 5 个</p>
         </div>
 
-        <div class="form-row">
+        <div class="form-price-row">
           <div class="form-group">
             <label class="form-label">最低价 (¥)</label>
             <input v-model.number="workerForm.min_price" class="form-input" type="number" placeholder="最低接单价格" />
           </div>
+          <div class="form-price-sep">—</div>
           <div class="form-group">
             <label class="form-label">最高价 (¥)</label>
             <input v-model.number="workerForm.max_price" class="form-input" type="number" placeholder="最高接单价格" />
@@ -120,6 +148,16 @@ const settingsTabValue = computed({
         <div class="form-group">
           <label class="form-label">个人简介</label>
           <textarea v-model="workerForm.bio" class="form-textarea" placeholder="介绍一下自己的能力和服务"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">手机号</label>
+          <input v-model.trim="workerForm.phone" class="form-input" placeholder="选填，供委托者联系" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">微信号</label>
+          <input v-model.trim="workerForm.wechat" class="form-input" placeholder="选填，供委托者联系" />
         </div>
 
         <button class="btn btn-primary btn-block" type="submit">保存接单资料</button>
@@ -239,5 +277,67 @@ const settingsTabValue = computed({
 
 .hv-switch:checked::after {
   transform: translateX(18px);
+}
+
+.hv-label-hint {
+  font-weight: 400;
+  font-size: var(--text-xs);
+  color: var(--c-text-muted);
+}
+
+.hv-skill-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hv-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.hv-skill-chip:hover {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.hv-skill-chip--selected {
+  background: var(--c-accent);
+  color: var(--c-text-inverse);
+  border-color: var(--c-accent);
+}
+
+.hv-skill-chip--selected:hover {
+  background: var(--c-accent-hover);
+  color: var(--c-text-inverse);
+}
+
+.form-price-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.form-price-row .form-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-price-sep {
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  padding-bottom: 10px;
+  flex-shrink: 0;
 }
 </style>

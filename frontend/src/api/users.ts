@@ -1,5 +1,5 @@
 import api from './client'
-import type { UserMe, UserReview, WorkerProfile } from '../types/api'
+import type { UserMe, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
 
 export async function fetchWorkers(params: Record<string, string | number | undefined>) {
   const { data } = await api.get<WorkerProfile[]>('/users/workers', { params })
@@ -8,10 +8,12 @@ export async function fetchWorkers(params: Record<string, string | number | unde
 
 export async function updateWorkerProfile(payload: {
   enabled: boolean
-  skills: string | null
+  skill_tag_ids: number[]
   min_price: number | null
   max_price: number | null
   bio: string | null
+  phone: string | null
+  wechat: string | null
 }) {
   const { data } = await api.put<WorkerProfile>('/users/me/worker-profile', payload)
   return data
@@ -19,6 +21,16 @@ export async function updateWorkerProfile(payload: {
 
 export async function fetchMyWorkerProfile() {
   const { data } = await api.get<WorkerProfile>('/users/me/worker-profile')
+  return data
+}
+
+export async function fetchWorkerDetail(userId: number) {
+  const { data } = await api.get<WorkerProfile>(`/users/workers/${userId}`)
+  return data
+}
+
+export async function revealWorkerContact(userId: number) {
+  const { data } = await api.post<WorkerContactReveal>(`/users/workers/${userId}/contact-view`)
   return data
 }
 

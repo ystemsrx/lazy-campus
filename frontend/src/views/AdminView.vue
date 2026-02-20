@@ -12,17 +12,18 @@ import {
   reviewReport,
   updateRegistrationSetting
 } from '../api/moderation'
+import { createCategory, deleteCategory, fetchCategories, updateCategory } from '../api/tasks'
 import { appConfirm } from '../components/AppConfirm.vue'
 import AppDropdown from '../components/AppDropdown.vue'
 import { extractError } from '../utils/error'
 import { formatShort } from '../utils/time'
 import { useAuthStore } from '../stores/auth'
-import type { AdminUserItem, Report } from '../types/api'
+import type { AdminUserItem, Category, Report } from '../types/api'
 
 const auth = useAuthStore()
 const router = useRouter()
 
-const activeTab = ref<'dashboard' | 'reports' | 'users'>('dashboard')
+const activeTab = ref<'dashboard' | 'reports' | 'users' | 'categories'>('dashboard')
 
 /* -------- Toast -------- */
 const toast = ref<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
@@ -68,6 +69,82 @@ const showReviewModal = ref(false)
 const reviewTarget = ref<Report | null>(null)
 const reviewBanReason = ref('')
 const reviewSubmitting = ref(false)
+
+/* -------- Categories State -------- */
+const categoryList = ref<Category[]>([])
+const categoryLoading = ref(false)
+const showCategoryModal = ref(false)
+const editingCategory = ref<Category | null>(null)
+const categoryForm = ref({ name: '', description: '', sort_order: 0 })
+const categorySubmitting = ref(false)
+
+async function loadCategories() {
+  categoryLoading.value = true
+  try {
+    categoryList.value = await fetchCategories()
+  } catch (error: any) {
+    showToast(extractError(error, '加载类别失败'), 'error')
+  } finally {
+    categoryLoading.value = false
+  }
+}
+
+function openCategoryModal(cat: Category | null) {
+  editingCategory.value = cat
+  categoryForm.value = cat
+    ? { name: cat.name, description: cat.description || '', sort_order: cat.sort_order }
+    : { name: '', description: '', sort_order: categoryList.value.length + 1 }
+  showCategoryModal.value = true
+}
+
+async function submitCategory() {
+  if (!categoryForm.value.name.trim()) {
+    showToast('请输入类别名称', 'error')
+    return
+  }
+  categorySubmitting.value = true
+  try {
+    const payload = {
+      name: categoryForm.value.name.trim(),
+      description: categoryForm.value.description.trim() || undefined,
+      sort_order: categoryForm.value.sort_order,
+    }
+    if (editingCategory.value) {
+      await updateCategory(editingCategory.value.id, payload)
+      showToast('类别已更新', 'success')
+    } else {
+      await createCategory(payload)
+      showToast('类别已添加', 'success')
+    }
+    showCategoryModal.value = false
+    await loadCategories()
+  } catch (error: any) {
+    showToast(extractError(error, '保存失败'), 'error')
+  } finally {
+    categorySubmitting.value = false
+  }
+}
+
+async function handleDeleteCategory(cat: Category) {
+  const warnings: string[] = []
+  if (cat.task_count > 0) warnings.push(`${cat.task_count} 个任务`)
+  if (cat.worker_count > 0) warnings.push(`${cat.worker_count} 位接单者`)
+  const extra = warnings.length ? `\n当前有 ${warnings.join('、')} 使用此类别。` : ''
+  const yes = await appConfirm({
+    title: '确认删除',
+    message: `确定删除类别「${cat.name}」？${extra}`,
+    confirmText: '删除',
+    type: 'danger',
+  })
+  if (!yes) return
+  try {
+    await deleteCategory(cat.id)
+    showToast('类别已删除', 'success')
+    await loadCategories()
+  } catch (error: any) {
+    showToast(extractError(error, '删除失败'), 'error')
+  }
+}
 
 /* -------- Task Snapshot -------- */
 const showSnapshot = ref(false)
@@ -288,12 +365,14 @@ async function handleToggleRegistration() {
   }
 }
 
-function onTabChange(key: 'dashboard' | 'reports' | 'users') {
+function onTabChange(key: 'dashboard' | 'reports' | 'users' | 'categories') {
   activeTab.value = key
   if (key === 'reports') {
     loadReports()
   } else if (key === 'users' && userList.value.length === 0) {
     loadUsers()
+  } else if (key === 'categories') {
+    loadCategories()
   }
 }
 
@@ -338,7 +417,8 @@ onUnmounted(() => {
       <button v-for="t in ([
         { key: 'dashboard', label: '数据看板', icon: 'fa-solid fa-chart-line' },
         { key: 'reports', label: '举报 / 申诉', icon: 'fa-solid fa-flag' },
-        { key: 'users', label: '用户管理', icon: 'fa-solid fa-users-gear' }
+        { key: 'users', label: '用户管理', icon: 'fa-solid fa-users-gear' },
+        { key: 'categories', label: '类别管理', icon: 'fa-solid fa-tags' }
       ] as const)" :key="t.key" class="av-tab" :class="{ 'av-tab--active': activeTab === t.key }" @click="onTabChange(t.key)">
         <i :class="t.icon"></i> {{ t.label }}
       </button>
@@ -476,6 +556,47 @@ onUnmounted(() => {
         </div>
       </div>
       <div v-else class="av-empty"><i class="fa-regular fa-folder-open" style="font-size: 36px; display: block; margin-bottom: 12px; color: var(--c-border);"></i>{{ reportSubTab === 'report' ? '暂无举报数据' : '暂无申诉数据' }}</div>
+    </section>
+
+    <!-- ===== 类别管理 ===== -->
+    <section v-if="activeTab === 'categories'" class="av-section">
+      <div class="av-users-header">
+        <h2>类别管理</h2>
+        <span class="av-users-total">共 {{ categoryList.length }} 个</span>
+        <button class="btn btn-primary btn-sm" style="margin-left: auto;" @click="openCategoryModal(null)">
+          <i class="fa-solid fa-plus"></i> 添加类别
+        </button>
+      </div>
+      <p class="av-category-hint">类别同时用于任务分类和接单者擅长领域</p>
+
+      <div v-if="categoryLoading" class="av-users-loading"><div class="spinner"></div></div>
+
+      <div v-else-if="categoryList.length === 0" class="av-empty">
+        <i class="fa-solid fa-tags" style="font-size: 36px; display: block; margin-bottom: 12px; color: var(--c-border);"></i>
+        暂无类别，点击上方按钮添加
+      </div>
+
+      <div v-else class="av-category-grid">
+        <div v-for="cat in categoryList" :key="cat.id" class="card av-category-card">
+          <div class="av-category-card__main">
+            <h4 class="av-category-card__name">{{ cat.name }}</h4>
+            <p v-if="cat.description" class="av-category-card__desc">{{ cat.description }}</p>
+            <div class="av-category-card__stats">
+              <span class="badge badge-blue">{{ cat.task_count }} 个任务</span>
+              <span class="badge badge-green">{{ cat.worker_count }} 位接单者</span>
+              <span class="av-category-card__order">排序: {{ cat.sort_order }}</span>
+            </div>
+          </div>
+          <div class="av-category-card__actions">
+            <button class="av-action-btn" title="编辑" @click="openCategoryModal(cat)">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="av-action-btn av-action-btn--ban" title="删除" @click="handleDeleteCategory(cat)">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 用户管理 ===== -->
@@ -651,6 +772,40 @@ onUnmounted(() => {
           <button class="btn btn-outline btn-sm" @click="showReviewModal = false">取消</button>
           <button class="btn btn-warning btn-sm" :disabled="reviewSubmitting" @click="confirmReportReview">
             {{ reviewSubmitting ? '处理中…' : '确认通过' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Category Modal -->
+  <Transition name="fade">
+    <div v-if="showCategoryModal" class="av-modal-overlay" @click.self="showCategoryModal = false">
+      <div class="av-modal">
+        <div class="av-modal__header">
+          <h3>{{ editingCategory ? '编辑类别' : '添加类别' }}</h3>
+          <button class="btn btn-ghost btn-sm" @click="showCategoryModal = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="av-modal__body">
+          <div class="form-group">
+            <label class="form-label">名称</label>
+            <input v-model="categoryForm.name" class="form-input" placeholder="输入类别名称" @keyup.enter="submitCategory" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">描述（选填）</label>
+            <input v-model="categoryForm.description" class="form-input" placeholder="输入类别描述" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">排序（越小越靠前）</label>
+            <input v-model.number="categoryForm.sort_order" class="form-input" type="number" />
+          </div>
+        </div>
+        <div class="av-modal__footer">
+          <button class="btn btn-outline btn-sm" @click="showCategoryModal = false">取消</button>
+          <button class="btn btn-primary btn-sm" :disabled="categorySubmitting" @click="submitCategory">
+            {{ categorySubmitting ? '保存中…' : '保存' }}
           </button>
         </div>
       </div>
@@ -1318,6 +1473,60 @@ onUnmounted(() => {
 .toast-leave-active { transition: all var(--dur-fast) var(--ease); }
 .toast-enter-from { opacity: 0; transform: translateX(40px); }
 .toast-leave-to { opacity: 0; transform: translateY(-12px); }
+
+/* Category management */
+.av-category-hint {
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  margin: -8px 0 16px;
+}
+
+.av-category-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 700px;
+}
+
+.av-category-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.av-category-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.av-category-card__name {
+  margin: 0 0 2px;
+  font-size: var(--text-base);
+}
+
+.av-category-card__desc {
+  margin: 0 0 6px;
+  font-size: var(--text-sm);
+  color: var(--c-text-muted);
+}
+
+.av-category-card__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.av-category-card__order {
+  font-size: var(--text-xs);
+  color: var(--c-text-muted);
+}
+
+.av-category-card__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
 
 @media (max-width: 768px) {
   .av-header { padding: 0 14px; gap: 10px; }

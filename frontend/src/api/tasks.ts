@@ -90,3 +90,17 @@ export async function updateTask(
 export async function deleteTask(taskId: number) {
   await api.delete(`/tasks/${taskId}`)
 }
+
+export async function createCategory(payload: { name: string; description?: string; sort_order?: number }) {
+  const { data } = await api.post<Category>('/tasks/categories', payload)
+  return data
+}
+
+export async function updateCategory(id: number, payload: { name: string; description?: string; sort_order?: number }) {
+  const { data } = await api.put<Category>(`/tasks/categories/${id}`, payload)
+  return data
+}
+
+export async function deleteCategory(id: number) {
+  await api.delete(`/tasks/categories/${id}`)
+}

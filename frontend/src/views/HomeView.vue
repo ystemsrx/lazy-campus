@@ -22,7 +22,9 @@ import {
   updateTask,
 } from '../api/tasks'
 import {
+  fetchWorkerDetail,
   fetchMyWorkerProfile,
+  revealWorkerContact,
   fetchUserReviews,
   fetchWorkers,
   updateWorkerProfile,
@@ -38,9 +40,10 @@ import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import HomeToast from '../components/home/HomeToast.vue'
+import HomeWorkerDetailDrawer from '../components/home/HomeWorkerDetailDrawer.vue'
 import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
 import { useAuthStore } from '../stores/auth'
-import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerProfile } from '../types/api'
+import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -87,6 +90,8 @@ const workerSortOptions = [
 
 const searchQuery = ref('')
 const selectedCategory = ref<number | null>(null)
+const selectedWorkerCategory = ref<number | null>(null)
+const totalWorkerCount = ref(0)
 
 const loading = ref(false)
 const categories = ref<Category[]>([])
@@ -95,6 +100,10 @@ const selectedTask = ref<Task | null>(null)
 const myPublished = ref<Task[]>([])
 const myAccepted = ref<Task[]>([])
 const workers = ref<WorkerProfile[]>([])
+const selectedWorker = ref<WorkerProfile | null>(null)
+const workerHistoryReviews = ref<UserReview[]>([])
+const workerContactReveal = ref<WorkerContactReveal | null>(null)
+const workerContactLoading = ref(false)
 const taskMessages = ref<TaskMessage[]>([])
 const taskReviews = ref<TaskReview[]>([])
 const publisherHistoryReviews = ref<UserReview[]>([])
@@ -115,10 +124,12 @@ const newTask = ref({
 
 const workerForm = ref({
   enabled: false,
-  skills: '',
+  skill_tag_ids: [] as number[],
   min_price: null as number | null,
   max_price: null as number | null,
   bio: '',
+  phone: '',
+  wechat: '',
 })
 
 const profileForm = ref({
@@ -276,11 +287,17 @@ async function loadTasks() {
 }
 
 async function loadWorkers() {
-  workers.value = await fetchWorkers({ sort: workerSort.value })
+  const params: Record<string, string | number | undefined> = { sort: workerSort.value }
+  if (selectedWorkerCategory.value !== null) params.skill_tag_id = selectedWorkerCategory.value
+  workers.value = await fetchWorkers(params)
+  if (selectedWorkerCategory.value === null) {
+    totalWorkerCount.value = workers.value.length
+  }
 }
 
 watch(taskSort, () => loadTasks())
 watch(workerSort, () => loadWorkers())
+watch(selectedWorkerCategory, () => loadWorkers())
 
 let searchTimer = 0
 watch(searchQuery, () => {
@@ -300,10 +317,12 @@ async function loadMyWorkerProfile() {
   const p = await fetchMyWorkerProfile()
   workerForm.value = {
     enabled: p.enabled,
-    skills: p.skills || '',
+    skill_tag_ids: p.skill_tags.map(t => t.id),
     min_price: p.min_price,
     max_price: p.max_price,
     bio: p.bio || '',
+    phone: p.phone || '',
+    wechat: p.wechat || '',
   }
 }
 
@@ -387,15 +406,75 @@ async function submitWorkerProfile() {
   try {
     await updateWorkerProfile({
       enabled: workerForm.value.enabled,
-      skills: workerForm.value.skills || null,
+      skill_tag_ids: workerForm.value.skill_tag_ids,
       min_price: workerForm.value.min_price,
       max_price: workerForm.value.max_price,
       bio: workerForm.value.bio || null,
+      phone: workerForm.value.phone || null,
+      wechat: workerForm.value.wechat || null,
     })
     showToast('接单资料已更新', 'success')
-    await loadWorkers()
+    await Promise.all([loadWorkers(), loadCategories()])
   } catch (error: any) {
     showToast(extractError(error, '保存失败'), 'error')
+  }
+}
+
+async function openWorkerDrawer(worker: WorkerProfile) {
+  workerContactReveal.value = null
+  workerContactLoading.value = false
+  try {
+    const [detail, reviews] = await Promise.all([fetchWorkerDetail(worker.user_id), fetchUserReviews(worker.user_id, 'worker')])
+    selectedWorker.value = detail
+    workerHistoryReviews.value = reviews
+  } catch (error: any) {
+    showToast(extractError(error, '加载接单者详情失败'), 'error')
+  }
+}
+
+function closeWorkerDrawer() {
+  selectedWorker.value = null
+  workerHistoryReviews.value = []
+  workerContactReveal.value = null
+  workerContactLoading.value = false
+}
+
+async function handleWorkerContactAction(action: 'view_contact' | 'internal_contact') {
+  if (!selectedWorker.value) return
+
+  if (action === 'internal_contact') {
+    if (!auth.isAuthenticated) {
+      showToast('请先登录后再使用站内联系', 'info')
+      router.push('/login')
+      return
+    }
+    closeWorkerDrawer()
+    activeTab.value = 'hall'
+    newTask.value.contact_visibility = 'internal_only'
+    showPostModal.value = true
+    showToast('已打开发布任务，任务被接取后即可站内沟通', 'info')
+    return
+  }
+
+  if (!auth.isAuthenticated) {
+    showToast('请先登录后再查看联系方式', 'info')
+    router.push('/login')
+    return
+  }
+
+  workerContactLoading.value = true
+  try {
+    const reveal = await revealWorkerContact(selectedWorker.value.user_id)
+    workerContactReveal.value = reveal
+    if (!reveal.phone && !reveal.wechat) {
+      showToast('该接单者暂未填写手机号或微信号', 'info')
+    } else {
+      showToast('联系方式已展示', 'success')
+    }
+  } catch (error: any) {
+    showToast(extractError(error, '查看联系方式失败'), 'error')
+  } finally {
+    workerContactLoading.value = false
   }
 }
 
@@ -576,6 +655,7 @@ async function submitReport() {
 }
 
 function logout() {
+  closeWorkerDrawer()
   auth.logout()
   router.push('/login')
 }
@@ -645,8 +725,12 @@ onUnmounted(() => {
     <HomeWorkersSection
       v-if="activeTab === 'workers'"
       v-model:worker-sort="workerSort"
+      v-model:selected-category="selectedWorkerCategory"
       :workers="workers"
       :worker-sort-options="workerSortOptions"
+      :categories="categories"
+      :total-worker-count="totalWorkerCount"
+      @open-worker="openWorkerDrawer"
     />
   </main>
 
@@ -684,6 +768,7 @@ onUnmounted(() => {
     :avatar-uploading="avatarUploading"
     :profile-form="profileForm"
     :worker-form="workerForm"
+    :categories="categories"
     @submit-profile="submitProfileUpdate"
     @submit-worker="submitWorkerProfile"
     @avatar-upload="handleAvatarUpload"
@@ -731,6 +816,18 @@ onUnmounted(() => {
     @update:show-review-form="showReviewForm = $event"
     @submit-review="submitReview"
     @submit-report="submitReport"
+  />
+
+  <HomeWorkerDetailDrawer
+    :worker="selectedWorker"
+    :reviews="workerHistoryReviews"
+    :contact-reveal="workerContactReveal"
+    :is-authenticated="auth.isAuthenticated"
+    :reveal-loading="workerContactLoading"
+    :format-full="formatFull"
+    @close="closeWorkerDrawer"
+    @login="router.push('/login')"
+    @contact-action="handleWorkerContactAction"
   />
 </template>
 

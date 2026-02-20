@@ -6,14 +6,6 @@ from app.db.session import engine
 from app.models import TaskCategory
 
 
-DEFAULT_CATEGORIES = [
-    ('跑腿代办', '校园跑腿/代办服务', 1),
-    ('学习辅导', '课程答疑、作业讲解', 2),
-    ('技术服务', '编程、设计、剪辑等', 3),
-    ('活动协助', '活动执行、摄影、主持', 4),
-]
-
-
 def run_startup_migrations() -> None:
     with engine.begin() as conn:
         tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
@@ -32,14 +24,14 @@ def run_startup_migrations() -> None:
             if 'required_gender' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN required_gender VARCHAR(10) DEFAULT NULL'))
 
+        if 'worker_profiles' in tables:
+            worker_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(worker_profiles)"))}
+            if 'phone' not in worker_cols:
+                conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN phone VARCHAR(32) DEFAULT NULL'))
+            if 'wechat' not in worker_cols:
+                conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN wechat VARCHAR(64) DEFAULT NULL'))
+
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     run_startup_migrations()
-
-    with Session(engine) as db:
-        existing_count = db.query(TaskCategory).count()
-        if existing_count == 0:
-            for name, description, order in DEFAULT_CATEGORIES:
-                db.add(TaskCategory(name=name, description=description, sort_order=order))
-            db.commit()

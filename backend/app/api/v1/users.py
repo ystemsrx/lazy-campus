@@ -11,9 +11,19 @@ from app.api.deps import require_completed_user, require_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.enums import RatingTargetRole, TaskStatus
-from app.models.task import Task, TaskReview
-from app.models.user import User, WorkerProfile
-from app.schemas.user import CompleteProfileRequest, UpdateProfileRequest, UserMe, UserPublic, UserReviewOut, WorkerProfileOut, WorkerProfileUpsert
+from app.models.task import Task, TaskCategory, TaskReview
+from app.models.user import User, WorkerContactView, WorkerProfile, worker_skill_tags
+from app.schemas.user import (
+    CompleteProfileRequest,
+    SkillTagOut,
+    UpdateProfileRequest,
+    UserMe,
+    UserPublic,
+    UserReviewOut,
+    WorkerContactRevealOut,
+    WorkerProfileOut,
+    WorkerProfileUpsert,
+)
 from app.utils.user_display import display_name
 
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'avatars'
@@ -24,9 +34,58 @@ _BLOCK_K = 0.5
 _BAN_K = 1.5
 
 
-def _worker_mu(db: Session) -> float:
-    val = db.query(func.avg(User.worker_rating_avg)).filter(User.worker_rating_count > 0).scalar()
-    return float(val) if val else 3.0
+def _overall_rating_stats(user: User) -> tuple[float, int]:
+    total_count = (user.worker_rating_count or 0) + (user.publisher_rating_count or 0)
+    if total_count <= 0:
+        return 0.0, 0
+    weighted = (
+        (user.worker_rating_avg or 0) * (user.worker_rating_count or 0)
+        + (user.publisher_rating_avg or 0) * (user.publisher_rating_count or 0)
+    ) / total_count
+    return round(float(weighted), 2), int(total_count)
+
+
+def _completed_count_map(db: Session, user_ids: set[int]) -> dict[int, int]:
+    if not user_ids:
+        return {}
+    return dict(
+        db.query(Task.assignee_id, func.count(Task.id))
+        .filter(Task.assignee_id.in_(user_ids), Task.status == TaskStatus.COMPLETED)
+        .group_by(Task.assignee_id)
+        .all()
+    )
+
+
+def _worker_mu(rows: list[tuple[WorkerProfile, User]]) -> float:
+    values = []
+    for _, user in rows:
+        avg, count = _overall_rating_stats(user)
+        if count > 0:
+            values.append(avg)
+    return float(sum(values) / len(values)) if values else 3.0
+
+
+def _to_worker_profile_out(profile: WorkerProfile, user: User, completed_count: int) -> WorkerProfileOut:
+    overall_avg, overall_count = _overall_rating_stats(user)
+    return WorkerProfileOut(
+        user_id=user.id,
+        enabled=profile.enabled,
+        skill_tags=[SkillTagOut(id=t.id, name=t.name) for t in (profile.skill_tags or [])],
+        min_price=profile.min_price,
+        max_price=profile.max_price,
+        bio=profile.bio,
+        phone=profile.phone,
+        wechat=profile.wechat,
+        display_name=display_name(user),
+        avatar_url=user.avatar_url,
+        gender=user.gender,
+        worker_rating_avg=user.worker_rating_avg,
+        worker_rating_count=user.worker_rating_count,
+        overall_rating_avg=overall_avg,
+        overall_rating_count=overall_count,
+        worker_completed_count=completed_count,
+        blocked_by_count=user.blocked_by_count,
+    )
 
 router = APIRouter(prefix='/users', tags=['users'])
 
@@ -138,6 +197,7 @@ async def upload_avatar(
 @router.get('/workers', response_model=list[WorkerProfileOut])
 def list_workers(
     keyword: str | None = Query(default=None),
+    skill_tag_id: int | None = Query(default=None),
     min_price: float | None = Query(default=None),
     max_price: float | None = Query(default=None),
     sort: str = Query(default='ranking', pattern='^(ranking|worker_rating|worker_completed)$'),
@@ -148,14 +208,26 @@ def list_workers(
         .join(User, User.id == WorkerProfile.user_id)
         .filter(and_(WorkerProfile.enabled.is_(True), User.is_banned.is_(False)))
     )
+    if skill_tag_id is not None:
+        query = query.filter(
+            WorkerProfile.id.in_(
+                db.query(worker_skill_tags.c.worker_profile_id)
+                .filter(worker_skill_tags.c.skill_tag_id == skill_tag_id)
+            )
+        )
     if keyword:
         like = f'%{keyword}%'
+        skill_match = (
+            db.query(worker_skill_tags.c.worker_profile_id)
+            .join(TaskCategory, TaskCategory.id == worker_skill_tags.c.skill_tag_id)
+            .filter(TaskCategory.name.like(like))
+        )
         query = query.filter(
             or_(
                 User.nickname.like(like),
                 User.name.like(like),
-                WorkerProfile.skills.like(like),
                 WorkerProfile.bio.like(like),
+                WorkerProfile.id.in_(skill_match),
             )
         )
     if min_price is not None:
@@ -163,60 +235,43 @@ def list_workers(
     if max_price is not None:
         query = query.filter(WorkerProfile.min_price.is_(None) | (WorkerProfile.min_price <= max_price))
 
+    rows = query.all()
+    uid_set = {u.id for _, u in rows}
+    completed_map = _completed_count_map(db, uid_set)
+
     if sort == 'worker_rating':
-        rows = query.order_by(desc(User.worker_rating_avg), desc(User.worker_rating_count)).all()
+        rows.sort(
+            key=lambda r: (
+                _overall_rating_stats(r[1])[0],
+                _overall_rating_stats(r[1])[1],
+                completed_map.get(r[1].id, 0),
+            ),
+            reverse=True,
+        )
     elif sort == 'worker_completed':
-        rows = query.all()
-        uid_set = {u.id for _, u in rows}
-        completed_map: dict[int, int] = {}
-        if uid_set:
-            completed_map = dict(
-                db.query(Task.assignee_id, func.count(Task.id))
-                .filter(Task.assignee_id.in_(uid_set), Task.status == TaskStatus.COMPLETED)
-                .group_by(Task.assignee_id)
-                .all()
-            )
-        rows.sort(key=lambda r: -completed_map.get(r[1].id, 0))
+        rows.sort(
+            key=lambda r: (
+                completed_map.get(r[1].id, 0),
+                _overall_rating_stats(r[1])[0],
+                _overall_rating_stats(r[1])[1],
+            ),
+            reverse=True,
+        )
     else:
-        rows = query.all()
-        mu = _worker_mu(db)
-        uid_set2 = {u.id for _, u in rows}
-        cmap2: dict[int, int] = {}
-        if uid_set2:
-            cmap2 = dict(
-                db.query(Task.assignee_id, func.count(Task.id))
-                .filter(Task.assignee_id.in_(uid_set2), Task.status == TaskStatus.COMPLETED)
-                .group_by(Task.assignee_id)
-                .all()
-            )
+        mu = _worker_mu(rows)
 
         def _worker_score(u: User) -> float:
-            ce = math.sqrt(cmap2.get(u.id, 0))
-            ra = u.worker_rating_avg if u.worker_rating_count > 0 else mu
-            bayesian = (_BAYESIAN_C * mu + ra * ce) / (_BAYESIAN_C + ce)
+            rating_avg, rating_count = _overall_rating_stats(u)
+            completion_evidence = math.sqrt(completed_map.get(u.id, 0))
+            review_evidence = math.sqrt(rating_count)
+            evidence = completion_evidence + review_evidence
+            base_rating = rating_avg if rating_count > 0 else mu
+            bayesian = (_BAYESIAN_C * mu + base_rating * evidence) / (_BAYESIAN_C + evidence) if evidence > 0 else mu
             return bayesian - math.log1p(u.blocked_by_count) * _BLOCK_K - math.log1p(u.ban_count or 0) * _BAN_K
 
         rows.sort(key=lambda r: _worker_score(r[1]), reverse=True)
 
-    out: list[WorkerProfileOut] = []
-    for wp, user in rows:
-        out.append(
-            WorkerProfileOut(
-                user_id=user.id,
-                enabled=wp.enabled,
-                skills=wp.skills,
-                min_price=wp.min_price,
-                max_price=wp.max_price,
-                bio=wp.bio,
-                display_name=display_name(user),
-                avatar_url=user.avatar_url,
-                gender=user.gender,
-                worker_rating_avg=user.worker_rating_avg,
-                worker_rating_count=user.worker_rating_count,
-                blocked_by_count=user.blocked_by_count,
-            )
-        )
-    return out
+    return [_to_worker_profile_out(profile, user, completed_map.get(user.id, 0)) for profile, user in rows]
 
 
 @router.put('/me/worker-profile', response_model=WorkerProfileOut)
@@ -232,30 +287,34 @@ def upsert_worker_profile(
     if payload.min_price is not None and payload.max_price is not None and payload.min_price > payload.max_price:
         raise HTTPException(status_code=422, detail='min_price cannot be greater than max_price')
 
+    if len(payload.skill_tag_ids) > 5:
+        raise HTTPException(status_code=422, detail='最多选择 5 个擅长类别')
+
     profile.enabled = payload.enabled
-    profile.skills = payload.skills
     profile.min_price = payload.min_price
     profile.max_price = payload.max_price
     profile.bio = payload.bio
+    profile.phone = payload.phone.strip() if payload.phone else None
+    profile.wechat = payload.wechat.strip() if payload.wechat else None
 
     db.add(profile)
+    db.flush()
+
+    if payload.skill_tag_ids:
+        tags = db.query(TaskCategory).filter(TaskCategory.id.in_(payload.skill_tag_ids)).all()
+        if len(tags) != len(payload.skill_tag_ids):
+            raise HTTPException(status_code=422, detail='部分类别不存在')
+        profile.skill_tags = tags
+    else:
+        profile.skill_tags = []
+
+    profile.skills = '、'.join(t.name for t in profile.skill_tags) if profile.skill_tags else None
+
     db.commit()
     db.refresh(profile)
 
-    return WorkerProfileOut(
-        user_id=user.id,
-        enabled=profile.enabled,
-        skills=profile.skills,
-        min_price=profile.min_price,
-        max_price=profile.max_price,
-        bio=profile.bio,
-        display_name=display_name(user),
-        avatar_url=user.avatar_url,
-        gender=user.gender,
-        worker_rating_avg=user.worker_rating_avg,
-        worker_rating_count=user.worker_rating_count,
-        blocked_by_count=user.blocked_by_count,
-    )
+    completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
+    return _to_worker_profile_out(profile, user, completed_count)
 
 
 @router.get('/me/worker-profile', response_model=WorkerProfileOut)
@@ -267,19 +326,58 @@ def get_my_worker_profile(user: User = Depends(require_user), db: Session = Depe
         db.commit()
         db.refresh(profile)
 
-    return WorkerProfileOut(
-        user_id=user.id,
-        enabled=profile.enabled,
-        skills=profile.skills,
-        min_price=profile.min_price,
-        max_price=profile.max_price,
-        bio=profile.bio,
-        display_name=display_name(user),
-        avatar_url=user.avatar_url,
-        gender=user.gender,
-        worker_rating_avg=user.worker_rating_avg,
-        worker_rating_count=user.worker_rating_count,
-        blocked_by_count=user.blocked_by_count,
+    completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
+    return _to_worker_profile_out(profile, user, completed_count)
+
+
+@router.get('/workers/{user_id}', response_model=WorkerProfileOut)
+def get_worker_detail(user_id: int, db: Session = Depends(get_db)) -> WorkerProfileOut:
+    row = (
+        db.query(WorkerProfile, User)
+        .join(User, User.id == WorkerProfile.user_id)
+        .filter(WorkerProfile.user_id == user_id, WorkerProfile.enabled.is_(True), User.is_banned.is_(False))
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail='Worker not found')
+
+    profile, user = row
+    completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
+    return _to_worker_profile_out(profile, user, completed_count)
+
+
+@router.post('/workers/{user_id}/contact-view', response_model=WorkerContactRevealOut)
+def view_worker_contact(
+    user_id: int,
+    viewer: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> WorkerContactRevealOut:
+    row = (
+        db.query(WorkerProfile, User)
+        .join(User, User.id == WorkerProfile.user_id)
+        .filter(WorkerProfile.user_id == user_id, WorkerProfile.enabled.is_(True), User.is_banned.is_(False))
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail='Worker not found')
+    if viewer.id == user_id:
+        raise HTTPException(status_code=400, detail='不能查看自己的联系方式')
+
+    profile, _ = row
+    record = WorkerContactView(
+        worker_user_id=user_id,
+        viewer_user_id=viewer.id,
+        phone_snapshot=profile.phone,
+        wechat_snapshot=profile.wechat,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return WorkerContactRevealOut(
+        phone=profile.phone,
+        wechat=profile.wechat,
+        viewed_at=record.created_at,
     )
 
 

@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
 from app.models.task import Task, TaskAttachment, TaskCategory, TaskMessage, TaskReview
-from app.models.user import User
+from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.task import (
     TaskAttachmentCreate,
     TaskAttachmentOut,
@@ -138,7 +138,7 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
     cats = db.query(TaskCategory).order_by(asc(TaskCategory.sort_order), asc(TaskCategory.id)).all()
 
     now = datetime.utcnow()
-    count_rows = (
+    task_count_rows = (
         db.query(Task.category_id, func.count(Task.id))
         .join(User, Task.publisher_id == User.id)
         .filter(
@@ -149,7 +149,17 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
         .group_by(Task.category_id)
         .all()
     )
-    count_map = {cid: cnt for cid, cnt in count_rows}
+    task_count_map = {cid: cnt for cid, cnt in task_count_rows}
+
+    worker_count_rows = (
+        db.query(worker_skill_tags.c.skill_tag_id, func.count(worker_skill_tags.c.worker_profile_id.distinct()))
+        .join(WorkerProfile, WorkerProfile.id == worker_skill_tags.c.worker_profile_id)
+        .join(User, User.id == WorkerProfile.user_id)
+        .filter(WorkerProfile.enabled.is_(True), User.is_banned.is_(False))
+        .group_by(worker_skill_tags.c.skill_tag_id)
+        .all()
+    )
+    worker_count_map = {cid: cnt for cid, cnt in worker_count_rows}
 
     return [
         CategoryOut(
@@ -157,7 +167,8 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
             name=c.name,
             description=c.description,
             sort_order=c.sort_order,
-            task_count=count_map.get(c.id, 0),
+            task_count=task_count_map.get(c.id, 0),
+            worker_count=worker_count_map.get(c.id, 0),
         )
         for c in cats
     ]

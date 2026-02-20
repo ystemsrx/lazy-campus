@@ -1,10 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import Gender, UserRole
+
+worker_skill_tags = Table(
+    'worker_skill_tags',
+    Base.metadata,
+    Column('worker_profile_id', Integer, ForeignKey('worker_profiles.id', ondelete='CASCADE'), primary_key=True),
+    Column('skill_tag_id', Integer, ForeignKey('task_categories.id', ondelete='CASCADE'), primary_key=True),
+)
 
 
 class User(Base):
@@ -52,5 +59,19 @@ class WorkerProfile(Base):
     min_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    wechat: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     user = relationship('User', back_populates='worker_profile', primaryjoin='WorkerProfile.user_id == User.id')
+    skill_tags = relationship('TaskCategory', secondary=worker_skill_tags, lazy='selectin')
+
+
+class WorkerContactView(Base):
+    __tablename__ = 'worker_contact_views'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    worker_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    viewer_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    phone_snapshot: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    wechat_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

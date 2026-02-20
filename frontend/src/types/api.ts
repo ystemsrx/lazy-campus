@@ -44,19 +44,35 @@ export interface UserMe {
   created_at: string
 }
 
+export interface SkillTag {
+  id: number
+  name: string
+}
+
 export interface WorkerProfile {
   user_id: number
   enabled: boolean
-  skills: string | null
+  skill_tags: SkillTag[]
   min_price: number | null
   max_price: number | null
   bio: string | null
+  phone: string | null
+  wechat: string | null
   display_name: string
   avatar_url: string | null
   gender: Gender | null
   worker_rating_avg: number
   worker_rating_count: number
+  overall_rating_avg: number
+  overall_rating_count: number
+  worker_completed_count: number
   blocked_by_count: number
+}
+
+export interface WorkerContactReveal {
+  phone: string | null
+  wechat: string | null
+  viewed_at: string
 }
 
 export type Gender = 'male' | 'female'
@@ -88,6 +104,7 @@ export interface Category {
   description: string | null
   sort_order: number
   task_count: number
+  worker_count: number
 }
 
 export interface TaskMessage {

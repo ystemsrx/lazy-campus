@@ -12,10 +12,12 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   minWidth?: string
   width?: string
+  placement?: 'top' | 'bottom'
 }>(), {
   placeholder: '请选择',
   minWidth: '120px',
   width: '100%',
+  placement: 'bottom',
 })
 
 const emit = defineEmits<{
@@ -57,21 +59,23 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   <div
     ref="dropdownRef"
     class="app-dropdown"
-    :class="{ 'app-dropdown--open': isOpen }"
+    :class="{ 'app-dropdown--open': isOpen, 'app-dropdown--top': placement === 'top' }"
     :style="{ width: props.width, minWidth: props.minWidth }"
   >
-    <button type="button" class="app-dropdown__trigger" @click="toggle">
-      <span class="app-dropdown__label" :class="{ 'app-dropdown__label--placeholder': !hasValue }">
-        {{ selectedLabel }}
-      </span>
-      <span class="app-dropdown__chevron">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M3 5L7 9L11 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-    </button>
+    <slot name="trigger" :toggle="toggle" :is-open="isOpen">
+      <button type="button" class="app-dropdown__trigger" @click="toggle">
+        <span class="app-dropdown__label" :class="{ 'app-dropdown__label--placeholder': !hasValue }">
+          {{ selectedLabel }}
+        </span>
+        <span class="app-dropdown__chevron">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 5L7 9L11 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+    </slot>
 
-    <Transition name="app-dropdown">
+    <Transition :name="placement === 'top' ? 'app-dropdown-up' : 'app-dropdown'">
       <div v-if="isOpen" class="app-dropdown__menu">
         <button
           v-for="opt in options"
@@ -179,6 +183,12 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   transform-origin: top center;
 }
 
+.app-dropdown--top .app-dropdown__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform-origin: bottom center;
+}
+
 /* ── 选项 ── */
 .app-dropdown__item {
   display: flex;
@@ -215,7 +225,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   flex-shrink: 0;
 }
 
-/* ── 进出场动画 ── */
+/* ── 进出场动画（向下） ── */
 .app-dropdown-enter-active {
   transition:
     opacity var(--dur-normal) var(--ease),
@@ -233,5 +243,25 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 .app-dropdown-leave-to {
   opacity: 0;
   transform: scaleY(0.94) translateY(-3px);
+}
+
+/* ── 进出场动画（向上） ── */
+.app-dropdown-up-enter-active {
+  transition:
+    opacity var(--dur-normal) var(--ease),
+    transform var(--dur-normal) var(--ease);
+}
+.app-dropdown-up-leave-active {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+.app-dropdown-up-enter-from {
+  opacity: 0;
+  transform: scaleY(0.88) translateY(6px);
+}
+.app-dropdown-up-leave-to {
+  opacity: 0;
+  transform: scaleY(0.94) translateY(3px);
 }
 </style>

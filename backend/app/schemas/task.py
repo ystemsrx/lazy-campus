@@ -19,6 +19,7 @@ class CategoryOut(BaseModel):
     description: str | None
     sort_order: int
     task_count: int = 0
+    worker_count: int = 0
 
 
 class TaskCreate(BaseModel):

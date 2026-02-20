@@ -232,7 +232,7 @@ const emit = defineEmits<{
 
   .hv-task-card__desc {
     font-size: var(--text-xs);
-    -webkit-line-clamp: 1;
+    -webkit-line-clamp: 2;
   }
 
   .hv-task-card__tags {
