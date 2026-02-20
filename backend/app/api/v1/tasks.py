@@ -1,10 +1,11 @@
+import math
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, asc, desc, or_
+from sqlalchemy import and_, asc, case, desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin, require_completed_user, require_user
+from app.api.deps import optional_user, require_admin, require_completed_user, require_user
 from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
@@ -26,6 +27,36 @@ from app.schemas.task import (
 from app.utils.user_display import display_name
 
 router = APIRouter(prefix='/tasks', tags=['tasks'])
+
+_BAYESIAN_C = 3
+_DECAY_LAMBDA = math.log(2) / 48.0  # 2-day half-life
+_URGENCY_CAP = 0.1
+_URGENCY_WINDOW_H = 72.0
+_BLOCK_K = 0.5
+_BAN_K = 1.5
+
+
+def _publisher_mu(db: Session) -> float:
+    val = db.query(func.avg(User.publisher_rating_avg)).filter(User.publisher_rating_count > 0).scalar()
+    return float(val) if val else 3.0
+
+
+def _task_ranking_score(task: Task, publisher: User, now: datetime, mu: float, completed: int) -> float:
+    """Credibility × Freshness × (1 + Urgency) − Penalty"""
+    ce = math.sqrt(completed)
+    ra = publisher.publisher_rating_avg if publisher.publisher_rating_count > 0 else mu
+    bayesian = (_BAYESIAN_C * mu + ra * ce) / (_BAYESIAN_C + ce)
+
+    age_h = max(0.0, (now - task.created_at).total_seconds() / 3600)
+    freshness = math.exp(-_DECAY_LAMBDA * age_h)
+
+    urgency = 0.0
+    if task.deadline and task.deadline > now:
+        left_h = (task.deadline - now).total_seconds() / 3600
+        urgency = min(_URGENCY_CAP, _URGENCY_CAP / (1.0 + left_h / _URGENCY_WINDOW_H))
+
+    penalty = math.log1p(publisher.blocked_by_count) * _BLOCK_K + math.log1p(publisher.ban_count or 0) * _BAN_K
+    return bayesian * freshness * (1.0 + urgency) - penalty
 
 
 def _is_participant(task: Task, user_id: int) -> bool:
@@ -169,7 +200,10 @@ def list_tasks(
     status: TaskStatus | None = Query(default=TaskStatus.OPEN),
     min_price: float | None = Query(default=None),
     max_price: float | None = Query(default=None),
-    sort: str = Query(default='ranking', pattern='^(ranking|newest|price_asc|price_desc)$'),
+    sort: str = Query(
+        default='ranking',
+        pattern='^(ranking|newest|deadline_asc|publisher_rating|publisher_completed|price_asc|price_desc)$',
+    ),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
@@ -187,17 +221,54 @@ def list_tasks(
     if max_price is not None:
         query = query.filter(Task.price <= max_price)
 
-    ranking_score = User.publisher_rating_avg * (1 + User.publisher_rating_count * 0.1) - User.blocked_by_count * 0.2
     if sort == 'newest':
         query = query.order_by(desc(Task.created_at))
+        rows = query.limit(200).all()
+    elif sort == 'deadline_asc':
+        query = query.order_by(
+            case((Task.deadline.is_(None), 1), else_=0),
+            asc(Task.deadline),
+            desc(Task.created_at),
+        )
+        rows = query.limit(200).all()
+    elif sort == 'publisher_rating':
+        query = query.order_by(desc(User.publisher_rating_avg), desc(User.publisher_rating_count), desc(Task.created_at))
+        rows = query.limit(200).all()
+    elif sort == 'publisher_completed':
+        rows = query.all()
+        pub_ids = {p.id for _, p in rows}
+        completed_map: dict[int, int] = {}
+        if pub_ids:
+            completed_map = dict(
+                db.query(Task.publisher_id, func.count(Task.id))
+                .filter(Task.publisher_id.in_(pub_ids), Task.status == TaskStatus.COMPLETED)
+                .group_by(Task.publisher_id)
+                .all()
+            )
+        rows.sort(key=lambda r: (-completed_map.get(r[1].id, 0), -r[0].created_at.timestamp()))
+        rows = rows[:200]
     elif sort == 'price_asc':
         query = query.order_by(asc(Task.price), desc(Task.created_at))
+        rows = query.limit(200).all()
     elif sort == 'price_desc':
         query = query.order_by(desc(Task.price), desc(Task.created_at))
+        rows = query.limit(200).all()
     else:
-        query = query.order_by(desc(ranking_score), desc(Task.created_at))
+        rows = query.all()
+        now = datetime.utcnow()
+        mu = _publisher_mu(db)
+        pub_ids = {p.id for _, p in rows}
+        cmap: dict[int, int] = {}
+        if pub_ids:
+            cmap = dict(
+                db.query(Task.publisher_id, func.count(Task.id))
+                .filter(Task.publisher_id.in_(pub_ids), Task.status == TaskStatus.COMPLETED)
+                .group_by(Task.publisher_id)
+                .all()
+            )
+        rows.sort(key=lambda r: _task_ranking_score(r[0], r[1], now, mu, cmap.get(r[1].id, 0)), reverse=True)
+        rows = rows[:200]
 
-    rows = query.limit(200).all()
     user_ids = {task.assignee_id for task, _ in rows if task.assignee_id}
     assignees = {}
     if user_ids:
@@ -337,6 +408,25 @@ def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: 
     return _task_to_out(task, publisher, assignee, viewer_id=user.id)
 
 
+@router.delete('/{task_id}')
+def delete_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> dict:
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    if task.publisher_id != user.id:
+        raise HTTPException(status_code=403, detail='Only publisher can delete task')
+    if task.status == TaskStatus.IN_PROGRESS:
+        raise HTTPException(status_code=400, detail='任务已被接取，请等待接单者取消后再删除')
+    if task.status not in (TaskStatus.OPEN, TaskStatus.CANCELED):
+        raise HTTPException(status_code=400, detail='当前任务状态不允许删除')
+
+    db.query(TaskMessage).filter(TaskMessage.task_id == task_id).delete()
+    db.query(TaskAttachment).filter(TaskAttachment.task_id == task_id).delete()
+    db.delete(task)
+    db.commit()
+    return {'message': 'deleted'}
+
+
 @router.get('/{task_id}/messages', response_model=list[TaskMessageOut])
 def list_messages(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[TaskMessageOut]:
     task = db.get(Task, task_id)
@@ -443,8 +533,26 @@ def create_attachment(
 
 
 @router.get('/{task_id}/reviews', response_model=list[TaskReviewOut])
-def list_reviews(task_id: int, db: Session = Depends(get_db)) -> list[TaskReviewOut]:
-    return db.query(TaskReview).filter(TaskReview.task_id == task_id).order_by(desc(TaskReview.created_at)).all()
+def list_reviews(
+    task_id: int,
+    user: User | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+) -> list[TaskReviewOut]:
+    reviews = db.query(TaskReview).filter(TaskReview.task_id == task_id).order_by(desc(TaskReview.created_at)).all()
+
+    if not user:
+        return reviews
+
+    task = db.get(Task, task_id)
+    if not task or not _is_participant(task, user.id):
+        return reviews
+
+    roles_reviewed = {r.target_role for r in reviews}
+    both_done = RatingTargetRole.PUBLISHER in roles_reviewed and RatingTargetRole.WORKER in roles_reviewed
+    if both_done:
+        return reviews
+
+    return [r for r in reviews if r.reviewer_id == user.id]
 
 
 @router.post('/{task_id}/reviews', response_model=TaskReviewOut)

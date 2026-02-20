@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_admin, require_completed_user
@@ -11,6 +11,8 @@ from app.models.moderation import AdminActionLog, Blacklist, Report
 from app.models.task import Task
 from app.models.user import User, WorkerProfile
 from app.schemas.moderation import (
+    AdminUserItem,
+    AdminUserListResponse,
     BanUserRequest,
     BlacklistCreate,
     RegistrationSettingOut,
@@ -20,6 +22,7 @@ from app.schemas.moderation import (
     ReportReview,
 )
 from app.services.auth_service import get_registration_enabled, set_registration_enabled
+from app.utils.user_display import display_name
 
 router = APIRouter(prefix='/moderation', tags=['moderation'])
 
@@ -187,20 +190,75 @@ def admin_ban_user(
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
 
-    user.is_banned = payload.banned
-    user.ban_reason = payload.reason if payload.banned else None
+    if payload.banned:
+        user.is_banned = True
+        user.ban_reason = payload.reason
+        user.ban_count = (user.ban_count or 0) + 1
+        action = 'ban_user'
+        detail = payload.reason
+    else:
+        user.is_banned = False
+        user.ban_reason = None
+        if payload.innocent and (user.ban_count or 0) > 0:
+            user.ban_count = user.ban_count - 1
+        action = 'unban_user_innocent' if payload.innocent else 'unban_user'
+        detail = '无责解封' if payload.innocent else '有责解封'
+
     db.add(user)
     db.add(
         AdminActionLog(
             admin_identifier=admin.admin_account or 'admin',
-            action='ban_user' if payload.banned else 'unban_user',
+            action=action,
             target_type='user',
             target_id=str(user_id),
-            detail=payload.reason,
+            detail=detail,
         )
     )
     db.commit()
     return {'message': 'ok'}
+
+
+@router.get('/admin/users', response_model=AdminUserListResponse)
+def admin_list_users(
+    q: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=20),
+    _admin: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserListResponse:
+    query = db.query(User)
+    if q and q.strip():
+        like = f'%{q.strip()}%'
+        query = query.filter(
+            or_(
+                User.account.like(like),
+                User.name.like(like),
+                User.nickname.like(like),
+            )
+        )
+    total = query.count()
+    items = query.order_by(User.id).offset((page - 1) * page_size).limit(page_size).all()
+    return AdminUserListResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        items=[
+            AdminUserItem(
+                id=u.id,
+                account=u.account,
+                name=u.name,
+                nickname=u.nickname,
+                display_name=display_name(u),
+                avatar_url=u.avatar_url,
+                role=u.role.value,
+                is_banned=u.is_banned,
+                ban_reason=u.ban_reason,
+                ban_count=u.ban_count or 0,
+                created_at=u.created_at,
+            )
+            for u in items
+        ],
+    )
 
 
 @router.get('/admin/dashboard')

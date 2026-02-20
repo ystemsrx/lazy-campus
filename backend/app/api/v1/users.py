@@ -1,12 +1,25 @@
+import math
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, desc, or_
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_completed_user, require_user
 from app.db.session import get_db
+from app.models.enums import TaskStatus
+from app.models.task import Task
 from app.models.user import User, WorkerProfile
 from app.schemas.user import CompleteProfileRequest, UserMe, UserPublic, WorkerProfileOut, WorkerProfileUpsert
 from app.utils.user_display import display_name
+
+_BAYESIAN_C = 3
+_BLOCK_K = 0.5
+_BAN_K = 1.5
+
+
+def _worker_mu(db: Session) -> float:
+    val = db.query(func.avg(User.worker_rating_avg)).filter(User.worker_rating_count > 0).scalar()
+    return float(val) if val else 3.0
 
 router = APIRouter(prefix='/users', tags=['users'])
 
@@ -61,6 +74,7 @@ def list_workers(
     keyword: str | None = Query(default=None),
     min_price: float | None = Query(default=None),
     max_price: float | None = Query(default=None),
+    sort: str = Query(default='ranking', pattern='^(ranking|worker_rating|worker_completed)$'),
     db: Session = Depends(get_db),
 ) -> list[WorkerProfileOut]:
     query = (
@@ -83,8 +97,40 @@ def list_workers(
     if max_price is not None:
         query = query.filter(WorkerProfile.min_price.is_(None) | (WorkerProfile.min_price <= max_price))
 
-    ranking_score = User.worker_rating_avg * (1 + User.worker_rating_count * 0.1) - User.blocked_by_count * 0.2
-    rows = query.order_by(desc(ranking_score), desc(User.worker_rating_count)).all()
+    if sort == 'worker_rating':
+        rows = query.order_by(desc(User.worker_rating_avg), desc(User.worker_rating_count)).all()
+    elif sort == 'worker_completed':
+        rows = query.all()
+        uid_set = {u.id for _, u in rows}
+        completed_map: dict[int, int] = {}
+        if uid_set:
+            completed_map = dict(
+                db.query(Task.assignee_id, func.count(Task.id))
+                .filter(Task.assignee_id.in_(uid_set), Task.status == TaskStatus.COMPLETED)
+                .group_by(Task.assignee_id)
+                .all()
+            )
+        rows.sort(key=lambda r: -completed_map.get(r[1].id, 0))
+    else:
+        rows = query.all()
+        mu = _worker_mu(db)
+        uid_set2 = {u.id for _, u in rows}
+        cmap2: dict[int, int] = {}
+        if uid_set2:
+            cmap2 = dict(
+                db.query(Task.assignee_id, func.count(Task.id))
+                .filter(Task.assignee_id.in_(uid_set2), Task.status == TaskStatus.COMPLETED)
+                .group_by(Task.assignee_id)
+                .all()
+            )
+
+        def _worker_score(u: User) -> float:
+            ce = math.sqrt(cmap2.get(u.id, 0))
+            ra = u.worker_rating_avg if u.worker_rating_count > 0 else mu
+            bayesian = (_BAYESIAN_C * mu + ra * ce) / (_BAYESIAN_C + ce)
+            return bayesian - math.log1p(u.blocked_by_count) * _BLOCK_K - math.log1p(u.ban_count or 0) * _BAN_K
+
+        rows.sort(key=lambda r: _worker_score(r[1]), reverse=True)
 
     out: list[WorkerProfileOut] = []
     for wp, user in rows:

@@ -26,6 +26,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ban_count: Mapped[int] = mapped_column(Integer, default=0)
 
     publisher_rating_avg: Mapped[float] = mapped_column(Float, default=0)
     publisher_rating_count: Mapped[int] = mapped_column(Integer, default=0)

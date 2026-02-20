@@ -19,8 +19,12 @@ def run_startup_migrations() -> None:
     with engine.begin() as conn:
         table_info = conn.execute(text("PRAGMA table_info(users)"))
         columns = {row[1] for row in table_info}
-        if 'password_hashed' not in columns and 'users' in {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}:
-            conn.execute(text('ALTER TABLE users ADD COLUMN password_hashed BOOLEAN DEFAULT 0'))
+        has_users_table = 'users' in {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+        if has_users_table:
+            if 'password_hashed' not in columns:
+                conn.execute(text('ALTER TABLE users ADD COLUMN password_hashed BOOLEAN DEFAULT 0'))
+            if 'ban_count' not in columns:
+                conn.execute(text('ALTER TABLE users ADD COLUMN ban_count INTEGER DEFAULT 0'))
 
 
 def init_db() -> None:

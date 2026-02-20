@@ -12,6 +12,7 @@ from app.models.user import User
 from app.utils.user_display import profile_completed
 
 bearer_scheme = HTTPBearer(auto_error=True)
+bearer_optional = HTTPBearer(auto_error=False)
 
 
 @dataclass
@@ -67,4 +68,23 @@ def require_admin(ctx: AuthContext = Depends(get_current_auth)) -> AuthContext:
 def require_completed_user(user: User = Depends(require_user)) -> User:
     if not profile_completed(user):
         raise ProfileIncompleteException()
+    return user
+
+
+def optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    if not credentials:
+        return None
+    try:
+        payload = decode_token(credentials.credentials)
+    except JWTError:
+        return None
+    user_id = payload.get('uid')
+    if not user_id:
+        return None
+    user = db.get(User, int(user_id))
+    if not user or not user.is_active or user.is_banned:
+        return None
     return user

@@ -42,6 +42,7 @@ class BlacklistCreate(BaseModel):
 class BanUserRequest(BaseModel):
     banned: bool
     reason: str | None = None
+    innocent: bool = False
 
 
 class RegistrationSettingUpdate(BaseModel):
@@ -50,3 +51,24 @@ class RegistrationSettingUpdate(BaseModel):
 
 class RegistrationSettingOut(BaseModel):
     registration_enabled: bool
+
+
+class AdminUserItem(BaseModel):
+    id: int
+    account: str
+    name: str
+    nickname: str | None
+    display_name: str
+    avatar_url: str | None
+    role: str
+    is_banned: bool
+    ban_reason: str | None
+    ban_count: int
+    created_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[AdminUserItem]

@@ -67,3 +67,7 @@ export async function createReview(
   const { data } = await api.post<TaskReview>(`/tasks/${taskId}/reviews`, payload)
   return data
 }
+
+export async function deleteTask(taskId: number) {
+  await api.delete(`/tasks/${taskId}`)
+}

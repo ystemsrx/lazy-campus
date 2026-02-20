@@ -1,5 +1,5 @@
 import api from './client'
-import type { Report } from '../types/api'
+import type { AdminUserListResponse, Report } from '../types/api'
 
 export async function createReport(payload: {
   type: 'report' | 'appeal'
@@ -37,8 +37,13 @@ export async function reviewReport(reportId: number, payload: { status: 'pending
   return data
 }
 
-export async function banUser(userId: number, payload: { banned: boolean; reason?: string }) {
+export async function banUser(userId: number, payload: { banned: boolean; reason?: string; innocent?: boolean }) {
   const { data } = await api.post(`/moderation/admin/users/${userId}/ban`, payload)
+  return data
+}
+
+export async function fetchAdminUsers(params: { q?: string; page?: number; page_size?: number } = {}) {
+  const { data } = await api.get<AdminUserListResponse>('/moderation/admin/users', { params })
   return data
 }
 

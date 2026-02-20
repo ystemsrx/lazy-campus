@@ -102,6 +102,27 @@ export interface TaskReview {
   created_at: string
 }
 
+export interface AdminUserItem {
+  id: number
+  account: string
+  name: string
+  nickname: string | null
+  display_name: string
+  avatar_url: string | null
+  role: UserRole
+  is_banned: boolean
+  ban_reason: string | null
+  ban_count: number
+  created_at: string
+}
+
+export interface AdminUserListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AdminUserItem[]
+}
+
 export interface Report {
   id: number
   type: 'report' | 'appeal'
