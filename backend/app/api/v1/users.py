@@ -1,16 +1,23 @@
+import io
 import math
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_completed_user, require_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.enums import TaskStatus
 from app.models.task import Task
 from app.models.user import User, WorkerProfile
-from app.schemas.user import CompleteProfileRequest, UserMe, UserPublic, WorkerProfileOut, WorkerProfileUpsert
+from app.schemas.user import CompleteProfileRequest, UpdateProfileRequest, UserMe, UserPublic, WorkerProfileOut, WorkerProfileUpsert
 from app.utils.user_display import display_name
+
+UPLOAD_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'avatars'
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _BAYESIAN_C = 3
 _BLOCK_K = 0.5
@@ -49,6 +56,7 @@ def get_me(user: User = Depends(require_user)) -> UserMe:
         gender=user.gender,
         avatar_url=user.avatar_url,
         is_banned=user.is_banned,
+        ban_until=user.ban_until,
         role=user.role.value,
         created_at=user.created_at,
     )
@@ -63,6 +71,64 @@ def complete_profile(
     user.email = payload.email
     user.gender = payload.gender
     user.nickname = payload.nickname
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return get_me(user)
+
+
+@router.put('/me/profile', response_model=UserMe)
+def update_profile(
+    payload: UpdateProfileRequest,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> UserMe:
+    user.nickname = payload.nickname
+    user.gender = payload.gender
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return get_me(user)
+
+
+@router.post('/me/avatar', response_model=UserMe)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> UserMe:
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail='仅支持图片文件')
+
+    try:
+        from PIL import Image
+    except ImportError:
+        raise HTTPException(status_code=500, detail='服务器缺少 Pillow 依赖')
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='图片大小不能超过 10MB')
+
+    img = Image.open(io.BytesIO(raw))
+    img = img.convert('RGBA') if img.mode == 'RGBA' else img.convert('RGB')
+
+    w, h = img.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    img = img.crop((left, top, left + side, top + side))
+
+    if img.mode == 'RGBA':
+        bg = Image.new('RGB', img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[3])
+        img = bg
+
+    filename = f'{user.id}_{uuid.uuid4().hex[:8]}.webp'
+    filepath = UPLOAD_DIR / filename
+    img.save(filepath, format='WEBP', quality=80)
+
+    avatar_url = f'{settings.backend_public_url}/uploads/avatars/{filename}'
+    user.avatar_url = avatar_url
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -144,6 +210,7 @@ def list_workers(
                 bio=wp.bio,
                 display_name=display_name(user),
                 avatar_url=user.avatar_url,
+                gender=user.gender,
                 worker_rating_avg=user.worker_rating_avg,
                 worker_rating_count=user.worker_rating_count,
                 blocked_by_count=user.blocked_by_count,
@@ -184,6 +251,7 @@ def upsert_worker_profile(
         bio=profile.bio,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
+        gender=user.gender,
         worker_rating_avg=user.worker_rating_avg,
         worker_rating_count=user.worker_rating_count,
         blocked_by_count=user.blocked_by_count,
@@ -208,6 +276,7 @@ def get_my_worker_profile(user: User = Depends(require_user), db: Session = Depe
         bio=profile.bio,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
+        gender=user.gender,
         worker_rating_avg=user.worker_rating_avg,
         worker_rating_count=user.worker_rating_count,
         blocked_by_count=user.blocked_by_count,

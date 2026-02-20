@@ -40,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
     return user.value
   }
 
-  async function completeProfile(payload: { email: string; gender: 'male' | 'female' | 'other'; nickname: string }) {
+  async function completeProfile(payload: { email: string; gender: 'male' | 'female'; nickname: string }) {
     const data = await apiCompleteProfile(payload)
     user.value = data
     profileCompleted.value = true

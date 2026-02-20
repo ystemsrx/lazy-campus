@@ -87,6 +87,7 @@ def _task_to_out(task: Task, publisher: User, assignee: User | None, viewer_id: 
         assignee_id=task.assignee_id,
         contact_visibility=task.contact_visibility,
         contact_info=task.contact_info if _contact_visible(task, viewer_id) else None,
+        required_gender=task.required_gender,
         publisher_display_name=display_name(publisher),
         assignee_display_name=display_name(assignee) if assignee else None,
         created_at=task.created_at,
@@ -216,6 +217,9 @@ def list_tasks(
         query = query.filter(Task.category_id == category_id)
     if status is not None:
         query = query.filter(Task.status == status)
+        if status == TaskStatus.OPEN:
+            now_filter = datetime.utcnow()
+            query = query.filter(or_(Task.deadline.is_(None), Task.deadline > now_filter))
     if min_price is not None:
         query = query.filter(Task.price >= min_price)
     if max_price is not None:
@@ -266,7 +270,12 @@ def list_tasks(
                 .group_by(Task.publisher_id)
                 .all()
             )
-        rows.sort(key=lambda r: _task_ranking_score(r[0], r[1], now, mu, cmap.get(r[1].id, 0)), reverse=True)
+        user_gender = user.gender
+        def _rank_key(r):
+            task, pub = r
+            mismatch = 1 if (task.required_gender and task.required_gender != user_gender) else 0
+            return (mismatch, -_task_ranking_score(task, pub, now, mu, cmap.get(pub.id, 0)))
+        rows.sort(key=_rank_key)
         rows = rows[:200]
 
     user_ids = {task.assignee_id for task, _ in rows if task.assignee_id}
@@ -288,6 +297,9 @@ def create_task(
     if payload.contact_visibility == ContactVisibility.INTERNAL_ONLY and payload.contact_info:
         raise HTTPException(status_code=422, detail='contact_info should be empty for internal_only mode')
 
+    if payload.deadline and payload.deadline <= datetime.utcnow():
+        raise HTTPException(status_code=422, detail='截止时间不能早于当前时间')
+
     task = Task(
         title=payload.title,
         description=payload.description,
@@ -297,6 +309,7 @@ def create_task(
         category_id=payload.category_id,
         contact_visibility=payload.contact_visibility,
         contact_info=payload.contact_info,
+        required_gender=payload.required_gender,
         publisher_id=user.id,
     )
     db.add(task)
@@ -335,6 +348,9 @@ def update_task(
     for k, v in data.items():
         setattr(task, k, v)
 
+    if task.deadline and task.deadline <= datetime.utcnow():
+        raise HTTPException(status_code=422, detail='截止时间不能早于当前时间')
+
     if task.contact_visibility == ContactVisibility.AFTER_ACCEPT and not task.contact_info:
         raise HTTPException(status_code=422, detail='contact_info is required when contact visibility is after_accept')
     if task.contact_visibility == ContactVisibility.INTERNAL_ONLY:
@@ -358,6 +374,8 @@ def accept_task(task_id: int, user: User = Depends(require_completed_user), db: 
         raise HTTPException(status_code=400, detail='Task is not open')
     if _blocked_between(db, user.id, task.publisher_id):
         raise HTTPException(status_code=403, detail='Blocked relation detected')
+    if task.required_gender and user.gender != task.required_gender:
+        raise HTTPException(status_code=400, detail='您的性别不满足该任务要求')
 
     task.assignee_id = user.id
     task.status = TaskStatus.IN_PROGRESS

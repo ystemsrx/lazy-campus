@@ -8,9 +8,14 @@ import {
   fetchAdminReports,
   fetchAdminUsers,
   fetchRegistrationSetting,
+  fetchTaskSnapshot,
   reviewReport,
   updateRegistrationSetting
 } from '../api/moderation'
+import { appConfirm } from '../components/AppConfirm.vue'
+import AppDropdown from '../components/AppDropdown.vue'
+import { extractError } from '../utils/error'
+import { formatShort } from '../utils/time'
 import { useAuthStore } from '../stores/auth'
 import type { AdminUserItem, Report } from '../types/api'
 
@@ -32,8 +37,16 @@ function showToast(text: string, type: 'success' | 'error' | 'info' = 'info') {
 const loading = ref(true)
 const dashboard = ref<Record<string, any>>({})
 const reports = ref<Report[]>([])
+const reportSubTab = ref<'report' | 'appeal'>('report')
+const reportStatusFilter = ref<string>('pending')
 const registrationEnabled = ref(true)
 const savingRegistration = ref(false)
+
+const STATUS_OPTIONS = [
+  { value: 'pending', label: '待处理' },
+  { value: 'approved', label: '已通过' },
+  { value: 'rejected', label: '已驳回' },
+]
 
 /* -------- Users State -------- */
 const userSearch = ref('')
@@ -51,6 +64,39 @@ const banSubmitting = ref(false)
 const unbanOpenId = ref<number | null>(null)
 const unbanSubmitting = ref(false)
 
+const showReviewModal = ref(false)
+const reviewTarget = ref<Report | null>(null)
+const reviewBanReason = ref('')
+const reviewSubmitting = ref(false)
+
+/* -------- Task Snapshot -------- */
+const showSnapshot = ref(false)
+const snapshotLoading = ref(false)
+const snapshot = ref<any>(null)
+
+async function openSnapshot(taskId: number) {
+  showSnapshot.value = true
+  snapshotLoading.value = true
+  snapshot.value = null
+  try {
+    snapshot.value = await fetchTaskSnapshot(taskId)
+  } catch (error: any) {
+    showToast(extractError(error, '加载任务快照失败'), 'error')
+    showSnapshot.value = false
+  } finally {
+    snapshotLoading.value = false
+  }
+}
+
+
+const TASK_STATUS_MAP: Record<string, string> = {
+  open: '待接取',
+  in_progress: '进行中',
+  completed: '已完成',
+  canceled: '已取消',
+  under_review: '审核中',
+}
+
 /* -------- Helpers -------- */
 function reportStatusLabel(s: string) {
   return s === 'pending' ? '待审核' : s === 'approved' ? '已通过' : '已驳回'
@@ -60,6 +106,7 @@ function reportStatusClass(s: string) {
   return s === 'pending' ? 'badge-amber' : s === 'approved' ? 'badge-green' : 'badge-red'
 }
 
+
 function totalPages() {
   return Math.max(1, Math.ceil(userTotal.value / PAGE_SIZE))
 }
@@ -68,16 +115,31 @@ function totalPages() {
 async function loadData() {
   loading.value = true
   try {
-    const [d, r, rs] = await Promise.all([fetchAdminDashboard(), fetchAdminReports(), fetchRegistrationSetting()])
+    const [d, rs] = await Promise.all([fetchAdminDashboard(), fetchRegistrationSetting()])
     dashboard.value = d
-    reports.value = r
     registrationEnabled.value = rs.registration_enabled
+    await loadReports()
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '加载失败', 'error')
+    showToast(extractError(error, '加载失败'), 'error')
   } finally {
     loading.value = false
   }
 }
+
+async function loadReports() {
+  try {
+    reports.value = await fetchAdminReports({
+      type: reportSubTab.value,
+      status: reportStatusFilter.value || undefined,
+    })
+  } catch (error: any) {
+    showToast(extractError(error, '加载举报列表失败'), 'error')
+  }
+}
+
+watch([reportSubTab, reportStatusFilter], () => {
+  loadReports()
+})
 
 async function loadUsers() {
   userLoading.value = true
@@ -90,7 +152,7 @@ async function loadUsers() {
     userList.value = res.items
     userTotal.value = res.total
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '加载用户列表失败', 'error')
+    showToast(extractError(error, '加载用户列表失败'), 'error')
   } finally {
     userLoading.value = false
   }
@@ -114,13 +176,55 @@ function goPage(p: number) {
   userPage.value = p
 }
 
+const BAN_DAYS = [1, 3, 7]
+
 async function handleReview(report: Report, status: 'approved' | 'rejected') {
+  const isReport = report.type === 'report'
+
+  if (isReport && status === 'approved') {
+    reviewTarget.value = report
+    reviewBanReason.value = ''
+    showReviewModal.value = true
+    return
+  }
+
+  if (!isReport && status === 'approved') {
+    const name = report.reporter_nickname || report.reporter_name || report.reporter_account || '该用户'
+    const yes = await appConfirm({
+      title: '确认通过申诉',
+      message: `通过后「${name}」将被解除封禁，确定通过？`,
+      confirmText: '确认通过',
+      type: 'info',
+    })
+    if (!yes) return
+  }
+
+  await doReview(report, status)
+}
+
+async function doReview(report: Report, status: 'approved' | 'rejected', adminNotes?: string) {
+  const isReport = report.type === 'report'
   try {
-    await reviewReport(report.id, { status, admin_notes: status === 'approved' ? '审核通过' : '审核驳回' })
-    showToast(status === 'approved' ? '已通过' : '已驳回', 'success')
-    await loadData()
+    await reviewReport(report.id, { status, admin_notes: adminNotes })
+    if (isReport) {
+      showToast(status === 'approved' ? '已通过，被举报用户已自动封禁' : '已驳回', 'success')
+    } else {
+      showToast(status === 'approved' ? '申诉通过，用户已解封' : '申诉已驳回', 'success')
+    }
+    await loadReports()
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '审核失败', 'error')
+    showToast(extractError(error, '审核失败'), 'error')
+  }
+}
+
+async function confirmReportReview() {
+  if (!reviewTarget.value) return
+  reviewSubmitting.value = true
+  try {
+    await doReview(reviewTarget.value, 'approved', reviewBanReason.value || undefined)
+    showReviewModal.value = false
+  } finally {
+    reviewSubmitting.value = false
   }
 }
 
@@ -141,7 +245,7 @@ async function confirmBan() {
     showToast('用户已封禁', 'success')
     showBanModal.value = false
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '封禁失败', 'error')
+    showToast(extractError(error, '封禁失败'), 'error')
   } finally {
     banSubmitting.value = false
   }
@@ -162,7 +266,7 @@ async function confirmUnban(user: AdminUserItem, innocent: boolean) {
     }
     showToast(innocent ? '已无责解封' : '已有责解封', 'success')
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '解封失败', 'error')
+    showToast(extractError(error, '解封失败'), 'error')
   } finally {
     unbanOpenId.value = null
     unbanSubmitting.value = false
@@ -178,7 +282,7 @@ async function handleToggleRegistration() {
     dashboard.value.registration_enabled = data.registration_enabled
     showToast(data.registration_enabled ? '已开启用户注册' : '已关闭用户注册', 'success')
   } catch (error: any) {
-    showToast(error?.response?.data?.detail || '更新注册开关失败', 'error')
+    showToast(extractError(error, '更新注册开关失败'), 'error')
   } finally {
     savingRegistration.value = false
   }
@@ -186,7 +290,9 @@ async function handleToggleRegistration() {
 
 function onTabChange(key: 'dashboard' | 'reports' | 'users') {
   activeTab.value = key
-  if (key === 'users' && userList.value.length === 0) {
+  if (key === 'reports') {
+    loadReports()
+  } else if (key === 'users' && userList.value.length === 0) {
     loadUsers()
   }
 }
@@ -231,7 +337,7 @@ onUnmounted(() => {
     <nav class="av-tabs">
       <button v-for="t in ([
         { key: 'dashboard', label: '数据看板', icon: 'fa-solid fa-chart-line' },
-        { key: 'reports', label: '举报审核', icon: 'fa-solid fa-flag' },
+        { key: 'reports', label: '举报 / 申诉', icon: 'fa-solid fa-flag' },
         { key: 'users', label: '用户管理', icon: 'fa-solid fa-users-gear' }
       ] as const)" :key="t.key" class="av-tab" :class="{ 'av-tab--active': activeTab === t.key }" @click="onTabChange(t.key)">
         <i :class="t.icon"></i> {{ t.label }}
@@ -298,31 +404,63 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ===== 举报审核 ===== -->
+    <!-- ===== 举报/申诉审核 ===== -->
     <section v-if="activeTab === 'reports'" class="av-section">
-      <h2 style="margin-bottom: 20px;">举报 / 申诉审核</h2>
+      <div class="av-report-toolbar">
+        <div class="av-report-subtabs">
+          <button class="av-report-subtab" :class="{ 'av-report-subtab--active': reportSubTab === 'report' }" @click="reportSubTab = 'report'">
+            <i class="fa-solid fa-flag"></i> 举报
+          </button>
+          <button class="av-report-subtab" :class="{ 'av-report-subtab--active': reportSubTab === 'appeal' }" @click="reportSubTab = 'appeal'">
+            <i class="fa-solid fa-hand"></i> 申诉
+          </button>
+        </div>
+        <AppDropdown
+          v-model="reportStatusFilter"
+          :options="STATUS_OPTIONS"
+          width="auto"
+          min-width="110px"
+        />
+      </div>
 
       <div v-if="reports.length" class="av-report-list">
         <div v-for="report in reports" :key="report.id" class="card av-report-card">
           <div class="av-report-card__header">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="badge badge-default">{{ report.type === 'report' ? '举报' : '申诉' }}</span>
-              <span style="font-weight: 600;">#{{ report.id }}</span>
-            </div>
+            <a v-if="report.task_id" class="av-task-link" @click.prevent="openSnapshot(report.task_id)">
+              <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px;"></i> 任务 #{{ report.task_id }}
+            </a>
+            <span v-else style="font-weight: 600; color: var(--c-text-muted);">账号申诉</span>
             <span class="badge" :class="reportStatusClass(report.status)">{{ reportStatusLabel(report.status) }}</span>
           </div>
 
           <div class="av-report-card__body">
-            <div class="av-report-card__row">
-              <span class="av-report-card__label">任务 ID</span>
-              <span>{{ report.task_id || '-' }}</span>
-            </div>
-            <div class="av-report-card__row">
-              <span class="av-report-card__label">被举报用户</span>
-              <span>{{ report.reported_user_id || '-' }}</span>
-            </div>
+            <table class="av-report-table">
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>账号</th>
+                  <th>姓名</th>
+                  <th>昵称</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="reportSubTab === 'report'">
+                  <td>举报用户</td>
+                  <td>{{ report.reporter_account || '-' }}</td>
+                  <td>{{ report.reporter_name || '-' }}</td>
+                  <td>{{ report.reporter_nickname || '-' }}</td>
+                </tr>
+                <tr>
+                  <td>{{ reportSubTab === 'report' ? '被举报用户' : '申诉用户' }}</td>
+                  <td>{{ (reportSubTab === 'report' ? report.reported_user_account : report.reporter_account) || '-' }}</td>
+                  <td>{{ (reportSubTab === 'report' ? report.reported_user_name : report.reporter_name) || '-' }}</td>
+                  <td>{{ (reportSubTab === 'report' ? report.reported_user_nickname : report.reporter_nickname) || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+
             <div class="av-report-card__row" style="flex-direction: column; align-items: flex-start; gap: 2px;">
-              <span class="av-report-card__label">原因</span>
+              <span class="av-report-card__label">{{ reportSubTab === 'report' ? '举报原因' : '申诉理由' }}</span>
               <span style="color: var(--c-text-secondary);">{{ report.reason }}</span>
             </div>
             <div v-if="report.evidence" class="av-report-card__row" style="flex-direction: column; align-items: flex-start; gap: 2px;">
@@ -337,7 +475,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      <div v-else class="av-empty"><i class="fa-regular fa-folder-open" style="font-size: 36px; display: block; margin-bottom: 12px; color: var(--c-border);"></i>暂无举报/申诉数据</div>
+      <div v-else class="av-empty"><i class="fa-regular fa-folder-open" style="font-size: 36px; display: block; margin-bottom: 12px; color: var(--c-border);"></i>{{ reportSubTab === 'report' ? '暂无举报数据' : '暂无申诉数据' }}</div>
     </section>
 
     <!-- ===== 用户管理 ===== -->
@@ -386,6 +524,7 @@ onUnmounted(() => {
             <span class="av-user-col av-user-col--status">
               <span v-if="u.is_banned" class="badge badge-red" :title="u.ban_reason || ''">已封禁</span>
               <span v-else class="badge badge-green">正常</span>
+              <span v-if="u.is_banned && u.ban_until" class="av-ban-until">至 {{ formatShort(u.ban_until!) }}</span>
             </span>
             <span class="av-user-col av-user-col--bancount" :class="{ 'av-bancount--warn': u.ban_count > 0 }">
               {{ u.ban_count }}
@@ -481,6 +620,125 @@ onUnmounted(() => {
       </div>
     </div>
   </Transition>
+
+  <!-- Review Report Modal -->
+  <Transition name="fade">
+    <div v-if="showReviewModal" class="av-modal-overlay" @click.self="showReviewModal = false">
+      <div class="av-modal">
+        <div class="av-modal__header">
+          <h3>通过举报</h3>
+          <button class="btn btn-ghost btn-sm" @click="showReviewModal = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="av-modal__body">
+          <p style="margin-bottom: 12px; color: var(--c-text-secondary); font-size: var(--text-sm);">
+            通过后「<strong>{{ reviewTarget?.reported_user_nickname || reviewTarget?.reported_user_name || reviewTarget?.reported_user_account || '该用户' }}</strong>」将被封禁
+            {{ BAN_DAYS[Math.min(reviewTarget?.reported_user_ban_count ?? 0, BAN_DAYS.length - 1)] }} 天（第
+            {{ (reviewTarget?.reported_user_ban_count ?? 0) + 1 }} 次封禁）。
+          </p>
+          <div class="form-group">
+            <label class="form-label">封禁理由（选填，留空则显示"违反社区规则。"）</label>
+            <input
+              v-model="reviewBanReason"
+              class="form-input"
+              placeholder="输入封禁理由…"
+              @keyup.enter="confirmReportReview"
+            />
+          </div>
+        </div>
+        <div class="av-modal__footer">
+          <button class="btn btn-outline btn-sm" @click="showReviewModal = false">取消</button>
+          <button class="btn btn-warning btn-sm" :disabled="reviewSubmitting" @click="confirmReportReview">
+            {{ reviewSubmitting ? '处理中…' : '确认通过' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- ===== Task Snapshot Drawer ===== -->
+  <Teleport to="body">
+    <Transition name="av-drawer">
+      <div v-if="showSnapshot" class="av-snapshot-overlay" @mousedown.self="showSnapshot = false">
+        <div class="av-snapshot-drawer">
+          <div class="av-snapshot-drawer__header">
+            <h3>任务快照</h3>
+            <button class="btn btn-ghost btn-sm" @click="showSnapshot = false"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+
+          <div v-if="snapshotLoading" class="av-snapshot-drawer__body" style="display: flex; align-items: center; justify-content: center; min-height: 200px;">
+            <div class="spinner"></div>
+          </div>
+
+          <div v-else-if="snapshot" class="av-snapshot-drawer__body">
+            <!-- Task Info -->
+            <div class="av-snap-section">
+              <h4 class="av-snap-title">{{ snapshot.title }}</h4>
+              <div class="av-snap-meta">
+                <span class="badge" :class="{
+                  'badge-green': snapshot.status === 'completed',
+                  'badge-amber': snapshot.status === 'in_progress' || snapshot.status === 'under_review',
+                  'badge-red': snapshot.status === 'canceled',
+                  'badge-default': snapshot.status === 'open',
+                }">{{ TASK_STATUS_MAP[snapshot.status] || snapshot.status }}</span>
+                <span>¥{{ snapshot.price }}</span>
+                <span v-if="snapshot.location"><i class="fa-solid fa-location-dot"></i> {{ snapshot.location }}</span>
+              </div>
+              <p class="av-snap-desc">{{ snapshot.description }}</p>
+              <div class="av-snap-users">
+                <div class="av-snap-user-row">
+                  <span class="av-snap-user-label">发布者</span>
+                  <span>{{ snapshot.publisher_display_name }}</span>
+                </div>
+                <div class="av-snap-user-row">
+                  <span class="av-snap-user-label">接单者</span>
+                  <span>{{ snapshot.assignee_display_name || '—' }}</span>
+                </div>
+                <div v-if="snapshot.deadline" class="av-snap-user-row">
+                  <span class="av-snap-user-label">截止时间</span>
+                  <span>{{ formatShort(snapshot.deadline) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="av-snap-section">
+              <h4 class="av-snap-subtitle"><i class="fa-regular fa-comment-dots"></i> 聊天记录 ({{ snapshot.messages.length }})</h4>
+              <div v-if="snapshot.messages.length" class="av-snap-chat">
+                <div v-for="(msg, idx) in snapshot.messages" :key="idx" class="av-snap-msg">
+                  <div class="av-snap-msg__head">
+                    <span class="av-snap-msg__sender">{{ msg.sender_display_name }}</span>
+                    <span class="av-snap-msg__time">{{ formatShort(msg.created_at) }}</span>
+                  </div>
+                  <div class="av-snap-msg__text">{{ msg.content }}</div>
+                </div>
+              </div>
+              <p v-else class="av-snap-empty">暂无聊天记录</p>
+            </div>
+
+            <!-- Reviews -->
+            <div class="av-snap-section">
+              <h4 class="av-snap-subtitle"><i class="fa-regular fa-star-half-stroke"></i> 互评 ({{ snapshot.reviews.length }})</h4>
+              <div v-if="snapshot.reviews.length" class="av-snap-reviews">
+                <div v-for="(rev, idx) in snapshot.reviews" :key="idx" class="av-snap-review">
+                  <div class="av-snap-review__head">
+                    <span class="badge badge-default">{{ rev.target_role === 'worker' ? '评价接单者' : '评价发布者' }}</span>
+                    <span class="av-snap-review__stars">
+                      <i v-for="s in 5" :key="s" :class="s <= rev.stars ? 'fa-solid fa-star' : 'fa-regular fa-star'" style="color: #f59e0b; font-size: 12px;"></i>
+                    </span>
+                  </div>
+                  <p class="av-snap-review__by">{{ rev.reviewer_display_name }} · {{ formatShort(rev.created_at) }}</p>
+                  <p v-if="rev.comment" class="av-snap-review__comment">{{ rev.comment }}</p>
+                </div>
+              </div>
+              <p v-else class="av-snap-empty">暂无评价</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
 </template>
 
@@ -613,6 +871,47 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+/* Report Toolbar */
+.av-report-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.av-report-subtabs {
+  display: flex;
+  gap: 4px;
+  background: var(--c-bg-secondary, #f1f5f9);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+
+.av-report-subtab {
+  padding: 7px 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  font-family: var(--font-sans);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.av-report-subtab:hover {
+  color: var(--c-text);
+}
+.av-report-subtab--active {
+  background: #fff;
+  color: var(--c-accent);
+  box-shadow: var(--shadow-sm);
+}
+
 /* Report List */
 .av-report-list {
   display: flex;
@@ -645,6 +944,28 @@ onUnmounted(() => {
   color: var(--c-text-muted);
   min-width: 80px;
   flex-shrink: 0;
+}
+
+.av-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin-bottom: 4px;
+}
+.av-report-table th,
+.av-report-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--c-border);
+}
+.av-report-table th {
+  color: var(--c-text-muted);
+  font-weight: 500;
+  background: var(--c-bg-secondary);
+}
+.av-report-table td:first-child {
+  color: var(--c-text-muted);
+  white-space: nowrap;
 }
 
 .av-report-card__actions {
@@ -850,6 +1171,14 @@ onUnmounted(() => {
   color: var(--c-danger) !important;
 }
 
+.av-ban-until {
+  display: block;
+  font-size: 11px;
+  color: var(--c-danger);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
 /* Unban inline dropdown */
 .av-unban-wrap {
   position: relative;
@@ -1011,5 +1340,212 @@ onUnmounted(() => {
   .av-user-row--header .av-user-col--role {
     display: none;
   }
+}
+
+/* ===== Task Link ===== */
+.av-task-link {
+  font-weight: 600;
+  color: var(--c-accent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: color var(--dur-fast) var(--ease);
+}
+.av-task-link:hover {
+  color: #4338ca;
+  text-decoration: underline;
+}
+
+/* ===== Snapshot Drawer ===== */
+.av-snapshot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
+}
+
+.av-snapshot-drawer {
+  width: 520px;
+  max-width: 100vw;
+  height: 100vh;
+  background: #fff;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: av-slide-in 0.25s var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+@keyframes av-slide-in {
+  from { transform: translateX(100%); }
+}
+
+.av-snapshot-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+.av-snapshot-drawer__header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.av-snapshot-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.av-snap-section {
+  margin-bottom: 24px;
+}
+.av-snap-section:last-child {
+  margin-bottom: 0;
+}
+
+.av-snap-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.av-snap-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  margin-bottom: 10px;
+}
+
+.av-snap-desc {
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  line-height: 1.6;
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.av-snap-users {
+  background: var(--c-bg-secondary, #f8fafc);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+.av-snap-user-row {
+  display: flex;
+  gap: 12px;
+  font-size: var(--text-sm);
+  padding: 3px 0;
+}
+.av-snap-user-label {
+  color: var(--c-text-muted);
+  min-width: 56px;
+  flex-shrink: 0;
+}
+
+.av-snap-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text);
+}
+
+/* Chat */
+.av-snap-chat {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--c-bg-secondary, #f8fafc);
+  border-radius: var(--radius-md);
+}
+
+.av-snap-msg__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.av-snap-msg__sender {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+.av-snap-msg__time {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+.av-snap-msg__text {
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+  padding: 6px 10px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+/* Reviews */
+.av-snap-reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.av-snap-review {
+  background: var(--c-bg-secondary, #f8fafc);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+.av-snap-review__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.av-snap-review__stars {
+  display: flex;
+  gap: 1px;
+}
+.av-snap-review__by {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  margin: 0 0 4px;
+}
+.av-snap-review__comment {
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.av-snap-empty {
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: 16px 0;
+}
+
+/* Drawer transition */
+.av-drawer-enter-active {
+  transition: opacity 0.25s var(--ease);
+}
+.av-drawer-leave-active {
+  transition: opacity 0.2s var(--ease);
+}
+.av-drawer-enter-from,
+.av-drawer-leave-to {
+  opacity: 0;
 }
 </style>

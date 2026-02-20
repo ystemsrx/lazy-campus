@@ -20,6 +20,7 @@ export async function createTask(payload: {
   category_id: number | null
   contact_visibility: 'after_accept' | 'internal_only'
   contact_info: string | null
+  required_gender: 'male' | 'female' | null
 }) {
   const { data } = await api.post<Task>('/tasks', payload)
   return data
@@ -65,6 +66,24 @@ export async function createReview(
   payload: { stars: number; comment?: string; target_role: 'publisher' | 'worker' }
 ) {
   const { data } = await api.post<TaskReview>(`/tasks/${taskId}/reviews`, payload)
+  return data
+}
+
+export async function updateTask(
+  taskId: number,
+  payload: {
+    title?: string
+    description?: string
+    deadline?: string | null
+    location?: string | null
+    price?: number
+    category_id?: number | null
+    contact_visibility?: 'after_accept' | 'internal_only'
+    contact_info?: string | null
+    required_gender?: 'male' | 'female' | null
+  }
+) {
+  const { data } = await api.put<Task>(`/tasks/${taskId}`, payload)
   return data
 }
 

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
+from app.models.enums import ContactVisibility, Gender, RatingTargetRole, TaskStatus
 
 
 class CategoryCreate(BaseModel):
@@ -29,6 +29,7 @@ class TaskCreate(BaseModel):
     category_id: int | None = None
     contact_visibility: ContactVisibility = ContactVisibility.AFTER_ACCEPT
     contact_info: str | None = None
+    required_gender: Gender | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -40,6 +41,7 @@ class TaskUpdate(BaseModel):
     category_id: int | None = None
     contact_visibility: ContactVisibility | None = None
     contact_info: str | None = None
+    required_gender: Gender | None = None
 
 
 class TaskOut(BaseModel):
@@ -57,6 +59,7 @@ class TaskOut(BaseModel):
     assignee_id: int | None
     contact_visibility: ContactVisibility
     contact_info: str | None
+    required_gender: Gender | None
     publisher_display_name: str
     assignee_display_name: str | None
     created_at: datetime

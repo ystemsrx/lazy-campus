@@ -9,7 +9,6 @@ class UserRole(str, enum.Enum):
 class Gender(str, enum.Enum):
     MALE = 'male'
     FEMALE = 'female'
-    OTHER = 'other'
 
 
 class ContactVisibility(str, enum.Enum):

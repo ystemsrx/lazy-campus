@@ -3,12 +3,13 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
+import { extractError } from '../utils/error'
 
 const router = useRouter()
 const auth = useAuthStore()
 
 const email = ref('')
-const gender = ref<'male' | 'female' | 'other'>('male')
+const gender = ref<'male' | 'female'>('male')
 const nickname = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
@@ -20,7 +21,7 @@ async function submit() {
     await auth.completeProfile({ email: email.value, gender: gender.value, nickname: nickname.value })
     await router.push('/')
   } catch (error: any) {
-    errorMsg.value = error?.response?.data?.detail || '保存失败'
+    errorMsg.value = extractError(error, '保存失败')
   } finally {
     loading.value = false
   }
@@ -48,7 +49,6 @@ async function submit() {
             <label v-for="opt in ([
               { value: 'male', label: '男' },
               { value: 'female', label: '女' },
-              { value: 'other', label: '其他' }
             ] as const)" :key="opt.value" class="cp-gender-opt" :class="{ 'cp-gender-opt--active': gender === opt.value }">
               <input type="radio" v-model="gender" :value="opt.value" style="display: none;" />
               {{ opt.label }}

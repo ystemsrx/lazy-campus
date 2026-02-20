@@ -4,7 +4,7 @@ from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
+from app.models.enums import ContactVisibility, Gender, RatingTargetRole, TaskStatus
 
 
 class TaskCategory(Base):
@@ -28,6 +28,7 @@ class Task(Base):
 
     contact_visibility: Mapped[ContactVisibility] = mapped_column(Enum(ContactVisibility), default=ContactVisibility.AFTER_ACCEPT)
     contact_info: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    required_gender: Mapped[Gender | None] = mapped_column(Enum(Gender), nullable=True, default=None)
 
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.OPEN)
     publisher_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)

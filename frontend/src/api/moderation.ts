@@ -1,14 +1,28 @@
 import api from './client'
-import type { AdminUserListResponse, Report } from '../types/api'
+import type { AdminUserListResponse, BanContext, Report } from '../types/api'
 
 export async function createReport(payload: {
-  type: 'report' | 'appeal'
-  task_id?: number
-  reported_user_id?: number
+  task_id: number
+  reported_user_id: number
   reason: string
   evidence: string
 }) {
   const { data } = await api.post<Report>('/moderation/reports', payload)
+  return data
+}
+
+export async function createAppeal(payload: {
+  account: string
+  password: string
+  reason: string
+  evidence: string
+}) {
+  const { data } = await api.post<Report>('/moderation/appeals', payload)
+  return data
+}
+
+export async function fetchBanContext(payload: { account: string; password: string }) {
+  const { data } = await api.post<BanContext>('/moderation/ban-context', payload)
   return data
 }
 
@@ -27,13 +41,18 @@ export async function fetchAdminDashboard() {
   return data
 }
 
-export async function fetchAdminReports() {
-  const { data } = await api.get<Report[]>('/moderation/admin/reports')
+export async function fetchAdminReports(params: { type?: string; status?: string } = {}) {
+  const { data } = await api.get<Report[]>('/moderation/admin/reports', { params })
   return data
 }
 
 export async function reviewReport(reportId: number, payload: { status: 'pending' | 'approved' | 'rejected'; admin_notes?: string }) {
   const { data } = await api.post<Report>(`/moderation/admin/reports/${reportId}/review`, payload)
+  return data
+}
+
+export async function fetchTaskSnapshot(taskId: number) {
+  const { data } = await api.get(`/moderation/admin/tasks/${taskId}/snapshot`)
   return data
 }
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -49,7 +50,14 @@ def get_current_auth(
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User inactive or not found')
     if user.is_banned:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User banned')
+        if user.ban_until and datetime.now(timezone.utc) >= user.ban_until.replace(tzinfo=timezone.utc):
+            user.is_banned = False
+            user.ban_reason = None
+            user.ban_until = None
+            db.add(user)
+            db.commit()
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User banned')
     return AuthContext(role=user.role.value, user=user)
 
 
@@ -85,6 +93,15 @@ def optional_user(
     if not user_id:
         return None
     user = db.get(User, int(user_id))
-    if not user or not user.is_active or user.is_banned:
+    if not user or not user.is_active:
         return None
+    if user.is_banned:
+        if user.ban_until and datetime.now(timezone.utc) >= user.ban_until.replace(tzinfo=timezone.utc):
+            user.is_banned = False
+            user.ban_reason = None
+            user.ban_until = None
+            db.add(user)
+            db.commit()
+        else:
+            return None
     return user

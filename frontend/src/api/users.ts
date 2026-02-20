@@ -1,5 +1,5 @@
 import api from './client'
-import type { WorkerProfile } from '../types/api'
+import type { UserMe, WorkerProfile } from '../types/api'
 
 export async function fetchWorkers(params: Record<string, string | number | undefined>) {
   const { data } = await api.get<WorkerProfile[]>('/users/workers', { params })
@@ -19,5 +19,19 @@ export async function updateWorkerProfile(payload: {
 
 export async function fetchMyWorkerProfile() {
   const { data } = await api.get<WorkerProfile>('/users/me/worker-profile')
+  return data
+}
+
+export async function updateProfile(payload: { nickname: string; gender: 'male' | 'female' }) {
+  const { data } = await api.put<UserMe>('/users/me/profile', payload)
+  return data
+}
+
+export async function uploadAvatar(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post<UserMe>('/users/me/avatar', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
   return data
 }

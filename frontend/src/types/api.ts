@@ -36,9 +36,10 @@ export interface UserMe {
   name: string
   nickname: string | null
   email: string | null
-  gender: 'male' | 'female' | 'other' | null
+  gender: 'male' | 'female' | null
   avatar_url: string | null
   is_banned: boolean
+  ban_until: string | null
   role: UserRole
   created_at: string
 }
@@ -52,10 +53,13 @@ export interface WorkerProfile {
   bio: string | null
   display_name: string
   avatar_url: string | null
+  gender: Gender | null
   worker_rating_avg: number
   worker_rating_count: number
   blocked_by_count: number
 }
+
+export type Gender = 'male' | 'female'
 
 export interface Task {
   id: number
@@ -70,6 +74,7 @@ export interface Task {
   assignee_id: number | null
   contact_visibility: ContactVisibility
   contact_info: string | null
+  required_gender: Gender | null
   publisher_display_name: string
   assignee_display_name: string | null
   created_at: string
@@ -113,6 +118,7 @@ export interface AdminUserItem {
   is_banned: boolean
   ban_reason: string | null
   ban_count: number
+  ban_until: string | null
   created_at: string
 }
 
@@ -123,12 +129,31 @@ export interface AdminUserListResponse {
   items: AdminUserItem[]
 }
 
+export interface BanRecord {
+  source: 'report' | 'admin'
+  reason: string
+  created_at: string
+}
+
+export interface BanContext {
+  ban_until: string | null
+  ban_count: number
+  records: BanRecord[]
+}
+
 export interface Report {
   id: number
   type: 'report' | 'appeal'
   task_id: number | null
   reporter_id: number
+  reporter_name: string | null
+  reporter_nickname: string | null
+  reporter_account: string | null
   reported_user_id: number | null
+  reported_user_name: string | null
+  reported_user_nickname: string | null
+  reported_user_account: string | null
+  reported_user_ban_count: number | null
   reason: string
   evidence: string
   status: 'pending' | 'approved' | 'rejected'

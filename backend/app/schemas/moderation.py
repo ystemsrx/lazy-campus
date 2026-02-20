@@ -6,9 +6,8 @@ from app.models.enums import ReportStatus, ReportType
 
 
 class ReportCreate(BaseModel):
-    type: ReportType
-    task_id: int | None = None
-    reported_user_id: int | None = None
+    task_id: int
+    reported_user_id: int
     reason: str = Field(min_length=5)
     evidence: str = Field(min_length=5)
 
@@ -25,13 +24,56 @@ class ReportOut(BaseModel):
     type: ReportType
     task_id: int | None
     reporter_id: int
+    reporter_name: str | None = None
+    reporter_nickname: str | None = None
+    reporter_account: str | None = None
     reported_user_id: int | None
+    reported_user_name: str | None = None
+    reported_user_nickname: str | None = None
+    reported_user_account: str | None = None
+    reported_user_ban_count: int | None = None
     reason: str
     evidence: str
     status: ReportStatus
     admin_id: int | None
     admin_notes: str | None
     created_at: datetime
+
+
+class AppealCreate(BaseModel):
+    account: str
+    password: str
+    reason: str = Field(min_length=5)
+    evidence: str = Field(min_length=5)
+
+
+class TaskSnapshotMessage(BaseModel):
+    sender_display_name: str
+    content: str
+    created_at: datetime
+
+
+class TaskSnapshotReview(BaseModel):
+    reviewer_display_name: str
+    target_role: str
+    stars: int
+    comment: str | None
+    created_at: datetime
+
+
+class TaskSnapshotOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    deadline: datetime | None
+    location: str | None
+    price: float
+    status: str
+    publisher_display_name: str
+    assignee_display_name: str | None
+    created_at: datetime
+    messages: list[TaskSnapshotMessage]
+    reviews: list[TaskSnapshotReview]
 
 
 class BlacklistCreate(BaseModel):
@@ -43,6 +85,23 @@ class BanUserRequest(BaseModel):
     banned: bool
     reason: str | None = None
     innocent: bool = False
+
+
+class BanContextRequest(BaseModel):
+    account: str
+    password: str
+
+
+class BanRecord(BaseModel):
+    source: str
+    reason: str
+    created_at: datetime
+
+
+class BanContextOut(BaseModel):
+    ban_until: datetime | None
+    ban_count: int
+    records: list[BanRecord]
 
 
 class RegistrationSettingUpdate(BaseModel):
@@ -64,6 +123,7 @@ class AdminUserItem(BaseModel):
     is_banned: bool
     ban_reason: str | None
     ban_count: int
+    ban_until: datetime | None
     created_at: datetime
 
 

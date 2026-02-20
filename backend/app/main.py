@@ -1,11 +1,16 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.init_db import init_db
+
+UPLOADS_DIR = Path(__file__).resolve().parents[1] / 'uploads'
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 log_level_value = getattr(logging, settings.log_level, logging.INFO)
 logging.basicConfig(
@@ -41,4 +46,5 @@ def healthz() -> dict[str, str]:
     return {'status': 'ok'}
 
 
+app.mount('/uploads', StaticFiles(directory=str(UPLOADS_DIR)), name='uploads')
 app.include_router(api_router, prefix=settings.api_v1_prefix)

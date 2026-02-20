@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException
@@ -33,6 +34,26 @@ def _password_matches(user: User, password: str) -> bool:
         except Exception:
             return False
     return user.password_value == password
+
+
+def _check_user_ban(db: Session, user: User) -> None:
+    if not user.is_banned:
+        return
+    if user.ban_until and datetime.now(timezone.utc) >= user.ban_until.replace(tzinfo=timezone.utc):
+        user.is_banned = False
+        user.ban_reason = None
+        user.ban_until = None
+        db.add(user)
+        db.commit()
+        return
+    raise HTTPException(
+        status_code=403,
+        detail={
+            'code': 'USER_BANNED',
+            'ban_reason': user.ban_reason,
+            'ban_until': user.ban_until.isoformat() if user.ban_until else None,
+        },
+    )
 
 
 def _migrate_password_if_needed(db: Session, user: User, plain_password: str) -> None:
@@ -142,6 +163,14 @@ def _create_or_update_user(db: Session, account: str, password: str, third_party
     return user
 
 
+def verify_credentials(db: Session, account: str, password: str) -> User | None:
+    """Verify account+password and return user (without ban check). Returns None if invalid."""
+    user = db.query(User).filter(User.account == account).first()
+    if user and _password_matches(user, password):
+        return user
+    return None
+
+
 async def login_with_fallback(db: Session, account: str, password: str) -> LoginResult:
     if account == settings.admin_account and password == settings.admin_password:
         return LoginResult(
@@ -156,6 +185,7 @@ async def login_with_fallback(db: Session, account: str, password: str) -> Login
 
     if user and _password_matches(user, password):
         _migrate_password_if_needed(db, user, password)
+        _check_user_ban(db, user)
         return LoginResult(
             user=user,
             role='user',
@@ -175,6 +205,7 @@ async def login_with_fallback(db: Session, account: str, password: str) -> Login
         password=password,
         third_party_data=third_party_result.data.model_dump(),
     )
+    _check_user_ban(db, synced_user)
     return LoginResult(
         user=synced_user,
         role='user',

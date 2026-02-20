@@ -30,6 +30,7 @@ class UserMe(BaseModel):
     gender: Gender | None
     avatar_url: str | None
     is_banned: bool
+    ban_until: datetime | None
     role: str
     created_at: datetime
 
@@ -59,9 +60,15 @@ class WorkerProfileOut(BaseModel):
     bio: str | None
     display_name: str
     avatar_url: str | None
+    gender: Gender | None
     worker_rating_avg: float
     worker_rating_count: int
     blocked_by_count: int
+
+
+class UpdateProfileRequest(BaseModel):
+    nickname: str = Field(min_length=1, max_length=50)
+    gender: Gender
 
 
 class ContactSettingsUpdate(BaseModel):
