@@ -77,6 +77,8 @@ export interface Task {
   required_gender: Gender | null
   publisher_display_name: string
   assignee_display_name: string | null
+  publisher_rating_avg: number
+  publisher_rating_count: number
   created_at: string
 }
 
@@ -85,6 +87,7 @@ export interface Category {
   name: string
   description: string | null
   sort_order: number
+  task_count: number
 }
 
 export interface TaskMessage {
@@ -104,6 +107,14 @@ export interface TaskReview {
   target_role: 'publisher' | 'worker'
   stars: number
   comment: string | null
+  created_at: string
+}
+
+export interface UserReview {
+  id: number
+  stars: number
+  comment: string | null
+  reviewer_display_name: string
   created_at: string
 }
 

@@ -90,6 +90,8 @@ def _task_to_out(task: Task, publisher: User, assignee: User | None, viewer_id: 
         required_gender=task.required_gender,
         publisher_display_name=display_name(publisher),
         assignee_display_name=display_name(assignee) if assignee else None,
+        publisher_rating_avg=round(publisher.publisher_rating_avg, 1),
+        publisher_rating_count=publisher.publisher_rating_count,
         created_at=task.created_at,
     )
 
@@ -133,7 +135,32 @@ def _update_user_rating(db: Session, reviewee_id: int, target_role: RatingTarget
 
 @router.get('/categories', response_model=list[CategoryOut])
 def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
-    return db.query(TaskCategory).order_by(asc(TaskCategory.sort_order), asc(TaskCategory.id)).all()
+    cats = db.query(TaskCategory).order_by(asc(TaskCategory.sort_order), asc(TaskCategory.id)).all()
+
+    now = datetime.utcnow()
+    count_rows = (
+        db.query(Task.category_id, func.count(Task.id))
+        .join(User, Task.publisher_id == User.id)
+        .filter(
+            User.is_banned.is_(False),
+            Task.status == TaskStatus.OPEN,
+            or_(Task.deadline.is_(None), Task.deadline > now),
+        )
+        .group_by(Task.category_id)
+        .all()
+    )
+    count_map = {cid: cnt for cid, cnt in count_rows}
+
+    return [
+        CategoryOut(
+            id=c.id,
+            name=c.name,
+            description=c.description,
+            sort_order=c.sort_order,
+            task_count=count_map.get(c.id, 0),
+        )
+        for c in cats
+    ]
 
 
 @router.post('/categories', response_model=CategoryOut)

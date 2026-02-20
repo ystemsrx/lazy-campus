@@ -73,3 +73,11 @@ class UpdateProfileRequest(BaseModel):
 
 class ContactSettingsUpdate(BaseModel):
     allow_contact_after_accept: bool = True
+
+
+class UserReviewOut(BaseModel):
+    id: int
+    stars: int
+    comment: str | None
+    reviewer_display_name: str
+    created_at: datetime

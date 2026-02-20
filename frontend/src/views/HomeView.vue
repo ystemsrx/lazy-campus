@@ -22,9 +22,9 @@ import {
   sendMessage,
   updateTask
 } from '../api/tasks'
-import { fetchMyWorkerProfile, fetchWorkers, updateWorkerProfile, updateProfile, uploadAvatar } from '../api/users'
+import { fetchMyWorkerProfile, fetchUserReviews, fetchWorkers, updateWorkerProfile, updateProfile, uploadAvatar } from '../api/users'
 import { useAuthStore } from '../stores/auth'
-import type { Category, Report, Task, TaskMessage, TaskReview, WorkerProfile } from '../types/api'
+import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerProfile } from '../types/api'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -65,6 +65,7 @@ const taskSortOptions = [
   { value: 'deadline_asc', label: '截止时间最近' },
   { value: 'publisher_rating', label: '发布人评分最高' },
   { value: 'publisher_completed', label: '发布人完成数最多' },
+  { value: 'price_desc', label: '价格最高' },
 ]
 
 const workerSortOptions = [
@@ -72,6 +73,17 @@ const workerSortOptions = [
   { value: 'worker_rating', label: '评分最高' },
   { value: 'worker_completed', label: '完成任务最多' },
 ]
+
+/* -------- Search & Category Filter -------- */
+const searchQuery = ref('')
+const selectedCategory = ref<number | null>(null)
+const showMobileSort = ref(false)
+const mobileSortRef = ref<HTMLElement | null>(null)
+
+/* -------- Mobile Bottom Sheet -------- */
+const isMobile = ref(false)
+const bottomSheetRef = ref<HTMLElement | null>(null)
+let sheetDragStartY = 0
 
 /* -------- Core State -------- */
 const loading = ref(false)
@@ -83,6 +95,8 @@ const myAccepted = ref<Task[]>([])
 const workers = ref<WorkerProfile[]>([])
 const taskMessages = ref<TaskMessage[]>([])
 const taskReviews = ref<TaskReview[]>([])
+const publisherHistoryReviews = ref<UserReview[]>([])
+const showReviewForm = ref(false)
 const myReports = ref<Report[]>([])
 
 /* -------- Forms -------- */
@@ -227,6 +241,12 @@ const genderMap: Record<string, { label: string; icon: string; cls: string }> = 
 }
 function genderLabel(g: string | null) { return g ? genderMap[g] : null }
 
+function categoryName(id: number | null) {
+  if (!id) return null
+  return categories.value.find(c => c.id === id)?.name ?? null
+}
+
+const totalTaskCount = computed(() => categories.value.reduce((sum, c) => sum + c.task_count, 0))
 
 function reportStatusLabel(s: string) {
   return s === 'pending' ? '待审核' : s === 'approved' ? '已通过' : '已驳回'
@@ -268,11 +288,26 @@ function requireAuth(action?: () => void) {
 }
 
 async function loadCategories() { categories.value = await fetchCategories() }
-async function loadTasks() { tasks.value = await fetchTasks({ status: 'open', sort: taskSort.value }) }
+async function loadTasks() {
+  const params: Record<string, string | number | undefined> = {
+    status: 'open',
+    sort: taskSort.value,
+  }
+  if (searchQuery.value.trim()) params.keyword = searchQuery.value.trim()
+  if (selectedCategory.value !== null) params.category_id = selectedCategory.value
+  tasks.value = await fetchTasks(params)
+}
 async function loadWorkers() { workers.value = await fetchWorkers({ sort: workerSort.value }) }
 
 watch(taskSort, () => loadTasks())
 watch(workerSort, () => loadWorkers())
+
+let searchTimer = 0
+watch(searchQuery, () => {
+  clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => loadTasks(), 300)
+})
+watch(selectedCategory, () => loadTasks())
 
 async function loadMyTasks() {
   const [published, accepted] = await Promise.all([fetchPublishedTasks(), fetchAcceptedTasks()])
@@ -299,9 +334,56 @@ const messagesEnd = ref<HTMLDivElement | null>(null)
 
 function openDrawer(task: Task) {
   selectedTask.value = task
+  showReviewForm.value = false
   refreshTaskMeta()
+  refreshPublisherReviews()
 }
 function closeDrawer() { selectedTask.value = null }
+
+function checkMobile() {
+  isMobile.value = window.matchMedia('(max-width: 900px)').matches
+}
+
+function onSheetTouchStart(e: TouchEvent) {
+  const el = bottomSheetRef.value
+  if (!el) return
+  sheetDragStartY = e.touches[0].clientY
+  el.style.transition = 'none'
+  document.addEventListener('touchmove', onSheetTouchMove, { passive: false })
+  document.addEventListener('touchend', onSheetTouchEnd)
+}
+
+function onSheetTouchMove(e: TouchEvent) {
+  const el = bottomSheetRef.value
+  if (!el) return
+  e.preventDefault()
+  const deltaY = e.touches[0].clientY - sheetDragStartY
+  if (deltaY < 0) {
+    el.style.transform = `translateY(${-Math.pow(Math.abs(deltaY), 0.7)}px)`
+  } else {
+    el.style.transform = `translateY(${deltaY}px)`
+  }
+}
+
+function onSheetTouchEnd() {
+  document.removeEventListener('touchmove', onSheetTouchMove)
+  document.removeEventListener('touchend', onSheetTouchEnd)
+  const el = bottomSheetRef.value
+  if (!el) return
+  const match = el.style.transform.match(/translateY\(([^)]+)px\)/)
+  const currentY = match ? parseFloat(match[1]) : 0
+  el.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+  if (currentY > 120) {
+    el.style.transform = `translateY(${window.innerHeight}px)`
+    setTimeout(() => { selectedTask.value = null }, 350)
+  } else {
+    el.style.transform = 'translateY(0px)'
+    setTimeout(() => {
+      el.style.transition = ''
+      el.style.transform = ''
+    }, 350)
+  }
+}
 
 async function refreshTaskMeta() {
   if (!selectedTask.value) return
@@ -316,6 +398,15 @@ async function refreshTaskMeta() {
   }
   await nextTick()
   messagesEnd.value?.scrollIntoView({ behavior: 'smooth' })
+}
+
+async function refreshPublisherReviews() {
+  if (!selectedTask.value) return
+  try {
+    publisherHistoryReviews.value = await fetchUserReviews(selectedTask.value.publisher_id, 'publisher')
+  } catch {
+    publisherHistoryReviews.value = []
+  }
 }
 
 /* -------- Actions -------- */
@@ -335,7 +426,7 @@ async function submitCreateTask() {
     showToast('委托发布成功', 'success')
     newTask.value = { title: '', description: '', deadline: '', location: '', price: 20, category_id: null, contact_visibility: 'after_accept', contact_info: '', required_gender: null }
     showPostModal.value = false
-    await Promise.all([loadTasks(), loadMyTasks()])
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
   } catch (error: any) {
     showToast(extractError(error, '发布失败'), 'error')
   }
@@ -398,7 +489,7 @@ async function handleAcceptTask() {
   try {
     selectedTask.value = await acceptTask(selectedTask.value.id)
     showToast('已接取该委托', 'success')
-    await Promise.all([loadTasks(), loadMyTasks(), refreshTaskMeta()])
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories(), refreshTaskMeta()])
   } catch (error: any) {
     showToast(extractError(error, '接取失败'), 'error')
   }
@@ -409,7 +500,7 @@ async function handleConfirmTask() {
   try {
     selectedTask.value = await confirmTask(selectedTask.value.id)
     showToast('已确认完成', 'success')
-    await Promise.all([loadTasks(), loadMyTasks(), refreshTaskMeta()])
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories(), refreshTaskMeta()])
   } catch (error: any) {
     showToast(extractError(error, '确认失败'), 'error')
   }
@@ -456,7 +547,7 @@ async function handleDeleteTask() {
     await deleteTask(selectedTask.value.id)
     closeDrawer()
     showToast('任务已删除', 'success')
-    await Promise.all([loadTasks(), loadMyTasks()])
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
   } catch (error: any) {
     showToast(extractError(error, '删除失败'), 'error')
   }
@@ -498,7 +589,7 @@ async function submitEditTask() {
     showEditModal.value = false
     editingTask.value = null
     showToast('委托信息已更新', 'success')
-    await Promise.all([loadTasks(), loadMyTasks()])
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
     openDrawer(updated)
   } catch (error: any) {
     showToast(extractError(error, '修改失败'), 'error')
@@ -559,14 +650,20 @@ function onClickOutsideMenu(e: MouseEvent) {
   if (userMenuRef.value && !userMenuRef.value.contains(e.target as Node)) {
     showUserMenu.value = false
   }
+  if (mobileSortRef.value && !mobileSortRef.value.contains(e.target as Node)) {
+    showMobileSort.value = false
+  }
 }
 
 onMounted(() => {
   bootstrap()
   document.addEventListener('mousedown', onClickOutsideMenu)
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
 })
 onUnmounted(() => {
   document.removeEventListener('mousedown', onClickOutsideMenu)
+  window.removeEventListener('resize', checkMobile)
 })
 </script>
 
@@ -655,45 +752,100 @@ onUnmounted(() => {
   <main v-else class="hv-main">
 
     <!-- ============ 任务大厅 ============ -->
-    <section v-if="activeTab === 'hall'" class="hv-section">
-      <div class="hv-section__header">
-        <h2>任务大厅</h2>
-        <span class="hv-section__count">{{ tasks.length }} 个可接任务</span>
+    <section v-if="activeTab === 'hall'" class="hv-section hv-hall">
+      <!-- Toolbar: search + sort -->
+      <div class="hv-hall-toolbar">
+        <div class="hv-search-wrap">
+          <i class="fa-solid fa-magnifying-glass hv-search-icon"></i>
+          <input v-model="searchQuery" class="hv-search-input" placeholder="搜索任务标题、描述..." />
+        </div>
         <AppDropdown
           v-model="taskSort"
           :options="taskSortOptions"
           width="auto"
           min-width="160px"
-          class="hv-sort-dropdown"
+          class="hv-sort-desktop"
         />
-      </div>
-
-      <div v-if="tasks.length" class="hv-task-grid">
-        <div v-for="task in tasks" :key="task.id" class="card card-hover hv-task-card" @click="openDrawer(task)">
-          <div class="hv-task-card__top">
-            <div class="hv-task-card__badges">
-              <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
-              <span v-if="task.required_gender && genderLabel(task.required_gender)" class="badge" :class="genderLabel(task.required_gender)!.cls">
-                <i :class="genderLabel(task.required_gender)!.icon" style="margin-right: 3px;"></i>{{ genderLabel(task.required_gender)!.label }}
-              </span>
+        <div ref="mobileSortRef" class="hv-sort-mobile-wrap">
+          <button class="hv-sort-btn" :class="{ 'hv-sort-btn--active': showMobileSort }" @click="showMobileSort = !showMobileSort">
+            <i class="fa-solid fa-arrow-down-wide-short"></i>
+          </button>
+          <Transition name="app-dropdown">
+            <div v-if="showMobileSort" class="hv-sort-menu">
+              <button
+                v-for="opt in taskSortOptions" :key="opt.value"
+                class="hv-sort-menu__item"
+                :class="{ 'hv-sort-menu__item--active': taskSort === opt.value }"
+                @click="taskSort = opt.value; showMobileSort = false"
+              >
+                {{ opt.label }}
+                <i v-if="taskSort === opt.value" class="fa-solid fa-check" style="font-size: 12px;"></i>
+              </button>
             </div>
-            <span class="hv-task-card__price">¥{{ task.price }}</span>
-          </div>
-          <h4 class="hv-task-card__title">{{ task.title }}</h4>
-          <p class="hv-task-card__desc">{{ task.description }}</p>
-          <div class="hv-task-card__meta">
-            <span v-if="task.location">{{ task.location }}</span>
-            <span v-if="task.deadline" :class="{ 'hv-meta--expired': isExpired(task.deadline) }">
-              截止 {{ formatShort(task.deadline!) }}
-              <span v-if="isExpired(task.deadline)" class="badge badge-red hv-expired-badge">已过期</span>
-            </span>
-            <span>发布者：{{ task.publisher_display_name }}</span>
-          </div>
+          </Transition>
         </div>
       </div>
-      <div v-else class="hv-empty">
-        <i class="fa-solid fa-inbox hv-empty__icon"></i>
-        <p>暂无可接任务</p>
+      <!-- Mobile: horizontal scrollable category chips (sticky) -->
+      <div class="hv-category-chips">
+        <button class="hv-chip" :class="{ 'hv-chip--active': selectedCategory === null }" @click="selectedCategory = null">全部 ({{ totalTaskCount }})</button>
+        <button v-for="c in categories" :key="c.id" class="hv-chip" :class="{ 'hv-chip--active': selectedCategory === c.id }" @click="selectedCategory = c.id">{{ c.name }} ({{ c.task_count }})</button>
+      </div>
+
+      <!-- Layout: sidebar (desktop) + task grid -->
+      <div class="hv-hall-layout">
+        <aside class="hv-sidebar">
+          <button class="hv-sidebar__item" :class="{ 'hv-sidebar__item--active': selectedCategory === null }" @click="selectedCategory = null">
+            <i class="fa-solid fa-layer-group"></i> 全部任务 <span class="hv-sidebar__count">({{ totalTaskCount }})</span>
+          </button>
+          <button v-for="c in categories" :key="c.id" class="hv-sidebar__item" :class="{ 'hv-sidebar__item--active': selectedCategory === c.id }" @click="selectedCategory = c.id">
+            {{ c.name }} <span class="hv-sidebar__count">({{ c.task_count }})</span>
+          </button>
+        </aside>
+
+        <div class="hv-hall-content">
+          <div v-if="tasks.length" class="hv-task-grid">
+            <div v-for="task in tasks" :key="task.id" class="card card-hover hv-task-card" @click="openDrawer(task)">
+              <div class="hv-task-card__top">
+                <div class="hv-task-card__badges">
+                  <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
+                  <span v-if="task.required_gender && genderLabel(task.required_gender)" class="badge" :class="genderLabel(task.required_gender)!.cls">
+                    <i :class="genderLabel(task.required_gender)!.icon" style="margin-right: 3px;"></i>{{ genderLabel(task.required_gender)!.label }}
+                  </span>
+                </div>
+                <span v-if="task.deadline" class="hv-task-card__deadline" :class="{ 'hv-task-card__deadline--expired': isExpired(task.deadline) }">
+                  <i class="fa-regular fa-clock"></i>
+                  {{ isExpired(task.deadline) ? '已过期' : '截止 ' + formatShort(task.deadline!) }}
+                </span>
+              </div>
+              <h4 class="hv-task-card__title">{{ task.title }}</h4>
+              <p class="hv-task-card__desc">{{ task.description }}</p>
+              <div v-if="categoryName(task.category_id) || task.location" class="hv-task-card__tags">
+                <span v-if="categoryName(task.category_id)" class="hv-task-card__tag">
+                  <i class="fa-solid fa-tag"></i> {{ categoryName(task.category_id) }}
+                </span>
+                <span v-if="task.location" class="hv-task-card__tag">
+                  <i class="fa-solid fa-location-dot"></i> {{ task.location }}
+                </span>
+              </div>
+              <div class="hv-task-card__footer">
+                <div class="hv-task-card__pub">
+                  <span class="hv-task-card__pub-label">发布者</span>
+                  <span class="hv-task-card__pub-name">{{ task.publisher_display_name }}<span v-if="task.publisher_rating_count > 0" class="hv-task-card__pub-score"> ({{ task.publisher_rating_avg.toFixed(1) }})</span></span>
+                  <span v-if="task.publisher_rating_count > 0" class="hv-task-card__pub-rating">
+                    <i class="fa-solid fa-star hv-task-card__star"></i>
+                    <span class="hv-task-card__rating-score">{{ task.publisher_rating_avg.toFixed(1) }}</span>
+                    <span class="hv-task-card__rating-count">({{ task.publisher_rating_count }}条评价)</span>
+                  </span>
+                </div>
+                <span class="hv-task-card__price">¥{{ task.price }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="hv-empty">
+            <i class="fa-solid fa-inbox hv-empty__icon"></i>
+            <p>{{ searchQuery || selectedCategory !== null ? '未找到匹配的任务' : '暂无可接任务' }}</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1115,11 +1267,14 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 
-  <!-- ============ Task Detail Drawer ============ -->
+  <!-- ============ Task Detail Drawer / Bottom Sheet ============ -->
   <Teleport to="body">
     <Transition name="drawer">
-      <div v-if="selectedTask" class="hv-drawer-overlay" @click.self="closeDrawer">
-        <div class="hv-drawer">
+      <div v-if="selectedTask" class="hv-drawer-overlay hv-task-detail-overlay" @click.self="closeDrawer">
+        <div ref="bottomSheetRef" class="hv-drawer hv-task-detail-drawer">
+          <div class="hv-sheet-handle" @touchstart.passive="onSheetTouchStart">
+            <div class="hv-sheet-handle__bar"></div>
+          </div>
           <div class="hv-drawer__header">
             <h3>任务详情</h3>
             <button class="btn btn-ghost btn-sm" @click="closeDrawer" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
@@ -1141,7 +1296,13 @@ onUnmounted(() => {
               <div class="hv-detail-grid">
                 <div class="hv-detail-item">
                   <span class="hv-detail-label">发布者</span>
-                  <span>{{ selectedTask.publisher_display_name }}</span>
+                  <span>{{ selectedTask.publisher_display_name }}
+                    <span v-if="selectedTask.publisher_rating_count > 0" class="hv-task-card__pub-rating" style="margin-left: 6px;">
+                      <i class="fa-solid fa-star hv-task-card__star"></i>
+                      <span class="hv-task-card__rating-score">{{ selectedTask.publisher_rating_avg.toFixed(1) }}</span>
+                      <span class="hv-task-card__rating-count">({{ selectedTask.publisher_rating_count }}条评价)</span>
+                    </span>
+                  </span>
                 </div>
                 <div class="hv-detail-item">
                   <span class="hv-detail-label">地点</span>
@@ -1194,8 +1355,33 @@ onUnmounted(() => {
               <p v-else style="color: var(--c-text-muted); font-size: var(--text-sm);">仅任务参与者可查看和发送消息。</p>
             </div>
 
-            <!-- Reviews -->
-            <div class="hv-drawer__section">
+            <!-- State 1: Task open — show publisher historical reviews -->
+            <div v-if="selectedTask.status === 'open'" class="hv-drawer__section">
+              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star"></i> 历史评价</h4>
+              <div class="hv-reviews">
+                <div v-for="r in publisherHistoryReviews" :key="r.id" class="hv-review">
+                  <div class="hv-review__header">
+                    <span class="hv-stars hv-stars--sm">
+                      <i v-for="(filled, idx) in starsArray(r.stars)" :key="idx" :class="filled ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+                    </span>
+                    <span style="color: var(--c-text-muted); font-size: var(--text-xs);">来自 {{ r.reviewer_display_name }}</span>
+                  </div>
+                  <p v-if="r.comment" class="hv-review__comment">{{ r.comment }}</p>
+                </div>
+                <p v-if="publisherHistoryReviews.length === 0" style="color: var(--c-text-muted); font-size: var(--text-sm);">该发布者暂无历史评价</p>
+              </div>
+            </div>
+
+            <!-- State 2: Task accepted but not completed — show hint -->
+            <div v-else-if="selectedTask.status === 'in_progress' || selectedTask.status === 'under_review'" class="hv-drawer__section">
+              <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star-half-stroke"></i> 双向互评</h4>
+              <div class="hv-reviewed-hint hv-reviewed-hint--waiting">
+                <i class="fa-solid fa-clock"></i> 任务完成后可评价
+              </div>
+            </div>
+
+            <!-- State 3: Task completed — full mutual review -->
+            <div v-else-if="selectedTask.status === 'completed'" class="hv-drawer__section">
               <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-star-half-stroke"></i> 双向互评</h4>
               <div class="hv-reviews">
                 <div v-for="r in taskReviews" :key="r.id" class="hv-review">
@@ -1208,17 +1394,20 @@ onUnmounted(() => {
                   </div>
                   <p v-if="r.comment" class="hv-review__comment">{{ r.comment }}</p>
                 </div>
-                <p v-if="taskReviews.length === 0" style="color: var(--c-text-muted); font-size: var(--text-sm);">暂无评价</p>
+                <p v-if="taskReviews.length === 0 && !canReview" style="color: var(--c-text-muted); font-size: var(--text-sm);">暂无评价</p>
               </div>
 
               <div v-if="waitingForOtherReview" class="hv-reviewed-hint hv-reviewed-hint--waiting">
                 <i class="fa-solid fa-hourglass-half"></i> 您已评价，等待对方评价后双方评价互相可见
               </div>
-              <div v-else-if="selectedTask?.status === 'completed' && isParticipant && hasAlreadyReviewed && bothSidesReviewed" class="hv-reviewed-hint">
+              <div v-else-if="isParticipant && hasAlreadyReviewed && bothSidesReviewed" class="hv-reviewed-hint">
                 <i class="fa-solid fa-circle-check"></i> 互评已完成
               </div>
 
-              <div v-if="canReview" class="hv-review-form">
+              <div v-if="canReview && !showReviewForm" style="margin-top: 10px;">
+                <button class="btn btn-primary btn-sm" @click="showReviewForm = true"><i class="fa-solid fa-pen-to-square"></i> 立即评价</button>
+              </div>
+              <div v-if="canReview && showReviewForm" class="hv-review-form">
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                   <span class="badge badge-default">{{ myReviewTargetRole === 'worker' ? '评价接单者' : '评价发布者' }}</span>
                   <div class="hv-star-input">
@@ -1546,14 +1735,15 @@ onUnmounted(() => {
 /* ===== Task Card Grid ===== */
 .hv-task-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 .hv-task-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 22px;
 }
 
 .hv-task-card__top {
@@ -1569,22 +1759,36 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.hv-task-card__price {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--c-accent);
+.hv-task-card__deadline {
+  font-size: var(--text-xs);
+  color: var(--c-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.hv-task-card__deadline--expired {
+  color: var(--c-danger);
+  font-weight: 600;
 }
 
 .hv-task-card__title {
   font-size: var(--text-lg);
-  margin: 0;
+  font-weight: 700;
+  margin: 2px 0 0;
   line-height: 1.4;
+  transition: color 0.2s;
+}
+
+.hv-task-card:hover .hv-task-card__title {
+  color: var(--c-accent);
 }
 
 .hv-task-card__desc {
   color: var(--c-text-secondary);
   font-size: var(--text-sm);
-  line-height: 1.55;
+  line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1592,15 +1796,80 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.hv-task-card__meta {
+.hv-task-card__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 6px;
+}
+
+.hv-task-card__tag {
+  background: var(--c-border-light);
+  color: var(--c-text-secondary);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--c-border);
+}
+
+.hv-task-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border-light);
+}
+
+.hv-task-card__pub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hv-task-card__pub-label {
   font-size: var(--text-xs);
   color: var(--c-text-muted);
-  margin-top: auto;
-  padding-top: 6px;
-  border-top: 1px solid var(--c-border-light);
+}
+
+.hv-task-card__pub-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.hv-task-card__pub-score {
+  display: none;
+}
+
+.hv-task-card__pub-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs);
+  margin-top: 1px;
+}
+
+.hv-task-card__star {
+  color: #f5a623;
+  font-size: 11px;
+}
+
+.hv-task-card__rating-score {
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.hv-task-card__rating-count {
+  color: var(--c-text-muted);
+}
+
+.hv-task-card__price {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--c-accent);
 }
 
 /* ===== Worker Grid ===== */
@@ -2080,6 +2349,229 @@ onUnmounted(() => {
   color: var(--c-text-muted);
 }
 
+/* ===== Hall Layout ===== */
+.hv-hall-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.hv-search-wrap {
+  flex: 1;
+  max-width: 320px;
+  position: relative;
+}
+
+.hv-search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+
+.hv-search-input {
+  width: 100%;
+  padding: 9px 13px 9px 38px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--text-base);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.hv-search-input:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent-soft);
+}
+
+.hv-search-input::placeholder {
+  color: var(--c-text-muted);
+}
+
+/* Desktop sort dropdown */
+.hv-sort-desktop {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Mobile sort button (hidden on desktop) */
+.hv-sort-mobile-wrap {
+  display: none;
+  position: relative;
+}
+
+.hv-sort-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1.5px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: all var(--dur-fast) var(--ease);
+  flex-shrink: 0;
+}
+
+.hv-sort-btn:hover,
+.hv-sort-btn--active {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+  background: var(--c-accent-light);
+}
+
+.hv-sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 170px;
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  z-index: 1000;
+  padding: 5px;
+  transform-origin: top right;
+}
+
+.hv-sort-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--text-base);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.hv-sort-menu__item:hover {
+  background: var(--c-accent-light);
+  color: var(--c-accent);
+}
+
+.hv-sort-menu__item--active {
+  background: var(--c-accent-light);
+  color: var(--c-accent);
+  font-weight: 500;
+}
+
+/* Category chips (mobile only, hidden on desktop) */
+.hv-category-chips {
+  display: none;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: 8px;
+  padding: 10px 0 2px;
+  scrollbar-width: none;
+}
+
+.hv-category-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.hv-chip {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.hv-chip:hover {
+  border-color: var(--c-text-muted);
+}
+
+.hv-chip--active {
+  background: var(--c-accent);
+  color: var(--c-text-inverse);
+  border-color: var(--c-accent);
+}
+
+/* Hall layout: sidebar + content */
+.hv-hall-layout {
+  display: flex;
+  gap: 24px;
+}
+
+.hv-hall-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sidebar (desktop only) */
+.hv-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 160px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 84px;
+  align-self: flex-start;
+}
+
+.hv-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--c-text-secondary);
+  font-size: var(--text-base);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  text-align: left;
+  transition: all var(--dur-fast) var(--ease);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hv-sidebar__item:hover {
+  background: var(--c-border-light);
+  color: var(--c-text);
+}
+
+.hv-sidebar__item--active {
+  background: var(--c-accent-light);
+  color: var(--c-accent);
+  font-weight: 600;
+}
+
+.hv-sidebar__count {
+  color: var(--c-text-muted);
+  font-weight: 400;
+  font-size: var(--text-xs);
+  margin-left: auto;
+}
+
+.hv-sidebar__item--active .hv-sidebar__count {
+  color: var(--c-accent);
+  opacity: 0.7;
+}
+
 /* ===== Expired ===== */
 .hv-meta--expired {
   color: var(--c-danger) !important;
@@ -2098,9 +2590,33 @@ onUnmounted(() => {
   color: #be185d;
 }
 
+/* ===== Sheet Handle (hidden on desktop) ===== */
+.hv-sheet-handle {
+  display: none;
+  justify-content: center;
+  padding: 10px 0 2px;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+.hv-sheet-handle__bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-border);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.hv-sheet-handle:active .hv-sheet-handle__bar {
+  background: var(--c-text-muted);
+}
+
 /* ===== Transitions ===== */
 .drawer-enter-active { transition: all var(--dur-slow) var(--ease); }
 .drawer-leave-active { transition: all var(--dur-normal) var(--ease); }
+.drawer-enter-active .hv-drawer { transition: transform var(--dur-slow) var(--ease); }
+.drawer-leave-active .hv-drawer { transition: transform var(--dur-normal) var(--ease); }
 .drawer-enter-from,
 .drawer-leave-to { opacity: 0; }
 .drawer-enter-from .hv-drawer { transform: translateX(100%); }
@@ -2140,8 +2656,111 @@ onUnmounted(() => {
     transform: none;
   }
   .hv-main { padding: 16px; }
-  .hv-task-grid { grid-template-columns: 1fr; }
   .hv-worker-grid { grid-template-columns: 1fr; }
   .hv-detail-grid { grid-template-columns: 1fr; }
+
+  /* Hall: mobile layout */
+  .hv-sidebar { display: none; }
+  .hv-sort-desktop { display: none !important; }
+  .hv-sort-mobile-wrap { display: block; }
+
+  .hv-search-wrap { max-width: none; }
+
+  .hv-category-chips {
+    display: flex;
+    position: sticky;
+    top: 60px;
+    z-index: 30;
+    background: var(--c-bg);
+    margin: 0 -16px;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--c-border-light);
+  }
+
+  .hv-hall-layout {
+    gap: 0;
+  }
+
+  /* ---- Mobile: 2-column task grid ---- */
+  .hv-task-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .hv-task-card {
+    padding: 12px;
+    gap: 6px;
+  }
+
+  .hv-task-card__top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .hv-task-card__deadline {
+    font-size: 10px;
+  }
+
+  .hv-task-card__title {
+    font-size: var(--text-sm);
+    line-height: 1.35;
+  }
+
+  .hv-task-card__desc {
+    font-size: var(--text-xs);
+    -webkit-line-clamp: 1;
+  }
+
+  .hv-task-card__tags {
+    display: none;
+  }
+
+  .hv-task-card__footer {
+    padding-top: 8px;
+  }
+
+  .hv-task-card__pub-name {
+    font-size: var(--text-xs);
+  }
+
+  .hv-task-card__pub-score {
+    display: inline;
+    color: var(--c-text-muted);
+    font-weight: 400;
+  }
+
+  .hv-task-card__pub-rating {
+    display: none;
+  }
+
+  .hv-task-card__price {
+    font-size: var(--text-lg);
+  }
+
+  /* ---- Mobile: Task detail as bottom sheet ---- */
+  .hv-task-detail-overlay {
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+
+  .hv-task-detail-drawer {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1), 0 80px 0 0 var(--c-surface);
+    overflow: hidden;
+  }
+
+  .hv-sheet-handle {
+    display: flex;
+  }
+
+  .drawer-enter-from .hv-task-detail-drawer,
+  .drawer-leave-to .hv-task-detail-drawer {
+    transform: translateY(100%);
+  }
 }
 </style>

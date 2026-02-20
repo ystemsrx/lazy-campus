@@ -18,6 +18,7 @@ class CategoryOut(BaseModel):
     name: str
     description: str | None
     sort_order: int
+    task_count: int = 0
 
 
 class TaskCreate(BaseModel):
@@ -62,6 +63,8 @@ class TaskOut(BaseModel):
     required_gender: Gender | None
     publisher_display_name: str
     assignee_display_name: str | None
+    publisher_rating_avg: float = 0
+    publisher_rating_count: int = 0
     created_at: datetime
 
 

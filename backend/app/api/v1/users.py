@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_completed_user, require_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.enums import TaskStatus
-from app.models.task import Task
+from app.models.enums import RatingTargetRole, TaskStatus
+from app.models.task import Task, TaskReview
 from app.models.user import User, WorkerProfile
-from app.schemas.user import CompleteProfileRequest, UpdateProfileRequest, UserMe, UserPublic, WorkerProfileOut, WorkerProfileUpsert
+from app.schemas.user import CompleteProfileRequest, UpdateProfileRequest, UserMe, UserPublic, UserReviewOut, WorkerProfileOut, WorkerProfileUpsert
 from app.utils.user_display import display_name
 
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'avatars'
@@ -281,6 +281,36 @@ def get_my_worker_profile(user: User = Depends(require_user), db: Session = Depe
         worker_rating_count=user.worker_rating_count,
         blocked_by_count=user.blocked_by_count,
     )
+
+
+@router.get('/{user_id}/reviews', response_model=list[UserReviewOut])
+def list_user_reviews(
+    user_id: int,
+    role: str = Query(default='publisher', pattern='^(publisher|worker)$'),
+    db: Session = Depends(get_db),
+) -> list[UserReviewOut]:
+    target_role = RatingTargetRole.PUBLISHER if role == 'publisher' else RatingTargetRole.WORKER
+    reviews = (
+        db.query(TaskReview)
+        .filter(TaskReview.reviewee_id == user_id, TaskReview.target_role == target_role)
+        .order_by(desc(TaskReview.created_at))
+        .limit(20)
+        .all()
+    )
+
+    reviewer_ids = {r.reviewer_id for r in reviews}
+    reviewers = {u.id: u for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()} if reviewer_ids else {}
+
+    return [
+        UserReviewOut(
+            id=r.id,
+            stars=r.stars,
+            comment=r.comment,
+            reviewer_display_name=display_name(reviewers[r.reviewer_id]) if r.reviewer_id in reviewers else '未知用户',
+            created_at=r.created_at,
+        )
+        for r in reviews
+    ]
 
 
 @router.get('/{user_id}', response_model=UserPublic)
