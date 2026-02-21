@@ -75,6 +75,14 @@ let sheetDragStartY = 0
 let sheetDragStartH = 0
 let sheetCanExpand = false
 
+watch(
+  () => !!props.task,
+  (open) => {
+    document.body.style.overflow = open ? 'hidden' : ''
+  },
+  { immediate: true },
+)
+
 function closeDrawer() {
   emit('close')
 }
@@ -166,8 +174,10 @@ watch(
 
 watch(
   () => props.task?.id,
-  () => {
-    resetSheetStyles()
+  (newId) => {
+    if (newId != null) {
+      resetSheetStyles()
+    }
     scrollMessagesToBottom()
   },
 )
@@ -175,6 +185,7 @@ watch(
 onUnmounted(() => {
   document.removeEventListener('touchmove', onSheetTouchMove)
   document.removeEventListener('touchend', onSheetTouchEnd)
+  document.body.style.overflow = ''
 })
 </script>
 

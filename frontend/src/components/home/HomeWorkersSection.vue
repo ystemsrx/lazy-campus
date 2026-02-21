@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
 import HomeEmptyState from './ui/HomeEmptyState.vue'
-import HomeStars from './ui/HomeStars.vue'
+
 import type { Category, WorkerProfile } from '../../types/api'
 
 const props = defineProps<{
@@ -128,40 +128,46 @@ onUnmounted(() => {
 
       <div class="hv-workers-content">
         <div v-if="workers.length" class="hv-worker-grid">
-          <div v-for="w in workers" :key="w.user_id" class="card hv-worker-card card-hover" @click="emit('openWorker', w)">
+          <div v-for="w in workers" :key="w.user_id" class="hv-worker-card" @click="emit('openWorker', w)">
             <div class="hv-worker-card__header">
-              <HomeAvatar size="lg" :avatar-url="w.avatar_url" :gender="w.gender" alt="worker avatar" />
-              <div class="hv-worker-card__info">
-                <h4>
-                  {{ w.display_name }}
-                  <span v-if="w.overall_rating_count > 0" class="hv-worker-card__score-inline">({{ w.overall_rating_avg.toFixed(1) }})</span>
-                </h4>
+              <HomeAvatar size="xl" :avatar-url="w.avatar_url" :gender="w.gender" />
+              <div class="hv-worker-card__meta">
+                <div class="hv-worker-card__name-row">
+                  <h4>{{ w.display_name }}<span class="hv-worker-card__score-inline">({{ w.overall_rating_avg.toFixed(1) }})</span></h4>
+                  <p class="hv-worker-card__price hv-worker-card__price--desktop">{{ w.min_price ?? '-' }}~{{ w.max_price ?? '-' }}元</p>
+                  <p class="hv-worker-card__price hv-worker-card__price--mobile">{{ w.min_price != null ? '¥' + w.min_price : '-' }}</p>
+                </div>
+                <div class="hv-worker-card__top-row">
+                  <p class="hv-worker-card__role">
+                    <i class="fa-solid fa-briefcase"></i>
+                    已完成 {{ w.worker_completed_count }} 单
+                  </p>
+                </div>
                 <div class="hv-worker-card__rating">
-                  <HomeStars :value="Math.round(w.overall_rating_avg)" />
-                  <span class="hv-worker-card__count">
-                    {{ w.overall_rating_count > 0 ? `${w.overall_rating_avg.toFixed(1)} 分 · ${w.overall_rating_count} 评价` : '暂无评分' }}
+                  <i class="fa-solid fa-star hv-star-icon"></i>
+                  <span>{{ w.overall_rating_avg.toFixed(1) }}</span>
+                  <span class="hv-rating-text">
+                    {{ w.overall_rating_count > 0 ? `(${w.overall_rating_count} 评价)` : '暂无评价' }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div class="hv-worker-card__body">
-              <div v-if="w.skill_tags.length" class="hv-worker-card__tags">
-                <span v-for="tag in w.skill_tags" :key="tag.id" class="hv-worker-tag">{{ tag.name }}</span>
-              </div>
-              <div class="hv-worker-card__row">
-                <span class="hv-worker-card__label">价格</span>
-                <span>{{ w.min_price ?? '-' }} ~ {{ w.max_price ?? '-' }} 元</span>
-              </div>
-              <div class="hv-worker-card__row">
-                <span class="hv-worker-card__label">完成</span>
-                <span>{{ w.worker_completed_count }} 单</span>
-              </div>
-              <div v-if="w.blocked_by_count > 0" class="hv-worker-card__row">
-                <span class="hv-worker-card__label">被拉黑</span>
-                <span class="badge badge-red">{{ w.blocked_by_count }} 次</span>
-              </div>
-              <p v-if="w.bio" class="hv-worker-card__bio">{{ w.bio }}</p>
+            <p v-if="w.bio" class="hv-worker-card__bio">{{ w.bio }}</p>
+
+            <div v-if="w.skill_tags.length" class="hv-worker-card__tags">
+              <span v-for="tag in w.skill_tags" :key="tag.id" class="hv-worker-tag">{{ tag.name }}</span>
+            </div>
+
+            <div class="hv-worker-card__actions">
+              <button class="hv-worker-card__btn-main" @click.stop="emit('openWorker', w)">查看详情</button>
+              <button
+                v-if="w.blocked_by_count > 0"
+                class="hv-worker-card__btn-icon hv-worker-card__btn-icon--warn"
+                :title="`被 ${w.blocked_by_count} 人拉黑`"
+              >
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -371,23 +377,66 @@ onUnmounted(() => {
 /* ---- worker cards ---- */
 .hv-worker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
 }
 
 .hv-worker-card {
+  background: var(--c-surface);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  border: 1px solid var(--c-border-light);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  transition: box-shadow var(--dur-normal) var(--ease),
+              transform var(--dur-normal) var(--ease);
+}
+
+.hv-worker-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.hv-worker-card :deep(.hv-avatar) {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-lg);
+  font-size: 22px;
 }
 
 .hv-worker-card__header {
   display: flex;
-  gap: 14px;
-  align-items: center;
-  margin-bottom: 14px;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.hv-worker-card__info h4 {
-  margin: 0 0 2px;
+.hv-worker-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.hv-worker-card__name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hv-worker-card__name-row h4 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .hv-worker-card__score-inline {
@@ -395,67 +444,151 @@ onUnmounted(() => {
   color: var(--c-text-muted);
   font-weight: 400;
   font-size: var(--text-xs);
+  margin-left: 4px;
+}
+
+.hv-worker-card__top-row {
+  margin-top: 3px;
+}
+
+.hv-worker-card__role {
+  margin: 3px 0 0;
+  font-size: var(--text-sm);
+  color: var(--c-accent);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hv-worker-card__role i {
+  font-size: 10px;
+}
+
+.hv-worker-card__price {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--c-text);
+  white-space: nowrap;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.hv-worker-card__price--mobile {
+  display: none;
 }
 
 .hv-worker-card__rating {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #f59e0b;
+  margin-top: 6px;
 }
 
-.hv-worker-card__count {
-  font-size: var(--text-xs);
+.hv-star-icon {
+  font-size: 13px;
+}
+
+.hv-rating-text {
   color: var(--c-text-muted);
+  font-weight: 400;
+  margin-left: 2px;
 }
 
-.hv-worker-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.hv-worker-card__bio {
+  font-size: var(--text-sm);
+  color: var(--c-text-secondary);
+  line-height: 1.6;
+  margin: 0 0 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .hv-worker-card__tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 4px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hv-worker-card__tags::-webkit-scrollbar {
+  display: none;
 }
 
 .hv-worker-tag {
   display: inline-block;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
   background: var(--c-accent-light);
   color: var(--c-accent);
   font-size: var(--text-xs);
   font-weight: 500;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.hv-worker-card__row {
+.hv-worker-card__actions {
   display: flex;
-  justify-content: space-between;
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
+  gap: 10px;
+  margin-top: auto;
 }
 
-.hv-worker-card__label {
-  color: var(--c-text-muted);
+.hv-worker-card__btn-main {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--c-primary);
+  color: var(--c-text-inverse);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.hv-worker-card__btn-main:hover {
+  background: var(--c-primary-hover);
+}
+
+.hv-worker-card__btn-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  cursor: pointer;
   flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease);
 }
 
-.hv-worker-card__bio {
-  margin: 6px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--c-border-light);
-  font-size: var(--text-sm);
-  color: var(--c-text-secondary);
-  line-height: 1.55;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.hv-worker-card__btn-icon:hover {
+  background: var(--c-border-light);
+  border-color: var(--c-text-muted);
+}
+
+.hv-worker-card__btn-icon--warn {
+  border-color: var(--c-danger-soft);
+  color: var(--c-danger);
+  background: var(--c-danger-light);
+}
+
+.hv-worker-card__btn-icon--warn:hover {
+  background: var(--c-danger-soft);
+  border-color: var(--c-danger);
 }
 
 /* ---- transitions ---- */
@@ -513,12 +646,19 @@ onUnmounted(() => {
   }
 
   .hv-worker-card {
-    min-width: 0;
-    overflow: hidden;
+    padding: 14px;
   }
 
-  .hv-worker-card__body {
-    min-width: 0;
+  .hv-worker-card :deep(.hv-avatar) {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    font-size: 16px;
+  }
+
+  .hv-worker-card__header {
+    gap: 10px;
+    margin-bottom: 10px;
   }
 
   .hv-worker-card__score-inline {
@@ -529,16 +669,32 @@ onUnmounted(() => {
     display: none;
   }
 
-  .hv-worker-card__tags {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 2px;
+  .hv-worker-card__price--desktop {
+    display: none;
   }
 
-  .hv-worker-card__tags::-webkit-scrollbar {
-    display: none;
+  .hv-worker-card__price--mobile {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .hv-worker-card__bio {
+    margin-bottom: 10px;
+  }
+
+  .hv-worker-card__tags {
+    margin-bottom: 14px;
+  }
+
+  .hv-worker-card__btn-main {
+    padding: 8px 12px;
+  }
+
+  .hv-worker-card__btn-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
   }
 }
 </style>

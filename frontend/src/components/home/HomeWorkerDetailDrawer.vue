@@ -36,6 +36,14 @@ let sheetDragStartY = 0;
 let sheetDragStartH = 0;
 let sheetCanExpand = false;
 
+watch(
+  () => !!props.worker,
+  (open) => {
+    document.body.style.overflow = open ? 'hidden' : '';
+  },
+  { immediate: true },
+);
+
 function closeDrawer() {
   selectedContactAction.value = null;
   emit("close");
@@ -127,8 +135,10 @@ watch(
 
 watch(
   () => props.worker?.user_id,
-  () => {
-    resetSheetStyles();
+  (newId) => {
+    if (newId != null) {
+      resetSheetStyles();
+    }
     selectedContactAction.value = null;
   },
 );
@@ -136,6 +146,7 @@ watch(
 onUnmounted(() => {
   document.removeEventListener("touchmove", onSheetTouchMove);
   document.removeEventListener("touchend", onSheetTouchEnd);
+  document.body.style.overflow = '';
 });
 </script>
 

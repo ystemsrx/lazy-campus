@@ -60,11 +60,13 @@ const genderClass = computed(() => (props.gender === 'female' ? 'hv-avatar--fema
 }
 
 .hv-avatar--male {
-  background: linear-gradient(135deg, #93c5fd, #3b82f6);
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .hv-avatar--female {
-  background: linear-gradient(135deg, #f9a8d4, #ec4899);
+  background: #f3e8ff;
+  color: #9333ea;
 }
 
 .hv-avatar--img {
