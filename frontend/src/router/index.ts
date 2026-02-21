@@ -14,8 +14,18 @@ const router = createRouter({
   ]
 })
 
+const SESSION_REFRESH_KEY = 'token_refreshed'
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+
+  // 每次新的浏览器会话（sessionStorage 随 tab 关闭而清空）刷新一次 token
+  // 实现滑动窗口：只要在 30 天内有过访问，就自动续期
+  if (auth.isAuthenticated && !sessionStorage.getItem(SESSION_REFRESH_KEY)) {
+    sessionStorage.setItem(SESSION_REFRESH_KEY, '1')
+    const ok = await auth.refresh()
+    if (!ok) return '/login'
+  }
 
   if (!auth.isAuthenticated && !publicPaths.includes(to.path)) {
     return '/login'

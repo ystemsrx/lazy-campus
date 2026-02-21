@@ -322,6 +322,7 @@ onUnmounted(() => {
               placeholder="密码"
               class="av-input av-input--pw"
               required
+              @keyup.enter="submitLogin"
             />
             <button
               type="button"
@@ -386,6 +387,7 @@ onUnmounted(() => {
               class="av-input"
               minlength="6"
               required
+              @keyup.enter="submitRegister"
             />
           </div>
         </form>
@@ -738,6 +740,10 @@ onUnmounted(() => {
 }
 .av-input--pw {
   padding-right: 36px;
+}
+.av-input--pw::-ms-reveal,
+.av-input--pw::-ms-clear {
+  display: none;
 }
 .av-eye-btn {
   position: absolute;

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { completeProfile as apiCompleteProfile, getMe, login as apiLogin } from '../api/auth'
+import { completeProfile as apiCompleteProfile, getMe, login as apiLogin, refreshToken as apiRefreshToken } from '../api/auth'
 import type { UserMe, UserRole } from '../types/api'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -50,6 +50,19 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  async function refresh() {
+    if (!token.value) return false
+    try {
+      const res = await apiRefreshToken()
+      token.value = res.access_token
+      localStorage.setItem('access_token', res.access_token)
+      return true
+    } catch {
+      logout()
+      return false
+    }
+  }
+
   function logout() {
     token.value = null
     role.value = null
@@ -72,6 +85,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     fetchMe,
     completeProfile,
+    refresh,
     logout
   }
 })

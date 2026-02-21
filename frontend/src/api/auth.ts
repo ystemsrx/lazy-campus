@@ -6,6 +6,11 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   return data
 }
 
+export async function refreshToken(): Promise<{ access_token: string; token_type: string }> {
+  const { data } = await api.post<{ access_token: string; token_type: string }>('/auth/refresh')
+  return data
+}
+
 export async function register(payload: RegisterPayload): Promise<RegisterResponse> {
   const { data } = await api.post<RegisterResponse>('/auth/register', payload)
   return data

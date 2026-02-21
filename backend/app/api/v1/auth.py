@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import AuthContext, get_current_auth
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    RefreshResponse,
     RegistrationStatusResponse,
     RegisterRequest,
     RegisterResponse,
@@ -44,6 +46,22 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginRe
         user_id=result.user.id,
         display_name=result.display_name,
     )
+
+
+@router.post('/refresh', response_model=RefreshResponse)
+def refresh_token(ctx: AuthContext = Depends(get_current_auth)) -> RefreshResponse:
+    """用当前有效 token 换取一个新的 30 天 token（滑动窗口续期）"""
+    if ctx.role == 'admin':
+        new_token = create_access_token(
+            subject=f'admin:{ctx.admin_account}',
+            extra={'kind': 'admin', 'account': ctx.admin_account, 'role': 'admin'},
+        )
+    else:
+        new_token = create_access_token(
+            subject=str(ctx.user.id),
+            extra={'kind': 'user', 'uid': ctx.user.id, 'role': 'user'},
+        )
+    return RefreshResponse(access_token=new_token)
 
 
 @router.get('/registration-status', response_model=RegistrationStatusResponse)

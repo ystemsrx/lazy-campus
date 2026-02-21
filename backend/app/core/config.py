@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = '/api/v1'
 
     secret_key: str = 'please-change-me'
-    access_token_expire_minutes: int = 60 * 24
+    access_token_expire_minutes: int = 60 * 24 * 30  # 30天
 
     database_url: str = 'sqlite:///./campus_task.db'
     backend_public_url_dev: str = 'http://127.0.0.1:8000'

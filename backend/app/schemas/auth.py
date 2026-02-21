@@ -34,6 +34,11 @@ class RegistrationStatusResponse(BaseModel):
     registration_enabled: bool
 
 
+class RefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = 'bearer'
+
+
 class ThirdPartyRequest(BaseModel):
     account: str
     password: str
