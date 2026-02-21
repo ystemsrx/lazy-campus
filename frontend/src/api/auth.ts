@@ -26,7 +26,7 @@ export async function getMe(): Promise<UserMe> {
   return data
 }
 
-export async function completeProfile(payload: { email: string; gender: 'male' | 'female'; nickname: string }): Promise<UserMe> {
+export async function completeProfile(payload: { email: string; gender: 'male' | 'female'; nickname: string | null }): Promise<UserMe> {
   const { data } = await api.post<UserMe>('/users/me/complete-profile', payload)
   return data
 }

@@ -190,7 +190,7 @@ async def login_with_fallback(db: Session, account: str, password: str) -> Login
             user=user,
             role='user',
             display_name=user.nickname or user.name,
-            profile_completed=bool(user.email and user.gender and user.nickname),
+            profile_completed=bool(user.email and user.gender),
         )
 
     third_party_result = await third_party_auth(account, password)
@@ -210,5 +210,5 @@ async def login_with_fallback(db: Session, account: str, password: str) -> Login
         user=synced_user,
         role='user',
         display_name=synced_user.nickname or synced_user.name,
-        profile_completed=bool(synced_user.email and synced_user.gender and synced_user.nickname),
+            profile_completed=bool(synced_user.email and synced_user.gender),
     )

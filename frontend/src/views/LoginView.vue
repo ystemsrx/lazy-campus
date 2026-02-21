@@ -98,16 +98,15 @@ async function submitRegister() {
 
   loading.value = true
   try {
-    await register({ account: regAccount.value, password: regPassword.value, name: regName.value })
-    showToast('注册成功！', 'success')
-    regName.value = ''
-    regAccount.value = ''
-    regPassword.value = ''
-    confirmPassword.value = ''
-    setTimeout(() => {
-      isLogin.value = true
-      toast.value = null
-    }, 1200)
+    const registerAccount = regAccount.value
+    const registerPassword = regPassword.value
+    await register({ account: registerAccount, password: registerPassword, name: regName.value })
+    const res = await auth.login(registerAccount, registerPassword)
+    if (res.role === 'admin') {
+      await router.push('/admin')
+      return
+    }
+    await router.push(res.profile_completed ? '/' : '/complete-profile')
   } catch (error: any) {
     showToast(extractError(error, '注册失败，请稍后重试'))
     loadRegistrationStatus()
@@ -384,7 +383,7 @@ onUnmounted(() => {
               v-model="confirmPassword"
               type="password"
               placeholder="确认密码"
-              class="av-input"
+              class="av-input av-input--pw"
               minlength="6"
               required
               @keyup.enter="submitRegister"
@@ -742,8 +741,12 @@ onUnmounted(() => {
   padding-right: 36px;
 }
 .av-input--pw::-ms-reveal,
-.av-input--pw::-ms-clear {
+.av-input--pw::-ms-clear,
+.av-input--pw::-webkit-contacts-auto-fill-button,
+.av-input--pw::-webkit-credentials-auto-fill-button {
   display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
 .av-eye-btn {
   position: absolute;

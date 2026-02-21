@@ -6,4 +6,4 @@ def display_name(user: User) -> str:
 
 
 def profile_completed(user: User) -> bool:
-    return bool(user.email and user.gender and user.nickname)
+    return bool(user.email and user.gender)

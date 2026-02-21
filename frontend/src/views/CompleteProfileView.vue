@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
@@ -8,20 +8,35 @@ import { extractError } from '../utils/error'
 const router = useRouter()
 const auth = useAuthStore()
 
+const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined
+const logoUrl = computed(() =>
+  logoFile ? `/logos/${logoFile}` : null,
+)
+
 const email = ref('')
 const gender = ref<'male' | 'female'>('male')
 const nickname = ref('')
 const loading = ref(false)
-const errorMsg = ref('')
+
+const toast = ref<{ text: string; type: 'error' | 'success' } | null>(null)
+let toastTimer = 0
+function showToast(text: string, type: 'error' | 'success' = 'error', duration = 3500) {
+  clearTimeout(toastTimer)
+  toast.value = { text, type }
+  if (duration > 0) {
+    toastTimer = window.setTimeout(() => { toast.value = null }, duration)
+  }
+}
+
+onUnmounted(() => { clearTimeout(toastTimer) })
 
 async function submit() {
-  errorMsg.value = ''
   loading.value = true
   try {
-    await auth.completeProfile({ email: email.value, gender: gender.value, nickname: nickname.value })
+    await auth.completeProfile({ email: email.value, gender: gender.value, nickname: nickname.value || null })
     await router.push('/')
   } catch (error: any) {
-    errorMsg.value = extractError(error, '保存失败')
+    showToast(extractError(error, '保存失败'))
   } finally {
     loading.value = false
   }
@@ -30,142 +45,449 @@ async function submit() {
 
 <template>
   <div class="cp-page">
-    <div class="cp-card card">
-      <div class="cp-brand">
-        <div class="cp-logo">T</div>
-        <h1>完善个人资料</h1>
-      </div>
-      <p class="cp-subtitle">首次登录请设置以下信息。昵称设置后将用于对外显示，保护你的真实姓名。</p>
+    <!-- 动态背景装饰 -->
+    <div class="cp-blob cp-blob--tl"></div>
+    <div class="cp-blob cp-blob--br"></div>
 
-      <form @submit.prevent="submit" class="cp-form">
-        <div class="form-group">
-          <label class="form-label">邮箱</label>
-          <input v-model="email" type="email" class="form-input" placeholder="请输入常用邮箱" required />
-        </div>
 
-        <div class="form-group">
-          <label class="form-label">性别</label>
-          <div class="cp-gender-group">
-            <label v-for="opt in ([
-              { value: 'male', label: '男' },
-              { value: 'female', label: '女' },
-            ] as const)" :key="opt.value" class="cp-gender-opt" :class="{ 'cp-gender-opt--active': gender === opt.value }">
-              <input type="radio" v-model="gender" :value="opt.value" style="display: none;" />
-              {{ opt.label }}
-            </label>
+    <div class="cp-container">
+      <!-- 卡片主体 -->
+      <div class="cp-card">
+
+        <!-- 头部 Logo 与标题 -->
+        <div class="cp-header">
+          <div class="cp-brand-row">
+            <div class="cp-logo-wrap">
+              <img v-if="logoUrl" :src="logoUrl" class="cp-logo-img" alt="Logo" />
+              <div v-else class="cp-logo-icon">
+                <i class="fa-solid fa-handshake"></i>
+              </div>
+            </div>
+            <span class="cp-welcome">欢迎使用</span>
+            <Transition name="cp-toast">
+              <span v-if="toast" class="cp-toast" :class="'cp-toast--' + toast.type">{{ toast.text }}</span>
+            </Transition>
           </div>
+          <p class="cp-desc">首次登录请设置以下信息。昵称设置后将用于对外显示，以保护你的真实姓名。</p>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">昵称</label>
-          <input v-model="nickname" class="form-input" placeholder="请设置一个昵称" required />
-        </div>
+        <form @submit.prevent="submit" class="cp-form">
 
-        <button class="btn btn-primary btn-block" :disabled="loading" type="submit">
-          <span v-if="loading" class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-          {{ loading ? '提交中...' : '完成设置' }}
-        </button>
-      </form>
+          <!-- 邮箱输入框 -->
+          <div class="cp-field">
+            <label class="cp-label">邮箱<span class="cp-required">*</span></label>
+            <div class="cp-input-wrap" :class="{ 'cp-input-wrap--focused': false }">
+              <svg class="cp-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="16" x="2" y="4" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+              </svg>
+              <input
+                v-model="email"
+                type="email"
+                class="cp-input"
+                placeholder="请输入常用邮箱"
+                required
+              />
+            </div>
+          </div>
 
-      <Transition name="slide-fade">
-        <p v-if="errorMsg" class="cp-error">{{ errorMsg }}</p>
-      </Transition>
+          <!-- 性别选择 (滑动分段控制器) -->
+          <div class="cp-field">
+            <label class="cp-label">性别<span class="cp-required">*</span></label>
+            <div class="cp-gender-seg">
+              <!-- 滑动背景块 -->
+              <div class="cp-gender-pill" :class="{ 'cp-gender-pill--right': gender === 'female' }"></div>
+              <button
+                type="button"
+                class="cp-gender-btn"
+                :class="{ 'cp-gender-btn--male': gender === 'male' }"
+                @click="gender = 'male'"
+              >男</button>
+              <button
+                type="button"
+                class="cp-gender-btn"
+                :class="{ 'cp-gender-btn--female': gender === 'female' }"
+                @click="gender = 'female'"
+              >女</button>
+            </div>
+          </div>
+
+          <!-- 昵称输入框 -->
+          <div class="cp-field">
+            <label class="cp-label">昵称</label>
+            <div class="cp-input-wrap">
+              <svg class="cp-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M20 21a8 8 0 1 0-16 0"/>
+              </svg>
+              <input
+                v-model="nickname"
+                type="text"
+                class="cp-input"
+                placeholder="请设置一个昵称"
+              />
+            </div>
+          </div>
+
+          <!-- 提交按钮 -->
+          <div class="cp-submit-wrap">
+            <button
+              type="submit"
+              :disabled="loading"
+              class="cp-submit-btn"
+            >
+              <!-- 光泽动画 -->
+              <span class="cp-shimmer"></span>
+              <span class="cp-btn-inner">
+                <template v-if="loading">
+                  <svg class="cp-spinner" viewBox="0 0 24 24" fill="none">
+                    <circle class="cp-spinner-track" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="cp-spinner-arc" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                  </svg>
+                  提交中...
+                </template>
+                <template v-else>
+                  完成设置
+                  <svg class="cp-arrow-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+                  </svg>
+                </template>
+              </span>
+            </button>
+          </div>
+
+        </form>
+      </div>
+
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ───── 页面底层 ───── */
 .cp-page {
   min-height: 100vh;
+  background: #f4f7fb;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: linear-gradient(145deg, #f8fafc 0%, #eef2ff 50%, #f0f9ff 100%);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.cp-card {
+/* ───── 背景光晕 ───── */
+.cp-blob {
+  position: absolute;
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  filter: blur(80px);
+  mix-blend-mode: multiply;
+  animation: blob 7s infinite;
+}
+.cp-blob--tl {
+  top: -10%;
+  left: -10%;
+  background: rgba(96, 165, 250, 0.2);
+}
+.cp-blob--br {
+  bottom: -10%;
+  right: -10%;
+  background: rgba(129, 140, 248, 0.18);
+  animation-delay: 2s;
+}
+@keyframes blob {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(30px, -50px) scale(1.1); }
+  66%  { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* ───── 内容容器 ───── */
+.cp-container {
+  max-width: 420px;
   width: 100%;
-  max-width: 460px;
-  padding: 36px 32px;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid rgba(226, 232, 240, 0.6);
+  position: relative;
+  z-index: 10;
 }
 
-.cp-brand {
+/* ───── 卡片 ───── */
+.cp-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 2rem;
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  padding: 40px;
+}
+
+/* ───── 头部 ───── */
+.cp-header {
+  margin-bottom: 24px;
+}
+.cp-brand-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
-.cp-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--c-accent);
-  color: #fff;
+/* Logo 区域 */
+.cp-logo-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.cp-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cp-logo-icon {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #2563eb 0%, #818cf8 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35);
+}
+.cp-logo-icon i {
+  color: #fff;
+  font-size: 22px;
+}
+
+.cp-welcome {
+  font-size: 22px;
   font-weight: 700;
-  font-size: 20px;
-  flex-shrink: 0;
+  color: #1e293b;
+  letter-spacing: -0.02em;
 }
-
-.cp-brand h1 {
-  font-size: var(--text-2xl);
+.cp-desc {
+  font-size: 13px;
+  color: #6b7280;
   margin: 0;
+  line-height: 1.7;
 }
 
-.cp-subtitle {
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  margin: 0 0 24px;
-  line-height: 1.6;
-}
-
+/* ───── 表单 ───── */
 .cp-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
+}
+.cp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cp-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-left: 4px;
+}
+.cp-required {
+  color: #ef4444;
+  margin-left: 3px;
 }
 
-.cp-gender-group {
+/* 输入框 */
+.cp-input-wrap {
+  position: relative;
   display: flex;
+  align-items: center;
+}
+.cp-input-icon {
+  position: absolute;
+  left: 16px;
+  color: #9ca3af;
+  pointer-events: none;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+.cp-input-wrap:focus-within .cp-input-icon {
+  color: #3b82f6;
+}
+.cp-input {
+  width: 100%;
+  padding: 14px 16px 14px 44px;
+  background: rgba(249, 250, 251, 0.6);
+  border: 1.5px solid #f3f4f6;
+  border-radius: 16px;
+  font-size: 14px;
+  color: #1f2937;
+  outline: none;
+  transition: all 0.25s ease;
+  box-sizing: border-box;
+}
+.cp-input::placeholder {
+  color: #9ca3af;
+}
+.cp-input:focus {
+  background: #ffffff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.10);
+}
+
+/* 性别分段控制器 */
+.cp-gender-seg {
+  position: relative;
+  display: flex;
+  padding: 6px;
+  background: rgba(243, 244, 246, 0.8);
+  border-radius: 16px;
+}
+.cp-gender-pill {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: calc(50% - 9px);
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+.cp-gender-pill--right {
+  transform: translateX(calc(100% + 6px));
+}
+.cp-gender-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  border-radius: 10px;
+}
+.cp-gender-btn--male {
+  color: #2563eb;
+}
+.cp-gender-btn--female {
+  color: #ec4899;
+}
+
+/* ───── Toast（欢迎使用右侧） ───── */
+.cp-toast {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-toast--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+.cp-toast--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+.cp-toast-enter-active,
+.cp-toast-leave-active {
+  transition: all 0.3s ease;
+}
+.cp-toast-enter-from,
+.cp-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+/* 提交按钮区域 */
+.cp-submit-wrap {
+  padding-top: 8px;
+}
+.cp-submit-btn {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  padding: 16px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px -6px rgba(37, 99, 235, 0.4);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-submit-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  box-shadow: 0 12px 25px -6px rgba(37, 99, 235, 0.5);
+}
+.cp-submit-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.cp-submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* 光泽动画 */
+.cp-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+.cp-submit-btn:hover:not(:disabled) .cp-shimmer {
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.cp-btn-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.cp-gender-opt {
-  flex: 1;
-  padding: 9px 0;
-  text-align: center;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--c-text-secondary);
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+/* 箭头动画 */
+.cp-arrow-icon {
+  transition: transform 0.2s ease;
+}
+.cp-submit-btn:hover:not(:disabled) .cp-arrow-icon {
+  transform: translateX(3px);
 }
 
-.cp-gender-opt:hover {
-  border-color: var(--c-accent);
-  color: var(--c-accent);
+/* 加载 spinner */
+.cp-spinner {
+  width: 18px;
+  height: 18px;
+  animation: spin 0.8s linear infinite;
+}
+.cp-spinner-track { opacity: 0.25; }
+.cp-spinner-arc { opacity: 0.75; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-.cp-gender-opt--active {
-  background: var(--c-accent-light);
-  border-color: var(--c-accent);
-  color: var(--c-accent);
-}
-
-.cp-error {
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  background: var(--c-danger-light);
-  color: var(--c-danger);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-}
 </style>
