@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import HomeTaskCard from './HomeTaskCard.vue'
 import HomeEmptyState from './ui/HomeEmptyState.vue'
@@ -48,6 +48,26 @@ function setCategory(categoryId: number | null) {
   emit('update:selectedCategory', categoryId)
 }
 
+const taskGridRef = ref<HTMLElement | null>(null)
+let staggerTimer = 0
+
+watch(() => props.selectedCategory, async () => {
+  const el = taskGridRef.value
+  if (!el) return
+  clearTimeout(staggerTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '0'
+  await nextTick()
+  staggerTimer = window.setTimeout(() => {
+    const items = el.querySelectorAll<HTMLElement>('.hv-stagger-item')
+    items.forEach(item => { item.style.animation = 'none' })
+    void el.offsetHeight
+    items.forEach(item => { item.style.animation = '' })
+    el.style.opacity = '1'
+    requestAnimationFrame(() => { el.style.transition = '' })
+  }, 30)
+})
+
 function onClickOutside(e: MouseEvent) {
   if (mobileSortRef.value && !mobileSortRef.value.contains(e.target as Node)) {
     showMobileSort.value = false
@@ -60,6 +80,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', onClickOutside)
+  clearTimeout(staggerTimer)
 })
 </script>
 
@@ -134,19 +155,23 @@ onUnmounted(() => {
       </aside>
 
       <div class="hv-hall-content">
-        <div v-if="tasks.length" class="hv-task-grid">
-          <HomeTaskCard
-            v-for="task in tasks"
-            :key="task.id"
-            :task="task"
-            :status-of="statusOf"
-            :gender-label="genderLabel"
-            :category-name="categoryName"
-            :is-expired="isExpired"
-            :format-short="formatShort"
-            @select="emit('openTask', $event)"
-          />
-        </div>
+        <template v-if="tasks.length">
+          <div ref="taskGridRef" class="hv-task-grid">
+            <HomeTaskCard
+              v-for="(task, idx) in tasks"
+              :key="task.id"
+              class="hv-stagger-item"
+              :style="{ '--stagger-delay': `${idx * 45}ms` }"
+              :task="task"
+              :status-of="statusOf"
+              :gender-label="genderLabel"
+              :category-name="categoryName"
+              :is-expired="isExpired"
+              :format-short="formatShort"
+              @select="emit('openTask', $event)"
+            />
+          </div>
+        </template>
 
         <HomeEmptyState v-else icon="fa-solid fa-inbox" :text="emptyText" />
       </div>
@@ -394,6 +419,13 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+.hv-stagger-item {
+  opacity: 0;
+  transform: translateY(16px) scale(0.985);
+  animation: hv-card-enter 420ms var(--ease) forwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
 .badge-pink {
   background: #fce7f3;
   color: #be185d;
@@ -436,6 +468,7 @@ onUnmounted(() => {
 
   .hv-category-chips {
     display: flex;
+    position: -webkit-sticky;
     position: sticky;
     top: 60px;
     z-index: 30;
@@ -452,6 +485,26 @@ onUnmounted(() => {
   .hv-task-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+  }
+
+  .hv-stagger-item {
+    animation-duration: 320ms;
+  }
+
+  /* Reserve space for the fixed FAB publish button */
+  .hv-hall-content {
+    padding-bottom: 88px;
+  }
+}
+
+@keyframes hv-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 </style>

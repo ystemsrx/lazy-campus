@@ -789,8 +789,8 @@ onUnmounted(() => {
                   <ClipboardList :size="20" />
                 </div>
                 <div class="tm-role-btn__body">
-                  <span class="tm-role-btn__label">我接取的</span>
-                  <span class="tm-role-btn__count">{{ assigneeTotal }} 个委托 · {{ assigneeProgress }} 进行中</span>
+                  <span class="tm-role-btn__label">我接取的<span class="tm-role-btn__total">({{ assigneeTotal }})</span></span>
+                  <span class="tm-role-btn__count">{{ assigneeProgress }} 进行中</span>
                 </div>
               </button>
               <button
@@ -802,8 +802,8 @@ onUnmounted(() => {
                   <Send :size="20" />
                 </div>
                 <div class="tm-role-btn__body">
-                  <span class="tm-role-btn__label">我发布的</span>
-                  <span class="tm-role-btn__count">{{ publisherTotal }} 个任务 · {{ publisherPending }} 待接取</span>
+                  <span class="tm-role-btn__label">我发布的<span class="tm-role-btn__total">({{ publisherTotal }})</span></span>
+                  <span class="tm-role-btn__count">{{ publisherPending }} 待接取</span>
                 </div>
               </button>
             </div>
@@ -812,12 +812,13 @@ onUnmounted(() => {
             <div class="tm-tabs">
               <button
                 v-if="activeRole === 'publisher'"
+                class="tm-tab--pending-wrap"
                 :class="{ 'tm-tab--active': activeStatus === 'pending' }"
                 @click="activeStatus = 'pending'"
               >
                 <div class="tm-tab__icon"><ClipboardList :size="16" /></div>
                 待接取
-                <span v-if="publisherPending" class="tm-tab__badge">{{ publisherPending }}</span>
+                <span v-if="publisherPending" class="tm-tab-badge">{{ publisherPending > 99 ? '99+' : publisherPending }}</span>
               </button>
               <button :class="{ 'tm-tab--active': activeStatus === 'progress' }" @click="activeStatus = 'progress'">
                 <div class="tm-tab__icon"><Clock :size="16" /></div>
@@ -900,20 +901,22 @@ onUnmounted(() => {
                     :style="{ '--i': task._animIdx }"
                     @click="openTaskDetail(task)"
                   >
-                    <div class="tm-tl-card__left">
-                      <h3 class="tm-tl-card__title">{{ task.title }}</h3>
-                      <p class="tm-tl-card__desc">{{ task.description }}</p>
-                      <div class="tm-tl-card__meta">
-                        <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
-                        <span v-if="task.deadline" class="tm-tl-card__deadline" :class="{ 'tm-danger': isExpired(task.deadline) }">
-                          <Clock :size="13" />
-                          {{ isExpired(task.deadline) ? '已过期' : formatShort(task.deadline) }}
-                        </span>
-                        <span class="tm-tl-card__price-inline">¥{{ task.price }}</span>
+                    <div class="tm-tl-card__top">
+                      <div class="tm-tl-card__left">
+                        <h3 class="tm-tl-card__title">{{ task.title }}</h3>
+                        <p class="tm-tl-card__desc">{{ task.description }}</p>
+                      </div>
+                      <div class="tm-tl-card__icon" :style="{ backgroundColor: getTaskIcon(task.icon).bg }">
+                        <component :is="getTaskIcon(task.icon).component" :size="22" :style="{ color: getTaskIcon(task.icon).color }" />
                       </div>
                     </div>
-                    <div class="tm-tl-card__icon" :style="{ backgroundColor: getTaskIcon(task.icon).bg }">
-                      <component :is="getTaskIcon(task.icon).component" :size="22" :style="{ color: getTaskIcon(task.icon).color }" />
+                    <div class="tm-tl-card__meta">
+                      <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
+                      <span v-if="task.deadline" class="tm-tl-card__deadline" :class="{ 'tm-danger': isExpired(task.deadline) }">
+                        <Clock :size="13" />
+                        {{ isExpired(task.deadline) ? '已过期' : formatShort(task.deadline) }}
+                      </span>
+                      <span class="tm-tl-card__price-inline">¥{{ task.price }}</span>
                     </div>
                   </div>
                 </div>
@@ -1062,12 +1065,15 @@ onUnmounted(() => {
   min-height: 100dvh;
   background: #f8fafc;
   font-family: var(--font-sans);
+  width: 100%;
+  overflow-x: hidden;
 }
 
 /* ---- Body (sidebar + main) ---- */
 .tm-body {
   display: flex;
   flex: 1;
+  min-width: 0;
 }
 
 /* ---- Sidebar ---- */
@@ -1149,6 +1155,7 @@ onUnmounted(() => {
 /* ---- Main ---- */
 .tm-main {
   flex: 1;
+  min-width: 0;
   margin-left: 80px;
   display: flex;
   flex-direction: column;
@@ -1188,6 +1195,8 @@ onUnmounted(() => {
 .tm-content {
   flex: 1;
   padding: 24px 32px 32px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .tm-content::-webkit-scrollbar { width: 6px; }
@@ -1416,6 +1425,8 @@ onUnmounted(() => {
   text-align: left;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   font-family: var(--font-sans);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tm-role-btn:hover {
@@ -1461,6 +1472,13 @@ onUnmounted(() => {
   display: block;
 }
 
+.tm-role-btn__total {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-muted);
+  margin-left: 3px;
+}
+
 .tm-role-btn--active .tm-role-btn__label {
   color: var(--c-accent);
 }
@@ -1500,7 +1518,31 @@ onUnmounted(() => {
   background: #ffffff;
   color: var(--c-text-muted);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: visible;
 }
+
+.tm-tab-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  border: 2px solid #f8fafc;
+  pointer-events: none;
+  z-index: 1;
+}
+
 
 .tm-tabs button:hover {
   background: var(--c-border-light);
@@ -1528,24 +1570,6 @@ onUnmounted(() => {
   color: #ffffff !important;
 }
 
-.tm-tab__badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--c-accent);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.tm-tab--active .tm-tab__badge {
-  background: rgba(255, 255, 255, 0.3);
-}
 
 /* ---- Timeline ---- */
 .tm-timeline {
@@ -1679,8 +1703,8 @@ onUnmounted(() => {
 /* ---- Timeline Card ---- */
 .tm-tl-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
   background: #ffffff;
   border-radius: 16px;
   padding: 18px 20px;
@@ -1691,6 +1715,13 @@ onUnmounted(() => {
   transition: all 0.25s var(--ease);
   animation: tm-card-in 0.45s var(--ease) both;
   animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.tm-tl-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
 }
 
 .tm-tl-card:last-child {
@@ -1721,7 +1752,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .tm-tl-card__title {
@@ -1777,7 +1808,6 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-left: 16px;
 }
 
 .tm-danger {
@@ -1991,20 +2021,20 @@ onUnmounted(() => {
   }
 
   .tm-tl-header {
-    grid-template-columns: 56px 32px 1fr;
+    grid-template-columns: 44px 24px 1fr;
     margin-bottom: 12px;
   }
 
   .tm-tl-row {
-    grid-template-columns: 56px 32px 1fr;
+    grid-template-columns: 44px 24px 1fr;
   }
 
   .tm-tl-date {
-    padding-right: 8px;
+    padding-right: 6px;
   }
 
   .tm-tl-date h2 {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .tm-tl-weekday {
@@ -2012,13 +2042,18 @@ onUnmounted(() => {
   }
 
   .tm-tl-cards {
-    padding-left: 10px;
+    padding-left: 8px;
     padding-bottom: 32px;
   }
 
   .tm-tl-card {
     padding: 14px;
     border-radius: 14px;
+    gap: 8px;
+  }
+
+  .tm-tl-card__top {
+    gap: 10px;
   }
 
   .tm-tl-card__title {
@@ -2031,10 +2066,9 @@ onUnmounted(() => {
   }
 
   .tm-tl-card__icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 11px;
-    margin-left: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
   }
 
   .tm-tl-card__price-inline {
@@ -2047,7 +2081,7 @@ onUnmounted(() => {
   }
 
   .tm-tl-sk-group {
-    grid-template-columns: 56px 32px 1fr;
+    grid-template-columns: 44px 24px 1fr;
   }
 
   .tm-tl-sk-role-row {
@@ -2069,10 +2103,9 @@ onUnmounted(() => {
   }
 
   .tm-tl-sk-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 11px;
-    margin-left: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
   }
 
   .tm-bottombar {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
 import HomeEmptyState from './ui/HomeEmptyState.vue'
@@ -13,13 +13,20 @@ const props = defineProps<{
   categories: Category[]
   selectedCategory: number | null
   totalWorkerCount: number
+  searchQuery: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:workerSort', value: string): void
   (e: 'update:selectedCategory', value: number | null): void
+  (e: 'update:searchQuery', value: string): void
   (e: 'openWorker', worker: WorkerProfile): void
 }>()
+
+const searchValue = computed({
+  get: () => props.searchQuery,
+  set: (value: string) => emit('update:searchQuery', value),
+})
 
 const showMobileSort = ref(false)
 const mobileSortRef = ref<HTMLElement | null>(null)
@@ -33,6 +40,26 @@ function setCategory(id: number | null) {
   emit('update:selectedCategory', id)
 }
 
+const workerGridRef = ref<HTMLElement | null>(null)
+let staggerTimer = 0
+
+watch(() => props.selectedCategory, async () => {
+  const el = workerGridRef.value
+  if (!el) return
+  clearTimeout(staggerTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '0'
+  await nextTick()
+  staggerTimer = window.setTimeout(() => {
+    const items = el.querySelectorAll<HTMLElement>('.hv-stagger-item')
+    items.forEach(item => { item.style.animation = 'none' })
+    void el.offsetHeight
+    items.forEach(item => { item.style.animation = '' })
+    el.style.opacity = '1'
+    requestAnimationFrame(() => { el.style.transition = '' })
+  }, 30)
+})
+
 function onClickOutside(e: MouseEvent) {
   if (mobileSortRef.value && !mobileSortRef.value.contains(e.target as Node)) {
     showMobileSort.value = false
@@ -45,14 +72,17 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', onClickOutside)
+  clearTimeout(staggerTimer)
 })
 </script>
 
 <template>
   <section class="hv-section hv-workers">
     <div class="hv-workers-toolbar">
-      <h2>接单广场</h2>
-      <span class="hv-workers-toolbar__count">{{ workers.length }} 位接单者</span>
+      <div class="hv-search-wrap">
+        <i class="fa-solid fa-magnifying-glass hv-search-icon"></i>
+        <input v-model="searchValue" class="hv-search-input" placeholder="搜索接单者名称、简介..." />
+      </div>
 
       <AppDropdown
         v-model="workerSortValue"
@@ -83,24 +113,26 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- mobile: sticky chips -->
-    <div v-if="categories.length" class="hv-category-chips">
-      <button
-        class="hv-chip"
-        :class="{ 'hv-chip--active': selectedCategory === null }"
-        @click="setCategory(null)"
-      >
-        全部 ({{ totalWorkerCount }})
-      </button>
-      <button
-        v-for="c in categories"
-        :key="c.id"
-        class="hv-chip"
-        :class="{ 'hv-chip--active': selectedCategory === c.id }"
-        @click="setCategory(c.id)"
-      >
-        {{ c.name }} ({{ c.worker_count }})
-      </button>
+    <!-- Mobile: sticky chips bar -->
+    <div v-if="categories.length" class="hv-mob-bar">
+      <div class="hv-mob-bar__chips">
+        <button
+          class="hv-chip"
+          :class="{ 'hv-chip--active': selectedCategory === null }"
+          @click="setCategory(null)"
+        >
+          全部 ({{ totalWorkerCount }})
+        </button>
+        <button
+          v-for="c in categories"
+          :key="c.id"
+          class="hv-chip"
+          :class="{ 'hv-chip--active': selectedCategory === c.id }"
+          @click="setCategory(c.id)"
+        >
+          {{ c.name }} ({{ c.worker_count }})
+        </button>
+      </div>
     </div>
 
     <div class="hv-workers-layout">
@@ -127,50 +159,59 @@ onUnmounted(() => {
       </aside>
 
       <div class="hv-workers-content">
-        <div v-if="workers.length" class="hv-worker-grid">
-          <div v-for="w in workers" :key="w.user_id" class="hv-worker-card" @click="emit('openWorker', w)">
-            <div class="hv-worker-card__header">
-              <HomeAvatar size="xl" :avatar-url="w.avatar_url" :gender="w.gender" />
-              <div class="hv-worker-card__meta">
-                <div class="hv-worker-card__name-row">
-                  <h4>{{ w.display_name }}<span class="hv-worker-card__score-inline">({{ w.overall_rating_avg.toFixed(1) }})</span></h4>
-                  <p class="hv-worker-card__price hv-worker-card__price--desktop">{{ w.min_price ?? '-' }}~{{ w.max_price ?? '-' }}元</p>
-                  <p class="hv-worker-card__price hv-worker-card__price--mobile">{{ w.min_price != null ? '¥' + w.min_price : '-' }}</p>
-                </div>
-                <div class="hv-worker-card__top-row">
-                  <p class="hv-worker-card__role">
-                    <i class="fa-solid fa-briefcase"></i>
-                    已完成 {{ w.worker_completed_count }} 单
-                  </p>
-                </div>
-                <div class="hv-worker-card__rating">
-                  <i class="fa-solid fa-star hv-star-icon"></i>
-                  <span>{{ w.overall_rating_avg.toFixed(1) }}</span>
-                  <span class="hv-rating-text">
-                    {{ w.overall_rating_count > 0 ? `(${w.overall_rating_count} 评价)` : '暂无评价' }}
-                  </span>
+        <template v-if="workers.length">
+          <div ref="workerGridRef" class="hv-worker-grid">
+            <div
+              v-for="(w, idx) in workers"
+              :key="w.user_id"
+              class="hv-worker-card hv-stagger-item"
+              :style="{ '--stagger-delay': `${idx * 50}ms` }"
+              @click="emit('openWorker', w)"
+            >
+              <div class="hv-worker-card__header">
+                <HomeAvatar size="xl" :avatar-url="w.avatar_url" :gender="w.gender" />
+                <div class="hv-worker-card__meta">
+                  <div class="hv-worker-card__name-row">
+                    <h4>{{ w.display_name }}<span class="hv-worker-card__score-inline">({{ w.overall_rating_avg.toFixed(1) }})</span></h4>
+                    <p class="hv-worker-card__price hv-worker-card__price--desktop">{{ w.min_price ?? '-' }}~{{ w.max_price ?? '-' }}元</p>
+                    <p class="hv-worker-card__price hv-worker-card__price--mobile">{{ w.min_price != null ? '¥' + w.min_price : '-' }}</p>
+                  </div>
+                  <div class="hv-worker-card__top-row">
+                    <p class="hv-worker-card__role">
+                      <i class="fa-solid fa-briefcase"></i>
+                      完成{{ w.worker_completed_count }}
+                    </p>
+                  </div>
+                  <div class="hv-worker-card__rating">
+                    <i class="fa-solid fa-star hv-star-icon"></i>
+                    <span>{{ w.overall_rating_avg.toFixed(1) }}</span>
+                    <span class="hv-rating-text">
+                      {{ w.overall_rating_count > 0 ? `(${w.overall_rating_count} 评价)` : '暂无评价' }}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <p v-if="w.bio" class="hv-worker-card__bio">{{ w.bio }}</p>
+              <p v-if="w.bio" class="hv-worker-card__bio">{{ w.bio }}</p>
 
-            <div v-if="w.skill_tags.length" class="hv-worker-card__tags">
-              <span v-for="tag in w.skill_tags" :key="tag.id" class="hv-worker-tag">{{ tag.name }}</span>
-            </div>
+              <div v-if="w.skill_tags.length" class="hv-worker-card__tags">
+                <span v-for="tag in w.skill_tags" :key="tag.id" class="hv-worker-tag">{{ tag.name }}</span>
+              </div>
 
-            <div class="hv-worker-card__actions">
-              <button class="hv-worker-card__btn-main" @click.stop="emit('openWorker', w)">查看详情</button>
-              <button
-                v-if="w.blocked_by_count > 0"
-                class="hv-worker-card__btn-icon hv-worker-card__btn-icon--warn"
-                :title="`被 ${w.blocked_by_count} 人拉黑`"
-              >
-                <i class="fa-solid fa-triangle-exclamation"></i>
-              </button>
+              <div class="hv-worker-card__actions">
+                <button class="hv-worker-card__btn-main" @click.stop="emit('openWorker', w)">查看详情</button>
+                <button
+                  v-if="w.blocked_by_count > 0"
+                  class="hv-worker-card__btn-icon hv-worker-card__btn-icon--warn"
+                  :title="`被 ${w.blocked_by_count} 人拉黑`"
+                >
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+
+        </template>
 
         <HomeEmptyState v-else icon="fa-solid fa-users" :text="selectedCategory !== null ? '该类别下暂无接单者' : '暂无接单者'" />
       </div>
@@ -182,13 +223,44 @@ onUnmounted(() => {
 /* ---- toolbar ---- */
 .hv-workers-toolbar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.hv-workers-toolbar__count {
+.hv-search-wrap {
+  flex: 1;
+  max-width: 320px;
+  position: relative;
+}
+
+.hv-search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-text-muted);
   font-size: var(--text-sm);
+  pointer-events: none;
+}
+
+.hv-search-input {
+  width: 100%;
+  padding: 9px 13px 9px 38px;
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--text-base);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.hv-search-input:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent-soft);
+}
+
+.hv-search-input::placeholder {
   color: var(--c-text-muted);
 }
 
@@ -279,17 +351,8 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-/* ---- mobile chips (hidden on desktop) ---- */
-.hv-category-chips {
-  display: none;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  gap: 8px;
-  padding: 10px 0 2px;
-  scrollbar-width: none;
-}
-
-.hv-category-chips::-webkit-scrollbar {
+/* ---- mobile sticky bar (hidden on desktop) ---- */
+.hv-mob-bar {
   display: none;
 }
 
@@ -406,6 +469,13 @@ onUnmounted(() => {
   overflow: hidden;
   transition: box-shadow var(--dur-normal) var(--ease),
               transform var(--dur-normal) var(--ease);
+}
+
+.hv-stagger-item {
+  opacity: 0;
+  transform: translateY(16px) scale(0.985);
+  animation: hv-worker-enter 460ms var(--ease) forwards;
+  animation-delay: var(--stagger-delay, 0ms);
 }
 
 @media (hover: hover) {
@@ -643,15 +713,30 @@ onUnmounted(() => {
     margin-left: auto;
   }
 
-  .hv-category-chips {
+  .hv-mob-bar {
     display: flex;
+    position: -webkit-sticky;
     position: sticky;
     top: 60px;
     z-index: 30;
     background: var(--c-bg);
     margin: 0 -16px;
-    padding: 6px 16px;
     border-bottom: 1px solid var(--c-border-light);
+  }
+
+  .hv-mob-bar__chips {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 6px 16px;
+  }
+
+  .hv-mob-bar__chips::-webkit-scrollbar {
+    display: none;
   }
 
   .hv-workers-layout {
@@ -665,6 +750,10 @@ onUnmounted(() => {
 
   .hv-worker-card {
     padding: 14px;
+  }
+
+  .hv-stagger-item {
+    animation-duration: 340ms;
   }
 
   .hv-worker-card :deep(.hv-avatar) {
@@ -713,6 +802,17 @@ onUnmounted(() => {
     width: 34px;
     height: 34px;
     font-size: 12px;
+  }
+}
+
+@keyframes hv-worker-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 </style>

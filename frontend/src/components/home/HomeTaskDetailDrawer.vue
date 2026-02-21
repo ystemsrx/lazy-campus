@@ -74,11 +74,22 @@ const messagesEnd = ref<HTMLDivElement | null>(null)
 let sheetDragStartY = 0
 let sheetDragStartH = 0
 let sheetCanExpand = false
+let savedScrollY = 0
 
 watch(
   () => !!props.task,
   (open) => {
-    document.body.style.overflow = open ? 'hidden' : ''
+    if (open) {
+      savedScrollY = window.scrollY
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${savedScrollY}px`
+      document.body.style.width = '100%'
+    } else {
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.width = ''
+      window.scrollTo(0, savedScrollY)
+    }
   },
   { immediate: true },
 )
@@ -185,7 +196,9 @@ watch(
 onUnmounted(() => {
   document.removeEventListener('touchmove', onSheetTouchMove)
   document.removeEventListener('touchend', onSheetTouchEnd)
-  document.body.style.overflow = ''
+  document.body.style.position = ''
+  document.body.style.top = ''
+  document.body.style.width = ''
 })
 </script>
 

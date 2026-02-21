@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
+
+const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined
+const logoUrl = computed(() =>
+  logoFile ? `/logos/${logoFile}` : null,
+)
 
 const props = defineProps<{
   appTitle: string
@@ -62,7 +67,10 @@ onUnmounted(() => {
 <template>
   <header class="hv-header">
     <div class="hv-header__brand">
-      <div class="hv-logo">T</div>
+      <div class="hv-logo">
+        <img v-if="logoUrl" :src="logoUrl" class="hv-logo__img" alt="Logo" />
+        <i v-else class="fa-solid fa-handshake"></i>
+      </div>
       <span class="hv-header__title">{{ appTitle }}</span>
     </div>
 
@@ -72,14 +80,18 @@ onUnmounted(() => {
         :class="{ 'hv-tab--active': activeTab === 'hall' }"
         @click="emit('update:activeTab', 'hall')"
       >
-        <i class="fa-solid fa-clipboard-list"></i> 任务大厅
+        <i class="fa-solid fa-clipboard-list"></i>
+        <span class="hv-tab-label-full">任务大厅</span>
+        <span class="hv-tab-label-short">任务</span>
       </button>
       <button
         class="hv-tab"
         :class="{ 'hv-tab--active': activeTab === 'workers' }"
         @click="emit('update:activeTab', 'workers')"
       >
-        <i class="fa-solid fa-user-group"></i> 接单广场
+        <i class="fa-solid fa-user-group"></i>
+        <span class="hv-tab-label-full">接单广场</span>
+        <span class="hv-tab-label-short">接单</span>
       </button>
     </nav>
 
@@ -160,6 +172,19 @@ onUnmounted(() => {
   justify-content: center;
   font-weight: 700;
   font-size: 16px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.hv-logo__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hv-tab-label-short {
+  display: none;
 }
 
 .hv-header__title {
@@ -345,9 +370,20 @@ onUnmounted(() => {
     display: none;
   }
 
-  .hv-tabs {
-    position: static;
-    transform: none;
+  .hv-publish-btn {
+    display: none;
+  }
+
+  .hv-tab-label-full {
+    display: none;
+  }
+
+  .hv-tab-label-short {
+    display: inline;
+  }
+
+  .hv-tab {
+    padding: 8px 14px;
   }
 }
 </style>

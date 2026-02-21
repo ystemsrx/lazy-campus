@@ -92,6 +92,7 @@ const workerSortOptions = [
 ]
 
 const searchQuery = ref('')
+const workerSearchQuery = ref('')
 const selectedCategory = ref<number | null>(null)
 const selectedWorkerCategory = ref<number | null>(null)
 const totalWorkerCount = ref(0)
@@ -301,6 +302,7 @@ async function loadTasks() {
 async function loadWorkers() {
   const params: Record<string, string | number | undefined> = { sort: workerSort.value }
   if (selectedWorkerCategory.value !== null) params.skill_tag_id = selectedWorkerCategory.value
+  if (workerSearchQuery.value.trim()) params.keyword = workerSearchQuery.value.trim()
   workers.value = await fetchWorkers(params)
   if (selectedWorkerCategory.value === null) {
     totalWorkerCount.value = workers.value.length
@@ -315,6 +317,12 @@ let searchTimer = 0
 watch(searchQuery, () => {
   clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => loadTasks(), 300)
+})
+
+let workerSearchTimer = 0
+watch(workerSearchQuery, () => {
+  clearTimeout(workerSearchTimer)
+  workerSearchTimer = window.setTimeout(() => loadWorkers(), 300)
 })
 
 watch(selectedCategory, () => loadTasks())
@@ -742,6 +750,7 @@ onUnmounted(() => {
       v-if="activeTab === 'workers'"
       v-model:worker-sort="workerSort"
       v-model:selected-category="selectedWorkerCategory"
+      v-model:search-query="workerSearchQuery"
       :workers="workers"
       :worker-sort-options="workerSortOptions"
       :categories="categories"
@@ -749,6 +758,15 @@ onUnmounted(() => {
       @open-worker="openWorkerDrawer"
     />
   </main>
+
+  <button
+    v-if="auth.isAuthenticated && activeTab === 'hall' && !showPostModal"
+    class="hv-fab-publish"
+    aria-label="发布任务"
+    @click="showPostModal = true"
+  >
+    <i class="fa-solid fa-plus"></i>
+  </button>
 
   <HomeTaskEditorModal
     v-model="showPostModal"
@@ -854,9 +872,39 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
+.hv-fab-publish {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .hv-main {
     padding: 16px;
+  }
+
+  .hv-fab-publish {
+    display: flex;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #000;
+    color: #fff;
+    border: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    z-index: 200;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+    transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  }
+
+  .hv-fab-publish:active {
+    transform: translateX(-50%) scale(0.93);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   }
 }
 </style>
