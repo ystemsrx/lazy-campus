@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import { ClipboardList } from 'lucide-vue-next'
 import type { ComponentPublicInstance } from 'vue'
 
@@ -37,6 +38,28 @@ const emit = defineEmits<{
   (e: 'update:activeStatus', value: 'pending' | 'progress' | 'completed'): void
   (e: 'openTask', task: MyTask): void
 }>()
+
+const contentKey = ref(0)
+const contentWrapRef = ref<HTMLElement | null>(null)
+let staggerTimer = 0
+
+watch([() => props.activeRole, () => props.activeStatus], async () => {
+  const el = contentWrapRef.value
+  if (!el) return
+  clearTimeout(staggerTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '0'
+  contentKey.value++
+  await nextTick()
+  staggerTimer = window.setTimeout(() => {
+    el.style.opacity = '1'
+    requestAnimationFrame(() => { el.style.transition = '' })
+  }, 30)
+})
+
+onUnmounted(() => {
+  clearTimeout(staggerTimer)
+})
 </script>
 
 <template>
@@ -60,21 +83,25 @@ const emit = defineEmits<{
     />
 
     <template v-if="currentTasks.length">
-      <TaskManagementTaskGrid
-        :tasks="displayedTasks"
-        :status-of="statusOf"
-        :is-expired="isExpired"
-        :format-short="formatShort"
-        @open-task="emit('openTask', $event)"
-      />
+      <div ref="contentWrapRef">
+        <TaskManagementTaskGrid
+          :key="`grid-${contentKey}`"
+          :tasks="displayedTasks"
+          :status-of="statusOf"
+          :is-expired="isExpired"
+          :format-short="formatShort"
+          @open-task="emit('openTask', $event)"
+        />
 
-      <TaskManagementTimeline
-        :groups="taskGroups"
-        :status-of="statusOf"
-        :is-expired="isExpired"
-        :format-short="formatShort"
-        @open-task="emit('openTask', $event)"
-      />
+        <TaskManagementTimeline
+          :key="`timeline-${contentKey}`"
+          :groups="taskGroups"
+          :status-of="statusOf"
+          :is-expired="isExpired"
+          :format-short="formatShort"
+          @open-task="emit('openTask', $event)"
+        />
+      </div>
     </template>
 
     <div v-if="hasMore && currentTasks.length" :ref="props.setSentinelRef" class="tm-tl-sentinel">

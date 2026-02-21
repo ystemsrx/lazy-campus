@@ -48,21 +48,19 @@ function setCategory(categoryId: number | null) {
   emit('update:selectedCategory', categoryId)
 }
 
+const listKey = ref(0)
 const taskGridRef = ref<HTMLElement | null>(null)
 let staggerTimer = 0
 
-watch(() => props.selectedCategory, async () => {
+watch([() => props.selectedCategory, () => props.taskSort], async () => {
   const el = taskGridRef.value
   if (!el) return
   clearTimeout(staggerTimer)
   el.style.transition = 'none'
   el.style.opacity = '0'
+  listKey.value++
   await nextTick()
   staggerTimer = window.setTimeout(() => {
-    const items = el.querySelectorAll<HTMLElement>('.hv-stagger-item')
-    items.forEach(item => { item.style.animation = 'none' })
-    void el.offsetHeight
-    items.forEach(item => { item.style.animation = '' })
     el.style.opacity = '1'
     requestAnimationFrame(() => { el.style.transition = '' })
   }, 30)
@@ -159,7 +157,7 @@ onUnmounted(() => {
           <div ref="taskGridRef" class="hv-task-grid">
             <HomeTaskCard
               v-for="(task, idx) in tasks"
-              :key="task.id"
+              :key="`${listKey}-${task.id}`"
               class="hv-stagger-item"
               :style="{ '--stagger-delay': `${idx * 45}ms` }"
               :task="task"

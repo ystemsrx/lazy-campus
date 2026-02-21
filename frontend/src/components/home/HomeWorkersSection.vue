@@ -40,21 +40,19 @@ function setCategory(id: number | null) {
   emit('update:selectedCategory', id)
 }
 
+const listKey = ref(0)
 const workerGridRef = ref<HTMLElement | null>(null)
 let staggerTimer = 0
 
-watch(() => props.selectedCategory, async () => {
+watch([() => props.selectedCategory, () => props.workerSort], async () => {
   const el = workerGridRef.value
   if (!el) return
   clearTimeout(staggerTimer)
   el.style.transition = 'none'
   el.style.opacity = '0'
+  listKey.value++
   await nextTick()
   staggerTimer = window.setTimeout(() => {
-    const items = el.querySelectorAll<HTMLElement>('.hv-stagger-item')
-    items.forEach(item => { item.style.animation = 'none' })
-    void el.offsetHeight
-    items.forEach(item => { item.style.animation = '' })
     el.style.opacity = '1'
     requestAnimationFrame(() => { el.style.transition = '' })
   }, 30)
@@ -163,7 +161,7 @@ onUnmounted(() => {
           <div ref="workerGridRef" class="hv-worker-grid">
             <div
               v-for="(w, idx) in workers"
-              :key="w.user_id"
+              :key="`${listKey}-${w.user_id}`"
               class="hv-worker-card hv-stagger-item"
               :style="{ '--stagger-delay': `${idx * 50}ms` }"
               @click="emit('openWorker', w)"
