@@ -1,0 +1,86 @@
+.av-form {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.av-form--active {
+  transform: translateX(0);
+  opacity: 1;
+}
+.av-form--left {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.av-form--right {
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.av-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  padding: 0 20px;
+  height: 50px;
+  box-shadow: inset 0 2px 10px rgba(255, 255, 255, 0.3);
+  transition: background 0.2s;
+}
+.av-input-group:hover,
+.av-input-group:focus-within {
+  background: rgba(255, 255, 255, 0.6);
+}
+.av-input-icon {
+  color: #6b7280;
+  font-size: 14px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.av-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+.av-input::placeholder {
+  color: #6b7280;
+}
+.av-input--pw {
+  padding-right: 36px;
+}
+.av-input--pw::-ms-reveal,
+.av-input--pw::-ms-clear,
+.av-input--pw::-webkit-contacts-auto-fill-button,
+.av-input--pw::-webkit-credentials-auto-fill-button {
+  display: none;
+  visibility: hidden;
+  pointer-events: none;
+}
+.av-eye-btn {
+  position: absolute;
+  right: 16px;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+  font-size: 14px;
+}
+.av-eye-btn:hover {
+  color: #374151;
+}
