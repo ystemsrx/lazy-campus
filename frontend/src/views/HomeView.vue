@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { appConfirm } from '../components/AppConfirm.vue'
 import { extractError } from '../utils/error'
@@ -84,11 +84,11 @@ const totalWorkerCount = ref(0)
 
 const loading = ref(false)
 const categories = ref<Category[]>([])
-const tasks = ref<Task[]>([])
+const allTasks = ref<Task[]>([])
 const selectedTask = ref<Task | null>(null)
 const myPublished = ref<Task[]>([])
 const myAccepted = ref<Task[]>([])
-const workers = ref<WorkerProfile[]>([])
+const allWorkers = ref<WorkerProfile[]>([])
 const selectedWorker = ref<WorkerProfile | null>(null)
 const workerHistoryReviews = ref<UserReview[]>([])
 const workerContactReveal = ref<WorkerContactReveal | null>(null)
@@ -230,6 +230,86 @@ function categoryName(id: number | null) {
 
 const totalTaskCount = computed(() => categories.value.reduce((sum, c) => sum + c.task_count, 0))
 
+const tasks = computed(() => {
+  let result = [...allTasks.value]
+
+  if (searchQuery.value.trim()) {
+    const kw = searchQuery.value.trim().toLowerCase()
+    result = result.filter(t =>
+      t.title.toLowerCase().includes(kw) ||
+      t.description.toLowerCase().includes(kw) ||
+      (t.location && t.location.toLowerCase().includes(kw))
+    )
+  }
+
+  if (selectedCategory.value !== null) {
+    result = result.filter(t => t.category_id === selectedCategory.value)
+  }
+
+  if (taskSort.value === 'newest') {
+    result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  } else if (taskSort.value === 'deadline_asc') {
+    result.sort((a, b) => {
+      if (!a.deadline && !b.deadline) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (!a.deadline) return 1
+      if (!b.deadline) return -1
+      return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+    })
+  } else if (taskSort.value === 'publisher_rating') {
+    result.sort((a, b) =>
+      b.publisher_rating_avg - a.publisher_rating_avg ||
+      b.publisher_rating_count - a.publisher_rating_count ||
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  } else if (taskSort.value === 'publisher_completed') {
+    result.sort((a, b) =>
+      (b.publisher_completed_count ?? 0) - (a.publisher_completed_count ?? 0) ||
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  } else if (taskSort.value === 'price_desc') {
+    result.sort((a, b) =>
+      b.price - a.price ||
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  }
+
+  return result
+})
+
+const workers = computed(() => {
+  let result = [...allWorkers.value]
+
+  if (workerSearchQuery.value.trim()) {
+    const kw = workerSearchQuery.value.trim().toLowerCase()
+    result = result.filter(w =>
+      w.display_name.toLowerCase().includes(kw) ||
+      (w.bio && w.bio.toLowerCase().includes(kw)) ||
+      w.skill_tags.some(t => t.name.toLowerCase().includes(kw))
+    )
+  }
+
+  if (selectedWorkerCategory.value !== null) {
+    const catId = selectedWorkerCategory.value
+    result = result.filter(w => w.skill_tags.some(t => t.id === catId))
+  }
+
+  if (workerSort.value === 'worker_rating') {
+    result.sort((a, b) =>
+      b.overall_rating_avg - a.overall_rating_avg ||
+      b.overall_rating_count - a.overall_rating_count ||
+      b.worker_completed_count - a.worker_completed_count
+    )
+  } else if (workerSort.value === 'worker_completed') {
+    result.sort((a, b) =>
+      b.worker_completed_count - a.worker_completed_count ||
+      b.overall_rating_avg - a.overall_rating_avg ||
+      b.overall_rating_count - a.overall_rating_count
+    )
+  }
+
+  return result
+})
+
 async function bootstrap() {
   loading.value = true
   try {
@@ -246,7 +326,7 @@ async function bootstrap() {
   const taskId = router.currentRoute.value.query.task
   if (taskId) {
     const id = Number(taskId)
-    const task = [...tasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
+    const task = [...allTasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
     if (task) openDrawer(task)
     router.replace({ query: {} })
   }
@@ -257,42 +337,13 @@ async function loadCategories() {
 }
 
 async function loadTasks() {
-  const params: Record<string, string | number | undefined> = {
-    status: 'open',
-    sort: taskSort.value,
-  }
-  if (searchQuery.value.trim()) params.keyword = searchQuery.value.trim()
-  if (selectedCategory.value !== null) params.category_id = selectedCategory.value
-  tasks.value = await fetchTasks(params)
+  allTasks.value = await fetchTasks({ status: 'open' })
 }
 
 async function loadWorkers() {
-  const params: Record<string, string | number | undefined> = { sort: workerSort.value }
-  if (selectedWorkerCategory.value !== null) params.skill_tag_id = selectedWorkerCategory.value
-  if (workerSearchQuery.value.trim()) params.keyword = workerSearchQuery.value.trim()
-  workers.value = await fetchWorkers(params)
-  if (selectedWorkerCategory.value === null) {
-    totalWorkerCount.value = workers.value.length
-  }
+  allWorkers.value = await fetchWorkers({})
+  totalWorkerCount.value = allWorkers.value.length
 }
-
-watch(taskSort, () => loadTasks())
-watch(workerSort, () => loadWorkers())
-watch(selectedWorkerCategory, () => loadWorkers())
-
-let searchTimer = 0
-watch(searchQuery, () => {
-  clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => loadTasks(), 300)
-})
-
-let workerSearchTimer = 0
-watch(workerSearchQuery, () => {
-  clearTimeout(workerSearchTimer)
-  workerSearchTimer = window.setTimeout(() => loadWorkers(), 300)
-})
-
-watch(selectedCategory, () => loadTasks())
 
 async function loadMyTasks() {
   const [published, accepted] = await Promise.all([fetchPublishedTasks(), fetchAcceptedTasks()])
@@ -592,10 +643,6 @@ function openReports() {
 onMounted(() => {
   bootstrap()
 })
-
-onUnmounted(() => {
-  clearTimeout(searchTimer)
-})
 </script>
 
 <template>
@@ -650,7 +697,7 @@ onUnmounted(() => {
   </main>
 
   <button
-    v-if="auth.isAuthenticated && activeTab === 'hall' && !showPostModal"
+    v-if="auth.isAuthenticated && activeTab === 'hall' && !showPostModal && !selectedTask"
     class="hv-fab-publish"
     aria-label="发布任务"
     @click="showPostModal = true"

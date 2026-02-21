@@ -73,7 +73,10 @@ def _contact_visible(task: Task, user_id: int | None) -> bool:
     return task.assignee_id == user_id
 
 
-def _task_to_out(task: Task, publisher: User, assignee: User | None, viewer_id: int | None = None) -> TaskOut:
+def _task_to_out(
+    task: Task, publisher: User, assignee: User | None,
+    viewer_id: int | None = None, publisher_completed_count: int = 0,
+) -> TaskOut:
     return TaskOut(
         id=task.id,
         title=task.title,
@@ -92,6 +95,7 @@ def _task_to_out(task: Task, publisher: User, assignee: User | None, viewer_id: 
         assignee_display_name=display_name(assignee) if assignee else None,
         publisher_rating_avg=round(publisher.publisher_rating_avg, 1),
         publisher_rating_count=publisher.publisher_rating_count,
+        publisher_completed_count=publisher_completed_count,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
@@ -322,8 +326,21 @@ def list_tasks(
     if user_ids:
         assignees = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
+    out_pub_ids = {pub.id for _, pub in rows}
+    pub_completed: dict[int, int] = {}
+    if out_pub_ids:
+        pub_completed = dict(
+            db.query(Task.publisher_id, func.count(Task.id))
+            .filter(Task.publisher_id.in_(out_pub_ids), Task.status == TaskStatus.COMPLETED)
+            .group_by(Task.publisher_id)
+            .all()
+        )
+
     viewer_id = user.id if user else None
-    return [_task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id) for task, publisher in rows]
+    return [
+        _task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id, pub_completed.get(publisher.id, 0))
+        for task, publisher in rows
+    ]
 
 
 @router.post('', response_model=TaskOut)

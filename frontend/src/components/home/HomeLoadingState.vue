@@ -257,6 +257,16 @@
     gap: 6px;
   }
 
+  .sk-card__top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .sk-deadline {
+    width: 70px;
+  }
+
   .sk-title {
     height: 16px;
   }

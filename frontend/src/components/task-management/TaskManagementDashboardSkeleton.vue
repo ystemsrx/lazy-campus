@@ -56,15 +56,18 @@
           class="tm-tl-sk-card"
           :style="{ '--j': j - 1 + (g - 1) * 2 }"
         >
-          <div class="tm-tl-sk-card__left">
-            <div class="skeleton" style="height:17px;width:65%"></div>
-            <div class="skeleton" style="height:13px;width:85%"></div>
-            <div style="display:flex;gap:8px;margin-top:2px">
-              <div class="skeleton" style="height:19px;width:50px;border-radius:9999px"></div>
-              <div class="skeleton" style="height:14px;width:70px"></div>
+          <div class="tm-tl-sk-card__top">
+            <div class="tm-tl-sk-card__left">
+              <div class="skeleton" style="height:17px;width:65%"></div>
+              <div class="skeleton" style="height:13px;width:85%"></div>
             </div>
+            <div class="skeleton tm-tl-sk-icon"></div>
           </div>
-          <div class="skeleton tm-tl-sk-icon"></div>
+          <div class="tm-tl-sk-card__meta">
+            <div class="skeleton" style="height:19px;width:50px;border-radius:9999px"></div>
+            <div class="skeleton" style="height:14px;width:70px"></div>
+            <div class="skeleton tm-tl-sk-price"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -242,8 +245,8 @@
 
 .tm-tl-sk-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 16px;
@@ -254,6 +257,13 @@
   animation-delay: calc(var(--j, 0) * 80ms);
 }
 
+.tm-tl-sk-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
 .tm-tl-sk-card__left {
   flex: 1;
   display: flex;
@@ -262,12 +272,23 @@
   min-width: 0;
 }
 
+.tm-tl-sk-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tm-tl-sk-price {
+  height: 15px;
+  width: 44px;
+  margin-left: auto;
+}
+
 .tm-tl-sk-icon {
   width: 46px;
   height: 46px;
   border-radius: 14px;
   flex-shrink: 0;
-  margin-left: 16px;
 }
 
 @media (max-width: 900px) {
@@ -297,9 +318,33 @@
     gap: 8px;
   }
 
+  .tm-tl-sk-date {
+    padding-right: 6px;
+  }
+
+  .tm-tl-sk-num {
+    width: 28px;
+    height: 24px;
+  }
+
+  .tm-tl-sk-dayname {
+    width: 26px;
+    height: 11px;
+  }
+
+  .tm-tl-sk-cards {
+    padding-left: 8px;
+    padding-bottom: 32px;
+  }
+
   .tm-tl-sk-card {
     padding: 14px;
     border-radius: 14px;
+    gap: 8px;
+  }
+
+  .tm-tl-sk-card__top {
+    gap: 10px;
   }
 
   .tm-tl-sk-icon {
