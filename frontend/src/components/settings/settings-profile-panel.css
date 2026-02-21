@@ -1,0 +1,257 @@
+.sv-tab-pane {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
+}
+
+.sv-tab-pane--active {
+  position: relative;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.sv-section-header {
+  margin-bottom: 0;
+}
+
+.sv-section-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: #18181b;
+}
+
+.sv-section-desc {
+  font-size: var(--text-sm);
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.sv-divider {
+  border: none;
+  border-top: 1px solid #f1f5f9;
+  margin: 28px 0;
+}
+
+.sv-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.sv-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sv-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(24, 24, 27, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+  cursor: pointer;
+}
+
+.sv-avatar-wrap:hover .sv-avatar-overlay,
+.sv-avatar-overlay--show {
+  opacity: 1;
+}
+
+.sv-avatar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sv-upload-btn {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #3f3f46;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+@media (hover: hover) {
+  .sv-upload-btn:hover {
+    background: #f8fafc;
+  }
+}
+
+.sv-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 24px;
+}
+
+.sv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sv-field--full {
+  grid-column: 1 / -1;
+}
+
+.sv-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #3f3f46;
+}
+
+.sv-label--row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sv-required {
+  color: var(--c-danger);
+}
+
+.sv-count {
+  font-size: var(--text-xs);
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.sv-count--warn {
+  color: var(--c-danger);
+  font-weight: 500;
+}
+
+.sv-input-wrap {
+  position: relative;
+}
+
+.sv-input {
+  width: 100%;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  color: #18181b;
+  font-size: var(--text-base);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.sv-input:focus {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+}
+
+.sv-input--disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+  padding-right: 40px;
+}
+
+.sv-input-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.sv-gender-group {
+  display: flex;
+  gap: 12px;
+}
+
+.sv-gender-option {
+  cursor: pointer;
+}
+
+.sv-radio-hidden {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sv-gender-card {
+  padding: 10px 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--c-border);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+@media (hover: hover) {
+  .sv-gender-card:hover {
+    background: #f8fafc;
+  }
+}
+
+.sv-gender-card--active {
+  border-color: #18181b;
+  background: #f8fafc;
+  color: #18181b;
+}
+
+.sv-hint {
+  font-size: var(--text-xs);
+  color: #94a3b8;
+}
+
+.sv-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(148, 163, 184, 0.3);
+  border-top-color: #94a3b8;
+  border-radius: 50%;
+  animation: sv-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.sv-spinner--sm {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+.sv-spinner--white {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+}
+
+@keyframes sv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .sv-grid-2 {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+}
