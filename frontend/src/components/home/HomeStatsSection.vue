@@ -168,6 +168,8 @@ const todayWeekIdx = computed(() => {
 
 <template>
   <div class="hs-root">
+    <div class="hs-layout">
+    <div class="hs-left">
     <!-- ① 顶部三磁贴 -->
     <div class="hs-tiles">
       <div class="hs-tile">
@@ -185,7 +187,7 @@ const todayWeekIdx = computed(() => {
     </div>
 
     <!-- ② 折线图：本周任务趋势 -->
-    <div class="hs-card">
+    <div class="hs-card hs-card--trend">
       <h3 class="hs-card__title">本周趋势</h3>
       <p class="hs-card__sub">发布任务按发布时间计，接取任务按接取时间计</p>
       <div class="hs-chart-wrap">
@@ -261,8 +263,10 @@ const todayWeekIdx = computed(() => {
       </div>
     </div>
 
+    </div>
+    <div class="hs-right">
     <!-- ③ 分类统计 -->
-    <div class="hs-card">
+    <div class="hs-card hs-card--cat">
       <h3 class="hs-card__title">分类统计</h3>
       <div v-if="categoryStats.length" class="hs-cat-list">
         <div v-for="cat in categoryStats" :key="cat.name" class="hs-cat-item">
@@ -283,16 +287,65 @@ const todayWeekIdx = computed(() => {
       </div>
       <p v-else class="hs-empty">暂无任务数据</p>
     </div>
+    </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .hs-root {
+  padding: 28px 32px;
+}
+
+/* 两列 grid 布局：左列自适应，右列固定 320px */
+.hs-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  /* 默认 align-items: stretch，两列等高 */
+}
+
+.hs-left {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 28px 32px;
-  max-width: 860px;
+  min-width: 0;
+}
+
+.hs-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 分类统计卡片撑满右列高度，内容可滚动 */
+.hs-card--cat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hs-card--cat .hs-cat-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.hs-card--cat .hs-cat-list::-webkit-scrollbar { width: 4px; }
+.hs-card--cat .hs-cat-list::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+.hs-card--cat .hs-cat-list:hover::-webkit-scrollbar-thumb { background: var(--c-border); }
+
+/* ---- 入场动画 ---- */
+@keyframes hs-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---- 磁贴 ---- */
@@ -311,7 +364,12 @@ const todayWeekIdx = computed(() => {
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  animation: hs-fade-up 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+.hs-tiles > .hs-tile:nth-child(1) { animation-delay: 0ms; }
+.hs-tiles > .hs-tile:nth-child(2) { animation-delay: 90ms; }
+.hs-tiles > .hs-tile:nth-child(3) { animation-delay: 180ms; }
 
 .hs-tile__num {
   font-size: 52px;
@@ -336,7 +394,11 @@ const todayWeekIdx = computed(() => {
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
   padding: 24px 28px;
+  animation: hs-fade-up 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+.hs-card--trend { animation-delay: 270ms; }
+.hs-card--cat   { animation-delay: 360ms; }
 
 .hs-card__title {
   font-size: var(--text-lg);
@@ -463,9 +525,18 @@ const todayWeekIdx = computed(() => {
 }
 
 /* ---- 响应式 ---- */
+@media (max-width: 900px) {
+  .hs-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 600px) {
   .hs-root {
     padding: 16px;
+  }
+
+  .hs-left {
     gap: 14px;
   }
 

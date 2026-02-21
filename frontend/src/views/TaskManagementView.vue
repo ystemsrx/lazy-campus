@@ -18,7 +18,7 @@ import {
 } from '../api/users'
 import { createReport, fetchMyReports } from '../api/moderation'
 import type { Task, Category, TaskMessage, TaskReview, UserReview, Report } from '../types/api'
-import { isExpired, formatShort, formatFull, nowLocal, localToUTC, utcToLocal } from '../utils/time'
+import { isExpired, formatShort, formatFull, nowLocal, localToUTC, utcToLocal, parseUTC } from '../utils/time'
 import { extractError } from '../utils/error'
 import { getTaskIcon } from '../utils/taskIcons'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
@@ -108,8 +108,11 @@ const reportForm = ref({ reason: '', evidence: '' })
 // ---- Computed: task data ----
 type MyTask = Task & { myRole: 'publisher' | 'assignee' }
 
-const byDate = (a: Task, b: Task) =>
-  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+function effectiveDate(t: Task): number {
+  return parseUTC(t.deadline || t.created_at).getTime()
+}
+
+const byDate = (a: Task, b: Task) => effectiveDate(b) - effectiveDate(a)
 
 const assigneeTotal = computed(() => myAccepted.value.length)
 const publisherTotal = computed(() => myPublished.value.length)
@@ -152,6 +155,65 @@ const emptyText = computed(() => {
   if (activeStatus.value === 'pending') return '暂无等待接单的任务'
   if (activeStatus.value === 'progress') return '暂无正在进行中的任务'
   return '没有已结束的发布任务'
+})
+
+const PAGE_SIZE = 8
+const displayCount = ref(PAGE_SIZE)
+const loadingMore = ref(false)
+const sentinelRef = ref<HTMLElement | null>(null)
+let scrollObserver: IntersectionObserver | null = null
+
+const displayedTasks = computed(() => currentTasks.value.slice(0, displayCount.value))
+const hasMore = computed(() => displayCount.value < currentTasks.value.length)
+
+const weekdayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+
+function toDateKey(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const taskGroups = computed(() => {
+  const map = new Map<string, MyTask[]>()
+  for (const task of displayedTasks.value) {
+    const key = toDateKey(effectiveDate(task))
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(task)
+  }
+  const now = new Date()
+  const todayKey = toDateKey(now.getTime())
+
+  const groups = Array.from(map.entries())
+    .sort(([a], [b]) => (a > b ? -1 : a < b ? 1 : 0))
+
+  let idx = 0
+  return groups.map(([key, tasks], i) => {
+    const d = new Date(key + 'T00:00:00')
+    const month = d.getMonth() + 1
+    const prevMonth = i > 0 ? new Date(groups[i - 1][0] + 'T00:00:00').getMonth() + 1 : -1
+    return {
+      dateKey: key,
+      dateNum: String(d.getDate()).padStart(2, '0'),
+      month: `${month}月`,
+      showMonth: i === 0 || month !== prevMonth,
+      weekday: weekdayNames[d.getDay()],
+      isToday: key === todayKey,
+      tasks: tasks.map(t => ({ ...t, _animIdx: idx++ })),
+    }
+  })
+})
+
+function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  setTimeout(() => {
+    displayCount.value += PAGE_SIZE
+    loadingMore.value = false
+  }, 300)
+}
+
+watch([activeRole, activeStatus], () => {
+  displayCount.value = PAGE_SIZE
 })
 
 // ---- Status / Gender helpers ----
@@ -579,8 +641,22 @@ function openTaskDetail(task: MyTask) {
   openDrawer(task)
 }
 
-onMounted(() => bootstrap())
-onUnmounted(() => clearTimeout(toastTimer))
+onMounted(() => {
+  bootstrap()
+  scrollObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting && hasMore.value) loadMore()
+  }, { rootMargin: '200px' })
+})
+
+watch(sentinelRef, (el, oldEl) => {
+  if (oldEl) scrollObserver?.unobserve(oldEl)
+  if (el) scrollObserver?.observe(el)
+})
+
+onUnmounted(() => {
+  clearTimeout(toastTimer)
+  scrollObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -641,7 +717,66 @@ onUnmounted(() => clearTimeout(toastTimer))
         <div class="tm-content">
         <!-- Dashboard -->
         <template v-if="activeView === 'dashboard'">
-          <div v-if="loading" class="tm-loading"><div class="spinner"></div></div>
+          <template v-if="loading">
+            <div class="tm-dk-skeleton">
+              <div class="tm-dk-sk-top">
+                <div class="skeleton tm-dk-sk-role"></div>
+                <div class="skeleton tm-dk-sk-role"></div>
+              </div>
+              <div class="tm-dk-sk-tabs-row">
+                <div v-for="i in 3" :key="'dt'+i" class="skeleton tm-dk-sk-tab"></div>
+              </div>
+              <div class="tm-dk-sk-grid">
+                <div v-for="i in 6" :key="i" class="tm-dk-sk-card" :style="{ '--i': i - 1 }">
+                  <div class="tm-dk-sk-card__head">
+                    <div class="skeleton tm-dk-sk-card__icon"></div>
+                    <div class="tm-dk-sk-card__lines">
+                      <div class="skeleton" style="height:16px;width:70%"></div>
+                      <div class="skeleton" style="height:12px;width:50%"></div>
+                    </div>
+                  </div>
+                  <div class="skeleton" style="height:13px;width:90%"></div>
+                  <div class="skeleton" style="height:13px;width:60%"></div>
+                  <div class="tm-dk-sk-card__foot">
+                    <div class="skeleton" style="height:12px;width:80px"></div>
+                    <div class="skeleton" style="height:20px;width:52px"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tm-tl-skeleton">
+              <div class="tm-tl-sk-role-row">
+                <div class="skeleton tm-tl-sk-role"></div>
+                <div class="skeleton tm-tl-sk-role"></div>
+              </div>
+              <div class="tm-tl-sk-tabs">
+                <div v-for="i in 3" :key="i" class="skeleton tm-tl-sk-tab"></div>
+              </div>
+              <div v-for="g in 3" :key="g" class="tm-tl-sk-group" :style="{ '--g': g - 1 }">
+                <div class="tm-tl-sk-date">
+                  <div class="skeleton tm-tl-sk-num"></div>
+                  <div class="skeleton tm-tl-sk-dayname"></div>
+                </div>
+                <div class="tm-tl-sk-node">
+                  <div class="tm-tl-sk-line"></div>
+                  <div class="skeleton tm-tl-sk-dot"></div>
+                </div>
+                <div class="tm-tl-sk-cards">
+                  <div v-for="j in (g === 2 ? 3 : 2)" :key="j" class="tm-tl-sk-card" :style="{ '--j': j - 1 + (g - 1) * 2 }">
+                    <div class="tm-tl-sk-card__left">
+                      <div class="skeleton" style="height:17px;width:65%"></div>
+                      <div class="skeleton" style="height:13px;width:85%"></div>
+                      <div style="display:flex;gap:8px;margin-top:2px">
+                        <div class="skeleton" style="height:19px;width:50px;border-radius:9999px"></div>
+                        <div class="skeleton" style="height:14px;width:70px"></div>
+                      </div>
+                    </div>
+                    <div class="skeleton tm-tl-sk-icon"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
           <template v-else>
             <!-- Role Switcher -->
             <div class="tm-role-switcher">
@@ -694,11 +829,13 @@ onUnmounted(() => clearTimeout(toastTimer))
               </button>
             </div>
 
+            <!-- Desktop: Card Grid -->
             <div v-if="currentTasks.length" class="tm-task-grid">
               <div
-                v-for="task in currentTasks"
-                :key="`${task.myRole}-${task.id}`"
+                v-for="(task, idx) in displayedTasks"
+                :key="`grid-${task.myRole}-${task.id}`"
                 class="tm-task-card"
+                :style="{ '--i': idx }"
                 @click="openTaskDetail(task)"
               >
                 <div class="tm-task-card__header">
@@ -717,9 +854,7 @@ onUnmounted(() => clearTimeout(toastTimer))
                   </div>
                   <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
                 </div>
-
                 <p class="tm-task-card__desc">{{ task.description }}</p>
-
                 <div class="tm-task-card__footer">
                   <div class="tm-task-card__metas">
                     <div v-if="task.deadline" class="tm-task-card__meta">
@@ -737,7 +872,61 @@ onUnmounted(() => clearTimeout(toastTimer))
               </div>
             </div>
 
-            <div v-else class="tm-empty">
+            <!-- Mobile: Timeline -->
+            <div v-if="currentTasks.length" class="tm-timeline">
+              <div class="tm-tl-header">
+                <div class="tm-tl-date-col">日期</div>
+                <div class="tm-tl-line-col"><div class="tm-tl-header-line"></div></div>
+                <div class="tm-tl-content-col">任务</div>
+              </div>
+
+              <div v-for="(group, gi) in taskGroups" :key="group.dateKey" class="tm-tl-row">
+                <div class="tm-tl-date">
+                  <span v-if="group.showMonth" class="tm-tl-month">{{ group.month }}</span>
+                  <h2 :class="{ 'tm-tl-date--today': group.isToday }">{{ group.dateNum }}</h2>
+                  <span class="tm-tl-weekday">{{ group.weekday }}</span>
+                </div>
+
+                <div class="tm-tl-node">
+                  <div class="tm-tl-line" :class="{ 'tm-tl-line--last': gi === taskGroups.length - 1 }"></div>
+                  <div class="tm-tl-dot" :class="{ 'tm-tl-dot--today': group.isToday }"></div>
+                </div>
+
+                <div class="tm-tl-cards">
+                  <div
+                    v-for="task in group.tasks"
+                    :key="`${task.myRole}-${task.id}`"
+                    class="tm-tl-card"
+                    :style="{ '--i': task._animIdx }"
+                    @click="openTaskDetail(task)"
+                  >
+                    <div class="tm-tl-card__left">
+                      <h3 class="tm-tl-card__title">{{ task.title }}</h3>
+                      <p class="tm-tl-card__desc">{{ task.description }}</p>
+                      <div class="tm-tl-card__meta">
+                        <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
+                        <span v-if="task.deadline" class="tm-tl-card__deadline" :class="{ 'tm-danger': isExpired(task.deadline) }">
+                          <Clock :size="13" />
+                          {{ isExpired(task.deadline) ? '已过期' : formatShort(task.deadline) }}
+                        </span>
+                        <span class="tm-tl-card__price-inline">¥{{ task.price }}</span>
+                      </div>
+                    </div>
+                    <div class="tm-tl-card__icon" :style="{ backgroundColor: getTaskIcon(task.icon).bg }">
+                      <component :is="getTaskIcon(task.icon).component" :size="22" :style="{ color: getTaskIcon(task.icon).color }" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Infinite scroll sentinel -->
+            <div v-if="hasMore && currentTasks.length" ref="sentinelRef" class="tm-tl-sentinel">
+              <div v-if="loadingMore" class="spinner"></div>
+            </div>
+
+            <div v-if="!currentTasks.length" class="tm-empty">
               <ClipboardList :size="48" />
               <h3>暂无任务</h3>
               <p>{{ emptyText }}</p>
@@ -1006,12 +1195,204 @@ onUnmounted(() => clearTimeout(toastTimer))
 .tm-content::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
 .tm-content:hover::-webkit-scrollbar-thumb { background-color: #94a3b8; }
 
-/* ---- Loading ---- */
-.tm-loading {
+/* ---- Desktop Skeleton ---- */
+.tm-dk-skeleton {
+  display: block;
+}
+
+.tm-dk-sk-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.tm-dk-sk-role {
+  height: 80px;
+  border-radius: 20px;
+}
+
+.tm-dk-sk-tabs-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  max-width: 560px;
+}
+
+.tm-dk-sk-tab {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.tm-dk-sk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.tm-dk-sk-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 24px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tm-dk-sk-card .skeleton {
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+
+.tm-dk-sk-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.tm-dk-sk-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  flex-shrink: 0;
+}
+
+.tm-dk-sk-card__lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tm-dk-sk-card__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border-light);
+}
+
+/* ---- Skeleton Timeline ---- */
+.tm-tl-skeleton {
+  max-width: 800px;
+  display: none;
+}
+
+.tm-tl-sk-role-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.tm-tl-sk-role {
+  height: 80px;
+  border-radius: 20px;
+}
+
+.tm-tl-sk-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  max-width: 560px;
+}
+
+.tm-tl-sk-tab {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.tm-tl-sk-group {
+  display: grid;
+  grid-template-columns: 80px 40px 1fr;
+  gap: 0;
+}
+
+.tm-tl-sk-date {
+  text-align: right;
+  padding-right: 16px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.tm-tl-sk-num {
+  width: 40px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.tm-tl-sk-dayname {
+  width: 48px;
+  height: 13px;
+}
+
+.tm-tl-sk-node {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tm-tl-sk-line {
+  position: absolute;
+  top: 0;
+  bottom: -48px;
+  width: 2px;
+  background: var(--c-border-light);
+}
+
+.tm-tl-sk-dot {
+  position: relative;
+  top: 20px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.tm-tl-sk-cards {
+  padding-left: 16px;
+  padding-bottom: 48px;
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tm-tl-sk-card {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 300px;
+  justify-content: space-between;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.tm-tl-sk-card .skeleton {
+  animation-delay: calc(var(--j, 0) * 80ms);
+}
+
+.tm-tl-sk-card__left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tm-tl-sk-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 
 /* ---- Role Switcher ---- */
@@ -1166,7 +1547,254 @@ onUnmounted(() => clearTimeout(toastTimer))
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* ---- Task Grid ---- */
+/* ---- Timeline ---- */
+.tm-timeline {
+  max-width: 800px;
+  display: none;
+}
+
+.tm-tl-header {
+  display: grid;
+  grid-template-columns: 80px 40px 1fr;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.tm-tl-date-col,
+.tm-tl-content-col {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tm-tl-date-col {
+  text-align: right;
+  padding-right: 16px;
+}
+
+.tm-tl-content-col {
+  padding-left: 16px;
+}
+
+.tm-tl-line-col {
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.tm-tl-header-line {
+  position: absolute;
+  top: 20px;
+  bottom: -20px;
+  width: 2px;
+  background: var(--c-accent-soft);
+}
+
+.tm-tl-row {
+  display: grid;
+  grid-template-columns: 80px 40px 1fr;
+  gap: 0;
+}
+
+.tm-tl-date {
+  text-align: right;
+  padding-right: 16px;
+  padding-top: 8px;
+}
+
+.tm-tl-date h2 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+  line-height: 1;
+  margin: 0;
+}
+
+.tm-tl-date--today {
+  color: var(--c-accent) !important;
+}
+
+.tm-tl-month {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.tm-tl-weekday {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+  margin-top: 4px;
+  display: block;
+}
+
+.tm-tl-node {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tm-tl-line {
+  position: absolute;
+  top: 0;
+  bottom: -48px;
+  width: 2px;
+  background: var(--c-accent-soft);
+}
+
+.tm-tl-line--last {
+  bottom: 0;
+  height: 100%;
+}
+
+.tm-tl-dot {
+  position: relative;
+  top: 20px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 3px solid var(--c-accent);
+  background: #ffffff;
+  z-index: 1;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  flex-shrink: 0;
+}
+
+.tm-tl-dot--today {
+  border-color: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+}
+
+.tm-tl-cards {
+  padding-left: 16px;
+  padding-bottom: 48px;
+  padding-top: 4px;
+}
+
+/* ---- Timeline Card ---- */
+.tm-tl-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  transition: all 0.25s var(--ease);
+  animation: tm-card-in 0.45s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.tm-tl-card:last-child {
+  margin-bottom: 0;
+}
+
+@media (hover: hover) {
+  .tm-tl-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    border-color: var(--c-accent);
+  }
+}
+
+@keyframes tm-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tm-tl-card__left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tm-tl-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text);
+  margin: 0;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tm-tl-card__desc {
+  font-size: 13px;
+  color: var(--c-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tm-tl-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tm-tl-card__deadline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+
+.tm-tl-card__price-inline {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--c-accent);
+  margin-left: auto;
+}
+
+.tm-tl-card__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+.tm-danger {
+  color: var(--c-danger) !important;
+  font-weight: 600;
+}
+
+/* ---- Infinite Scroll Sentinel ---- */
+.tm-tl-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  min-height: 60px;
+}
+
+/* ---- Desktop Card Grid ---- */
 .tm-task-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -1174,7 +1802,6 @@ onUnmounted(() => clearTimeout(toastTimer))
   padding-bottom: 16px;
 }
 
-/* ---- Task Card ---- */
 .tm-task-card {
   background: #ffffff;
   padding: 24px;
@@ -1185,11 +1812,15 @@ onUnmounted(() => clearTimeout(toastTimer))
   flex-direction: column;
   cursor: pointer;
   transition: all 0.3s var(--ease);
+  animation: tm-card-in 0.45s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
 }
 
-.tm-task-card:hover {
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
+@media (hover: hover) {
+  .tm-task-card:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
 }
 
 .tm-task-card__header {
@@ -1272,11 +1903,6 @@ onUnmounted(() => clearTimeout(toastTimer))
   color: var(--c-accent);
 }
 
-.tm-danger {
-  color: var(--c-danger) !important;
-  font-weight: 600;
-}
-
 /* ---- Empty ---- */
 .tm-empty {
   display: flex;
@@ -1347,37 +1973,106 @@ onUnmounted(() => clearTimeout(toastTimer))
   }
 
   .tm-task-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    display: none !important;
   }
 
-  .tm-task-card {
-    padding: 16px;
-    border-radius: 16px;
+  .tm-dk-skeleton {
+    display: none;
   }
 
-  .tm-task-card__icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
+  .tm-tl-skeleton {
+    display: block;
   }
 
-  .tm-task-card__header {
-    gap: 10px;
-    margin-bottom: 10px;
+  /* Timeline mobile */
+  .tm-timeline {
+    display: block;
+    max-width: none;
   }
 
-  .tm-task-card__info h3 {
-    font-size: 14px;
-  }
-
-  .tm-task-card__desc {
-    font-size: 13px;
+  .tm-tl-header {
+    grid-template-columns: 56px 32px 1fr;
     margin-bottom: 12px;
   }
 
-  .tm-task-card__price {
-    font-size: 18px;
+  .tm-tl-row {
+    grid-template-columns: 56px 32px 1fr;
+  }
+
+  .tm-tl-date {
+    padding-right: 8px;
+  }
+
+  .tm-tl-date h2 {
+    font-size: 24px;
+  }
+
+  .tm-tl-weekday {
+    font-size: 10px;
+  }
+
+  .tm-tl-cards {
+    padding-left: 10px;
+    padding-bottom: 32px;
+  }
+
+  .tm-tl-card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .tm-tl-card__title {
+    font-size: 14px;
+  }
+
+  .tm-tl-card__desc {
+    font-size: 12px;
+    -webkit-line-clamp: 1;
+  }
+
+  .tm-tl-card__icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    margin-left: 12px;
+  }
+
+  .tm-tl-card__price-inline {
+    font-size: 14px;
+  }
+
+  /* Skeleton mobile */
+  .tm-tl-skeleton {
+    max-width: none;
+  }
+
+  .tm-tl-sk-group {
+    grid-template-columns: 56px 32px 1fr;
+  }
+
+  .tm-tl-sk-role-row {
+    gap: 10px;
+  }
+
+  .tm-tl-sk-role {
+    height: 66px;
+    border-radius: 16px;
+  }
+
+  .tm-tl-sk-tabs {
+    gap: 8px;
+  }
+
+  .tm-tl-sk-card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .tm-tl-sk-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    margin-left: 12px;
   }
 
   .tm-bottombar {
