@@ -39,7 +39,8 @@ import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
 import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
-import HomeToast from '../components/home/HomeToast.vue'
+import AppToast from '../components/AppToast.vue'
+import { useAppToast } from '../composables/useAppToast'
 import HomeWorkerDetailDrawer from '../components/home/HomeWorkerDetailDrawer.vue'
 import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
 import { useAuthStore } from '../stores/auth'
@@ -62,16 +63,7 @@ const showMyPanel = ref(false)
 const showReportsPanel = ref(false)
 const settingsTab = ref<'profile' | 'worker'>('profile')
 
-const toast = ref<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
-let toastTimer = 0
-
-function showToast(text: string, type: 'success' | 'error' | 'info' = 'info') {
-  toast.value = { text, type }
-  clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => {
-    toast.value = null
-  }, 3500)
-}
+const { toast, showToast, clearToast } = useAppToast()
 
 const taskSort = ref('ranking')
 const workerSort = ref('ranking')
@@ -703,13 +695,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  clearTimeout(toastTimer)
   clearTimeout(searchTimer)
 })
 </script>
 
 <template>
-  <HomeToast :toast="toast" @dismiss="toast = null" />
+  <AppToast :toast="toast" @dismiss="clearToast" />
 
   <HomeHeaderBar
     v-model:active-tab="activeTab"

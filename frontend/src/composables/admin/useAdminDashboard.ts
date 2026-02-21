@@ -6,9 +6,7 @@ import {
   updateRegistrationSetting,
 } from '../../api/moderation'
 import { extractError } from '../../utils/error'
-import type { AdminToastType } from './useAdminToast'
-
-export type AdminNotifier = (text: string, type?: AdminToastType) => void
+import type { AppToastNotifier } from '../useAppToast'
 
 export interface AdminDashboardStats {
   total_users?: number
@@ -21,7 +19,7 @@ export interface AdminDashboardStats {
   [key: string]: unknown
 }
 
-export function useAdminDashboard(showToast: AdminNotifier) {
+export function useAdminDashboard(showToast: AppToastNotifier) {
   const dashboard = ref<AdminDashboardStats>({})
   const registrationEnabled = ref(true)
   const savingRegistration = ref(false)

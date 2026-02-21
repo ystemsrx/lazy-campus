@@ -3,11 +3,11 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { banUser, fetchAdminUsers } from '../../api/moderation'
 import type { AdminUserItem } from '../../types/api'
 import { extractError } from '../../utils/error'
-import type { AdminNotifier } from './useAdminDashboard'
+import type { AppToastNotifier } from '../useAppToast'
 
 const PAGE_SIZE = 20
 
-export function useAdminUsers(showToast: AdminNotifier) {
+export function useAdminUsers(showToast: AppToastNotifier) {
   const userSearch = ref('')
   const userPage = ref(1)
   const userTotal = ref(0)

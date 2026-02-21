@@ -8,12 +8,12 @@ import AdminHeader from '../components/admin/AdminHeader.vue'
 import type { AdminTabKey } from '../components/admin/AdminHeader.vue'
 import AdminLoadingState from '../components/admin/AdminLoadingState.vue'
 import AdminReportsSection from '../components/admin/AdminReportsSection.vue'
-import AdminToast from '../components/admin/AdminToast.vue'
+import AppToast from '../components/AppToast.vue'
 import AdminUsersSection from '../components/admin/AdminUsersSection.vue'
 import { useAdminCategories } from '../composables/admin/useAdminCategories'
 import { useAdminDashboard } from '../composables/admin/useAdminDashboard'
 import { useAdminReports } from '../composables/admin/useAdminReports'
-import { useAdminToast } from '../composables/admin/useAdminToast'
+import { useAppToast } from '../composables/useAppToast'
 import { useAdminUsers } from '../composables/admin/useAdminUsers'
 import { useAuthStore } from '../stores/auth'
 import { extractError } from '../utils/error'
@@ -24,7 +24,7 @@ const router = useRouter()
 const activeTab = ref<AdminTabKey>('dashboard')
 const loading = ref(true)
 
-const toastModel = useAdminToast()
+const toastModel = useAppToast()
 const dashboardModel = useAdminDashboard(toastModel.showToast)
 const reportsModel = useAdminReports(toastModel.showToast)
 const usersModel = useAdminUsers(toastModel.showToast)
@@ -71,7 +71,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <AdminToast :toast="toastModel.toast" @close="toastModel.clearToast" />
+  <AppToast :toast="toastModel.toast" @dismiss="toastModel.clearToast" />
 
   <AdminHeader :active-tab="activeTab" @tab-change="onTabChange" @logout="logout" />
 

@@ -4,7 +4,7 @@ import { createCategory, deleteCategory, fetchCategories, updateCategory } from 
 import { appConfirm } from '../../components/AppConfirm.vue'
 import type { Category } from '../../types/api'
 import { extractError } from '../../utils/error'
-import type { AdminNotifier } from './useAdminDashboard'
+import type { AppToastNotifier } from '../useAppToast'
 
 interface CategoryForm {
   name: string
@@ -12,7 +12,7 @@ interface CategoryForm {
   sort_order: number
 }
 
-export function useAdminCategories(showToast: AdminNotifier) {
+export function useAdminCategories(showToast: AppToastNotifier) {
   const categoryList = ref<Category[]>([])
   const categoryLoading = ref(false)
   const showCategoryModal = ref(false)

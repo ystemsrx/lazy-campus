@@ -26,7 +26,8 @@ import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
 import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
-import HomeToast from '../components/home/HomeToast.vue'
+import AppToast from '../components/AppToast.vue'
+import { useAppToast } from '../composables/useAppToast'
 import HomeStatsSection from '../components/home/HomeStatsSection.vue'
 
 const router = useRouter()
@@ -60,14 +61,7 @@ const workerForm = ref({
   wechat: '',
 })
 
-const toast = ref<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
-let toastTimer = 0
-
-function showToast(text: string, type: 'success' | 'error' | 'info' = 'info') {
-  toast.value = { text, type }
-  clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { toast.value = null }, 3500)
-}
+const { toast, showToast, clearToast } = useAppToast()
 
 const newTask = ref({
   title: '',
@@ -654,14 +648,13 @@ watch(sentinelRef, (el, oldEl) => {
 })
 
 onUnmounted(() => {
-  clearTimeout(toastTimer)
   scrollObserver?.disconnect()
 })
 </script>
 
 <template>
   <div class="tm-page">
-    <HomeToast :toast="toast" @dismiss="toast = null" />
+    <AppToast :toast="toast" @dismiss="clearToast" />
 
     <!-- Top Header Bar (same as home) -->
     <HomeHeaderBar

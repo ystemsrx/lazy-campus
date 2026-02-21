@@ -8,7 +8,7 @@ import {
 import { appConfirm } from '../../components/AppConfirm.vue'
 import type { Report } from '../../types/api'
 import { extractError } from '../../utils/error'
-import type { AdminNotifier } from './useAdminDashboard'
+import type { AppToastNotifier } from '../useAppToast'
 
 export interface ReportStatusOption {
   value: string
@@ -70,7 +70,7 @@ function reportStatusClass(status: string) {
       : 'badge-red'
 }
 
-export function useAdminReports(showToast: AdminNotifier) {
+export function useAdminReports(showToast: AppToastNotifier) {
   const reports = ref<Report[]>([])
   const reportSubTab = ref<'report' | 'appeal'>('report')
   const reportStatusFilter = ref<string>('pending')

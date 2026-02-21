@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AppToast from '../components/AppToast.vue'
+import { useAppToast } from '../composables/useAppToast'
 import { useAuthStore } from '../stores/auth'
 import { extractError } from '../utils/error'
 
@@ -18,17 +20,7 @@ const gender = ref<'male' | 'female'>('male')
 const nickname = ref('')
 const loading = ref(false)
 
-const toast = ref<{ text: string; type: 'error' | 'success' } | null>(null)
-let toastTimer = 0
-function showToast(text: string, type: 'error' | 'success' = 'error', duration = 3500) {
-  clearTimeout(toastTimer)
-  toast.value = { text, type }
-  if (duration > 0) {
-    toastTimer = window.setTimeout(() => { toast.value = null }, duration)
-  }
-}
-
-onUnmounted(() => { clearTimeout(toastTimer) })
+const { toast, showToast } = useAppToast()
 
 async function submit() {
   loading.value = true
@@ -36,7 +28,7 @@ async function submit() {
     await auth.completeProfile({ email: email.value, gender: gender.value, nickname: nickname.value || null })
     await router.push('/')
   } catch (error: any) {
-    showToast(extractError(error, '保存失败'))
+    showToast(extractError(error, '保存失败'), 'error')
   } finally {
     loading.value = false
   }
@@ -64,9 +56,7 @@ async function submit() {
               </div>
             </div>
             <span class="cp-welcome">欢迎使用</span>
-            <Transition name="cp-toast">
-              <span v-if="toast" class="cp-toast" :class="'cp-toast--' + toast.type">{{ toast.text }}</span>
-            </Transition>
+            <AppToast :toast="toast" inline />
           </div>
           <p class="cp-desc">首次登录请设置以下信息。昵称设置后将用于对外显示，以保护你的真实姓名。</p>
         </div>
@@ -381,36 +371,6 @@ async function submit() {
 }
 .cp-gender-btn--female {
   color: #ec4899;
-}
-
-/* ───── Toast（欢迎使用右侧） ───── */
-.cp-toast {
-  margin-left: auto;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 5px 14px;
-  border-radius: 20px;
-  white-space: nowrap;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cp-toast--error {
-  background: rgba(239, 68, 68, 0.12);
-  color: #dc2626;
-}
-.cp-toast--success {
-  background: rgba(16, 185, 129, 0.12);
-  color: #059669;
-}
-.cp-toast-enter-active,
-.cp-toast-leave-active {
-  transition: all 0.3s ease;
-}
-.cp-toast-enter-from,
-.cp-toast-leave-to {
-  opacity: 0;
-  transform: translateX(-8px);
 }
 
 /* 提交按钮区域 */

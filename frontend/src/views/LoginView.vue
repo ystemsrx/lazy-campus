@@ -2,6 +2,8 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AppToast from '../components/AppToast.vue'
+import { useAppToast } from '../composables/useAppToast'
 import { fetchRegistrationStatus, register } from '../api/auth'
 import { createAppeal, fetchBanContext } from '../api/moderation'
 import type { BanRecord } from '../types/api'
@@ -25,15 +27,7 @@ const regPassword = ref('')
 const confirmPassword = ref('')
 const showRegPassword = ref(false)
 
-const toast = ref<{ text: string; type: 'error' | 'success' } | null>(null)
-let toastTimer = 0
-function showToast(text: string, type: 'error' | 'success' = 'error', duration = 3000) {
-  clearTimeout(toastTimer)
-  toast.value = { text, type }
-  if (duration > 0) {
-    toastTimer = window.setTimeout(() => { toast.value = null }, duration)
-  }
-}
+const { toast, showToast, clearToast } = useAppToast(3000)
 const loading = ref(false)
 
 const registrationEnabled = ref(false)
@@ -54,12 +48,11 @@ function toggleForm() {
   isLogin.value = !isLogin.value
   showPassword.value = false
   showRegPassword.value = false
-  toast.value = null
-  clearTimeout(toastTimer)
+  clearToast()
 }
 
 async function submitLogin() {
-  toast.value = null
+  clearToast()
   loading.value = true
   try {
     const res = await auth.login(account.value, password.value)
@@ -75,7 +68,7 @@ async function submitLogin() {
       showAppeal.value = true
       loadBanContext()
     } else {
-      showToast(extractError(error, '登录失败，请稍后重试'))
+      showToast(extractError(error, '登录失败，请稍后重试'), 'error')
     }
   } finally {
     loading.value = false
@@ -83,16 +76,16 @@ async function submitLogin() {
 }
 
 async function submitRegister() {
-  toast.value = null
+  clearToast()
 
   if (!registrationEnabled.value) return
 
   if (regPassword.value.length < 6) {
-    showToast('密码至少 6 位')
+    showToast('密码至少 6 位', 'error')
     return
   }
   if (regPassword.value !== confirmPassword.value) {
-    showToast('两次输入的密码不一致')
+    showToast('两次输入的密码不一致', 'error')
     return
   }
 
@@ -108,7 +101,7 @@ async function submitRegister() {
     }
     await router.push(res.profile_completed ? '/' : '/complete-profile')
   } catch (error: any) {
-    showToast(extractError(error, '注册失败，请稍后重试'))
+    showToast(extractError(error, '注册失败，请稍后重试'), 'error')
     loadRegistrationStatus()
   } finally {
     loading.value = false
@@ -247,7 +240,6 @@ watch(loading, (val) => {
 
 onUnmounted(() => {
   stopSpinner()
-  clearTimeout(toastTimer)
 })
 </script>
 
@@ -280,15 +272,11 @@ onUnmounted(() => {
       <div class="av-title-wrap">
         <div class="av-title-row" :class="isLogin ? 'av-title-row--active' : 'av-title-row--up'">
           <h1 class="av-title">登录</h1>
-          <Transition name="av-toast">
-            <span v-if="toast && isLogin" class="av-toast" :class="'av-toast--' + toast.type">{{ toast.text }}</span>
-          </Transition>
+          <AppToast :toast="isLogin ? toast : null" inline />
         </div>
         <div class="av-title-row" :class="!isLogin ? 'av-title-row--active' : 'av-title-row--down'">
           <h1 class="av-title">创建账号</h1>
-          <Transition name="av-toast">
-            <span v-if="toast && !isLogin" class="av-toast" :class="'av-toast--' + toast.type">{{ toast.text }}</span>
-          </Transition>
+          <AppToast :toast="!isLogin ? toast : null" inline />
         </div>
       </div>
 
@@ -631,36 +619,6 @@ onUnmounted(() => {
   color: #111827;
   margin: 0;
   flex-shrink: 0;
-}
-
-/* ---- Toast (inline next to title) ---- */
-.av-toast {
-  margin-left: auto;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 5px 14px;
-  border-radius: 20px;
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.av-toast--error {
-  background: rgba(239, 68, 68, 0.12);
-  color: #dc2626;
-}
-.av-toast--success {
-  background: rgba(16, 185, 129, 0.12);
-  color: #059669;
-}
-.av-toast-enter-active,
-.av-toast-leave-active {
-  transition: all 0.3s ease;
-}
-.av-toast-enter-from,
-.av-toast-leave-to {
-  opacity: 0;
-  transform: translateX(-8px);
 }
 
 /* ---- Form Container ---- */
