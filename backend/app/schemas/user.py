@@ -38,7 +38,7 @@ class UserMe(BaseModel):
 class CompleteProfileRequest(BaseModel):
     email: EmailStr
     gender: Gender
-    nickname: str | None = Field(None, max_length=50)
+    nickname: str | None = Field(None, max_length=8)
 
 
 class SkillTagOut(BaseModel):
@@ -81,8 +81,9 @@ class WorkerProfileOut(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    nickname: str = Field(min_length=1, max_length=50)
+    email: EmailStr
     gender: Gender
+    nickname: str | None = Field(None, max_length=8)
 
 
 class ContactSettingsUpdate(BaseModel):

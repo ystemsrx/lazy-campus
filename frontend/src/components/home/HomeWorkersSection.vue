@@ -173,8 +173,6 @@ onUnmounted(() => {
                 <div class="hv-worker-card__meta">
                   <div class="hv-worker-card__name-row">
                     <h4>{{ w.display_name }}<span class="hv-worker-card__score-inline">({{ w.overall_rating_avg.toFixed(1) }})</span></h4>
-                    <p class="hv-worker-card__price hv-worker-card__price--desktop">{{ w.min_price ?? '-' }}~{{ w.max_price ?? '-' }}元</p>
-                    <p class="hv-worker-card__price hv-worker-card__price--mobile">{{ w.min_price != null ? '¥' + w.min_price : '-' }}</p>
                   </div>
                   <div class="hv-worker-card__top-row">
                     <p class="hv-worker-card__role">
@@ -549,18 +547,6 @@ onUnmounted(() => {
   font-size: 10px;
 }
 
-.hv-worker-card__price {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--c-text);
-  white-space: nowrap;
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.hv-worker-card__price--mobile {
-  display: none;
-}
 
 .hv-worker-card__rating {
   display: flex;
@@ -776,15 +762,6 @@ onUnmounted(() => {
     display: none;
   }
 
-  .hv-worker-card__price--desktop {
-    display: none;
-  }
-
-  .hv-worker-card__price--mobile {
-    display: block;
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
 
   .hv-worker-card__bio {
     margin-bottom: 10px;

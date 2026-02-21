@@ -6,6 +6,7 @@ import HomeAvatar from './ui/HomeAvatar.vue'
 import type { Category, UserMe } from '../../types/api'
 
 type ProfileForm = {
+  email: string
   nickname: string
   gender: 'male' | 'female' | ''
 }
@@ -86,20 +87,30 @@ function toggleSkillTag(id: number) {
         </div>
 
         <div class="form-group">
-          <label class="form-label">昵称</label>
-          <input v-model="profileForm.nickname" class="form-input" placeholder="输入昵称" required />
+          <label class="form-label">邮箱 <span class="hv-required">*</span></label>
+          <input v-model.trim="profileForm.email" class="form-input" type="email" placeholder="请输入邮箱" required />
         </div>
 
-        <div class="form-group">
-          <label class="form-label">性别</label>
-          <AppDropdown
-            v-model="profileForm.gender"
-            :options="[
-              { value: 'male', label: '男' },
-              { value: 'female', label: '女' },
-            ]"
-            placeholder="选择性别"
-          />
+        <div class="hv-inline-row">
+          <div class="form-group hv-inline-row__nickname">
+            <label class="form-label hv-label-with-count">
+              <span>昵称</span>
+              <span class="hv-char-count" :class="{ 'hv-char-count--warn': profileForm.nickname.length >= 8 }">{{ profileForm.nickname.length }}/8</span>
+            </label>
+            <input v-model="profileForm.nickname" class="form-input" placeholder="输入昵称（选填）" maxlength="8" />
+          </div>
+
+          <div class="form-group hv-inline-row__gender">
+            <label class="form-label">性别 <span class="hv-required">*</span></label>
+            <AppDropdown
+              v-model="profileForm.gender"
+              :options="[
+                { value: 'male', label: '男' },
+                { value: 'female', label: '女' },
+              ]"
+              placeholder="选择性别"
+            />
+          </div>
         </div>
 
         <button class="btn btn-primary btn-block" type="submit">保存资料</button>
@@ -115,7 +126,10 @@ function toggleSkillTag(id: number) {
         </label>
 
         <div class="form-group">
-          <label class="form-label">擅长类别 <span class="hv-label-hint">（选择 1-5 个）</span></label>
+          <label class="form-label hv-label-with-count">
+            <span>擅长类别 <span class="hv-required">*</span></span>
+            <span class="hv-char-count" :class="{ 'hv-char-count--warn': workerForm.skill_tag_ids.length >= 5 }">{{ workerForm.skill_tag_ids.length }}/5</span>
+          </label>
           <div v-if="categories.length" class="hv-skill-picker">
             <button
               v-for="cat in categories"
@@ -124,30 +138,17 @@ function toggleSkillTag(id: number) {
               class="hv-skill-chip"
               :class="{ 'hv-skill-chip--selected': workerForm.skill_tag_ids.includes(cat.id) }"
               @click="toggleSkillTag(cat.id)"
-            >
-              <i v-if="workerForm.skill_tag_ids.includes(cat.id)" class="fa-solid fa-check" style="font-size: 11px;"></i>
-              {{ cat.name }}
-            </button>
+            >{{ cat.name }}</button>
           </div>
           <p v-else class="form-hint" style="margin-top: 4px;">管理员暂未设置类别</p>
-          <p v-if="workerForm.skill_tag_ids.length >= 5" class="form-hint" style="margin-top: 4px; color: var(--c-warning);">已达上限 5 个</p>
-        </div>
-
-        <div class="form-price-row">
-          <div class="form-group">
-            <label class="form-label">最低价 (¥)</label>
-            <input v-model.number="workerForm.min_price" class="form-input" type="number" placeholder="最低接单价格" />
-          </div>
-          <div class="form-price-sep">—</div>
-          <div class="form-group">
-            <label class="form-label">最高价 (¥)</label>
-            <input v-model.number="workerForm.max_price" class="form-input" type="number" placeholder="最高接单价格" />
-          </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">个人简介</label>
-          <textarea v-model="workerForm.bio" class="form-textarea" placeholder="介绍一下自己的能力和服务"></textarea>
+          <label class="form-label hv-label-with-count">
+            <span>个人简介 <span class="hv-required">*</span></span>
+            <span class="hv-char-count" :class="{ 'hv-char-count--warn': workerForm.bio.length >= 150 }">{{ workerForm.bio.length }}/150</span>
+          </label>
+          <textarea v-model="workerForm.bio" class="form-textarea" placeholder="介绍一下自己的能力和服务" maxlength="150"></textarea>
         </div>
 
         <div class="form-group">
@@ -228,6 +229,45 @@ function toggleSkillTag(id: number) {
   flex-direction: column;
   gap: 14px;
   margin-top: 16px;
+}
+
+.hv-required {
+  color: var(--c-danger, #ef4444);
+  font-size: var(--text-sm);
+}
+
+.hv-inline-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.hv-inline-row__nickname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hv-inline-row__gender {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+
+.hv-label-with-count {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hv-char-count {
+  font-size: var(--text-xs);
+  color: var(--c-text-muted);
+  font-weight: 400;
+}
+
+.hv-char-count--warn {
+  color: var(--c-danger, #ef4444);
 }
 
 .hv-hint {
@@ -327,21 +367,4 @@ function toggleSkillTag(id: number) {
   }
 }
 
-.form-price-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.form-price-row .form-group {
-  flex: 1;
-  min-width: 0;
-}
-
-.form-price-sep {
-  color: var(--c-text-muted);
-  font-size: var(--text-sm);
-  padding-bottom: 10px;
-  flex-shrink: 0;
-}
 </style>

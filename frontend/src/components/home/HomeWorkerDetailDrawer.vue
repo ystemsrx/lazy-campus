@@ -217,13 +217,6 @@ onUnmounted(() => {
 
               <div class="hv-detail-grid">
                 <div class="hv-detail-item">
-                  <span class="hv-detail-label">价格区间</span>
-                  <span
-                    >{{ worker.min_price ?? "-" }} ~
-                    {{ worker.max_price ?? "-" }} 元</span
-                  >
-                </div>
-                <div class="hv-detail-item">
                   <span class="hv-detail-label">完成任务</span>
                   <span>{{ worker.worker_completed_count }} 单</span>
                 </div>

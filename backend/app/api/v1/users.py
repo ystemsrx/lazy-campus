@@ -142,8 +142,9 @@ def update_profile(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> UserMe:
-    user.nickname = payload.nickname
+    user.email = payload.email
     user.gender = payload.gender
+    user.nickname = payload.nickname
     db.add(user)
     db.commit()
     db.refresh(user)

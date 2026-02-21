@@ -34,7 +34,7 @@ export async function revealWorkerContact(userId: number) {
   return data
 }
 
-export async function updateProfile(payload: { nickname: string; gender: 'male' | 'female' }) {
+export async function updateProfile(payload: { email: string; gender: 'male' | 'female'; nickname?: string }) {
   const { data } = await api.put<UserMe>('/users/me/profile', payload)
   return data
 }

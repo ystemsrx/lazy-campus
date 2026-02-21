@@ -13,8 +13,7 @@ import {
   fetchMessages, fetchReviews, sendMessage, createReview,
 } from '../api/tasks'
 import {
-  fetchUserReviews, fetchMyWorkerProfile, updateWorkerProfile,
-  updateProfile, uploadAvatar,
+  fetchUserReviews,
 } from '../api/users'
 import { createReport, fetchMyReports } from '../api/moderation'
 import type { Task, Category, TaskMessage, TaskReview, UserReview, Report } from '../types/api'
@@ -22,7 +21,6 @@ import { isExpired, formatShort, formatFull, nowLocal, localToUTC, utcToLocal, p
 import { extractError } from '../utils/error'
 import { getTaskIcon } from '../utils/taskIcons'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
-import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
 import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
@@ -45,21 +43,8 @@ const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const editingTask = ref<Task | null>(null)
 
-const showSettingsPanel = ref(false)
 const showReportsPanel = ref(false)
-const settingsTab = ref<'profile' | 'worker'>('profile')
-const avatarUploading = ref(false)
 const myReports = ref<Report[]>([])
-const profileForm = ref({ nickname: '', gender: '' as 'male' | 'female' | '' })
-const workerForm = ref({
-  enabled: false,
-  skill_tag_ids: [] as number[],
-  min_price: null as number | null,
-  max_price: null as number | null,
-  bio: '',
-  phone: '',
-  wechat: '',
-})
 
 const { toast, showToast, clearToast } = useAppToast()
 
@@ -321,38 +306,14 @@ async function loadCategories() {
   categories.value = await fetchCategories()
 }
 
-async function loadMyWorkerProfile() {
-  try {
-    const p = await fetchMyWorkerProfile()
-    workerForm.value = {
-      enabled: p.enabled,
-      skill_tag_ids: p.skill_tags.map((t: { id: number }) => t.id),
-      min_price: p.min_price,
-      max_price: p.max_price,
-      bio: p.bio || '',
-      phone: p.phone || '',
-      wechat: p.wechat || '',
-    }
-  } catch { /* 非接单者时忽略 */ }
-}
-
 async function loadMyReports() {
   try {
     myReports.value = await fetchMyReports()
   } catch { /* 忽略 */ }
 }
 
-function initProfileForm() {
-  if (me.value) {
-    profileForm.value.nickname = me.value.nickname || ''
-    profileForm.value.gender = me.value.gender || ''
-  }
-}
-
 function openSettings() {
-  initProfileForm()
-  settingsTab.value = 'profile'
-  showSettingsPanel.value = true
+  router.push('/settings')
 }
 
 function openReports() {
@@ -365,63 +326,10 @@ function logout() {
   router.push('/login')
 }
 
-async function submitProfileUpdate() {
-  if (!profileForm.value.nickname || !profileForm.value.gender) {
-    showToast('请填写昵称和性别', 'error')
-    return
-  }
-  try {
-    const updated = await updateProfile({
-      nickname: profileForm.value.nickname,
-      gender: profileForm.value.gender as 'male' | 'female',
-    })
-    auth.user = updated
-    auth.displayName = updated.nickname || updated.name
-    localStorage.setItem('display_name', auth.displayName)
-    showToast('个人资料已更新', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '更新失败'), 'error')
-  }
-}
-
-async function submitWorkerProfile() {
-  try {
-    await updateWorkerProfile({
-      enabled: workerForm.value.enabled,
-      skill_tag_ids: workerForm.value.skill_tag_ids,
-      min_price: workerForm.value.min_price,
-      max_price: workerForm.value.max_price,
-      bio: workerForm.value.bio || null,
-      phone: workerForm.value.phone || null,
-      wechat: workerForm.value.wechat || null,
-    })
-    showToast('接单资料已更新', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '保存失败'), 'error')
-  }
-}
-
-async function handleAvatarUpload(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  avatarUploading.value = true
-  try {
-    const updated = await uploadAvatar(file)
-    auth.user = updated
-    showToast('头像已更新', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '头像上传失败'), 'error')
-  } finally {
-    avatarUploading.value = false
-    input.value = ''
-  }
-}
-
 async function bootstrap() {
   loading.value = true
   try {
-    await Promise.all([loadMyTasks(), loadCategories(), loadMyWorkerProfile(), loadMyReports()])
+    await Promise.all([loadMyTasks(), loadCategories(), loadMyReports()])
   } catch (error: any) {
     showToast(extractError(error, '加载失败'), 'error')
   } finally {
@@ -772,7 +680,7 @@ onUnmounted(() => {
           </template>
           <template v-else>
             <!-- Role Switcher -->
-            <div class="tm-role-switcher">
+            <div class="tm-role-switcher tm-anim-1">
               <button
                 class="tm-role-btn"
                 :class="{ 'tm-role-btn--active': activeRole === 'assignee' }"
@@ -802,7 +710,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Status Tabs -->
-            <div class="tm-tabs">
+            <div class="tm-tabs tm-anim-2">
               <button
                 v-if="activeRole === 'publisher'"
                 class="tm-tab--pending-wrap"
@@ -967,20 +875,6 @@ onUnmounted(() => {
         <span>统计</span>
       </button>
     </nav>
-
-    <!-- Settings Drawer -->
-    <HomeSettingsDrawer
-      v-model="showSettingsPanel"
-      v-model:settings-tab="settingsTab"
-      :me="me"
-      :avatar-uploading="avatarUploading"
-      :profile-form="profileForm"
-      :worker-form="workerForm"
-      :categories="categories"
-      @submit-profile="submitProfileUpdate"
-      @submit-worker="submitWorkerProfile"
-      @avatar-upload="handleAvatarUpload"
-    />
 
     <!-- Reports Drawer -->
     <HomeReportsDrawer v-model="showReportsPanel" :my-reports="myReports" />
@@ -1395,6 +1289,26 @@ onUnmounted(() => {
   border-radius: 14px;
   flex-shrink: 0;
   margin-left: 16px;
+}
+
+/* ---- 入场动画 ---- */
+@keyframes tm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tm-anim-1 {
+  animation: tm-rise 0.5s ease-out 0ms both;
+}
+
+.tm-anim-2 {
+  animation: tm-rise 0.5s ease-out 0.12s both;
 }
 
 /* ---- Role Switcher ---- */

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import maleAvatar from '../../../assets/avatars/default-male.svg'
+import femaleAvatar from '../../../assets/avatars/default-female.svg'
 
 const props = withDefaults(defineProps<{
   avatarUrl?: string | null
@@ -19,15 +21,16 @@ const sizeClass = computed(() => {
   return ''
 })
 
-const genderClass = computed(() => (props.gender === 'female' ? 'hv-avatar--female' : 'hv-avatar--male'))
+// 有上传头像时用上传图；否则按性别选默认插画
+const imgSrc = computed(() => {
+  if (props.avatarUrl) return props.avatarUrl
+  return props.gender === 'female' ? femaleAvatar : maleAvatar
+})
 </script>
 
 <template>
-  <div v-if="avatarUrl" class="hv-avatar hv-avatar--img" :class="sizeClass">
-    <img :src="avatarUrl" :alt="alt" />
-  </div>
-  <div v-else class="hv-avatar" :class="[sizeClass, genderClass]">
-    <i class="fa-solid fa-user"></i>
+  <div class="hv-avatar hv-avatar--img" :class="sizeClass">
+    <img :src="imgSrc" :alt="alt" />
   </div>
 </template>
 
@@ -36,13 +39,6 @@ const genderClass = computed(() => (props.gender === 'female' ? 'hv-avatar--fema
   width: 32px;
   height: 32px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--c-accent-soft), var(--c-accent));
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 13px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -50,27 +46,11 @@ const genderClass = computed(() => (props.gender === 'female' ? 'hv-avatar--fema
 .hv-avatar--lg {
   width: 44px;
   height: 44px;
-  font-size: 17px;
 }
 
 .hv-avatar--xl {
   width: 72px;
   height: 72px;
-  font-size: 28px;
-}
-
-.hv-avatar--male {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.hv-avatar--female {
-  background: #f3e8ff;
-  color: #9333ea;
-}
-
-.hv-avatar--img {
-  background: none;
 }
 
 .hv-avatar--img img {

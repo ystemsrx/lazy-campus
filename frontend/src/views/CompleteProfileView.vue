@@ -104,7 +104,10 @@ async function submit() {
 
           <!-- 昵称输入框 -->
           <div class="cp-field">
-            <label class="cp-label">昵称</label>
+            <label class="cp-label" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>昵称</span>
+              <span class="cp-char-count" :class="{ 'cp-char-count--warn': nickname.length >= 8 }">{{ nickname.length }}/8</span>
+            </label>
             <div class="cp-input-wrap">
               <svg class="cp-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="8" r="4"/>
@@ -114,7 +117,8 @@ async function submit() {
                 v-model="nickname"
                 type="text"
                 class="cp-input"
-                placeholder="请设置一个昵称"
+                placeholder="请设置一个昵称（选填，最多 8 字）"
+                maxlength="8"
               />
             </div>
           </div>
@@ -289,6 +293,15 @@ async function submit() {
 .cp-required {
   color: #ef4444;
   margin-left: 3px;
+}
+.cp-char-count {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+  margin-left: 4px;
+}
+.cp-char-count--warn {
+  color: #ef4444;
 }
 
 /* 输入框 */

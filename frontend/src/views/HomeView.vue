@@ -23,20 +23,15 @@ import {
 } from '../api/tasks'
 import {
   fetchWorkerDetail,
-  fetchMyWorkerProfile,
   revealWorkerContact,
   fetchUserReviews,
   fetchWorkers,
-  updateWorkerProfile,
-  updateProfile,
-  uploadAvatar,
 } from '../api/users'
 import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import HomeLoadingState from '../components/home/HomeLoadingState.vue'
 import HomeMyTasksDrawer from '../components/home/HomeMyTasksDrawer.vue'
 import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
-import HomeSettingsDrawer from '../components/home/HomeSettingsDrawer.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import AppToast from '../components/AppToast.vue'
@@ -58,10 +53,8 @@ const activeTab = ref<'hall' | 'workers'>(
 const showPostModal = ref(false)
 const showEditModal = ref(false)
 const editingTask = ref<Task | null>(null)
-const showSettingsPanel = ref(false)
 const showMyPanel = ref(false)
 const showReportsPanel = ref(false)
-const settingsTab = ref<'profile' | 'worker'>('profile')
 
 const { toast, showToast, clearToast } = useAppToast()
 
@@ -119,21 +112,6 @@ const newTask = ref({
   icon: 'Hexagon',
 })
 
-const workerForm = ref({
-  enabled: false,
-  skill_tag_ids: [] as number[],
-  min_price: null as number | null,
-  max_price: null as number | null,
-  bio: '',
-  phone: '',
-  wechat: '',
-})
-
-const profileForm = ref({
-  nickname: '',
-  gender: '' as 'male' | 'female' | '',
-})
-
 const editTaskForm = ref({
   title: '',
   description: '',
@@ -156,8 +134,6 @@ const reportForm = ref({
   reason: '',
   evidence: '',
 })
-
-const avatarUploading = ref(false)
 
 const me = computed(() => auth.user)
 
@@ -259,10 +235,9 @@ async function bootstrap() {
   try {
     const publicLoads = [loadCategories(), loadTasks(), loadWorkers()]
     if (auth.isAuthenticated) {
-      publicLoads.push(loadMyTasks(), loadMyReports(), loadMyWorkerProfile())
+      publicLoads.push(loadMyTasks(), loadMyReports())
     }
     await Promise.all(publicLoads)
-    if (auth.isAuthenticated) initProfileForm()
   } catch (error: any) {
     showToast(extractError(error, '加载失败'), 'error')
   } finally {
@@ -325,28 +300,8 @@ async function loadMyTasks() {
   myAccepted.value = accepted
 }
 
-async function loadMyWorkerProfile() {
-  const p = await fetchMyWorkerProfile()
-  workerForm.value = {
-    enabled: p.enabled,
-    skill_tag_ids: p.skill_tags.map(t => t.id),
-    min_price: p.min_price,
-    max_price: p.max_price,
-    bio: p.bio || '',
-    phone: p.phone || '',
-    wechat: p.wechat || '',
-  }
-}
-
 async function loadMyReports() {
   myReports.value = await fetchMyReports()
-}
-
-function initProfileForm() {
-  if (me.value) {
-    profileForm.value.nickname = me.value.nickname || ''
-    profileForm.value.gender = me.value.gender || ''
-  }
 }
 
 function openDrawer(task: Task) {
@@ -416,24 +371,6 @@ async function submitCreateTask() {
   }
 }
 
-async function submitWorkerProfile() {
-  try {
-    await updateWorkerProfile({
-      enabled: workerForm.value.enabled,
-      skill_tag_ids: workerForm.value.skill_tag_ids,
-      min_price: workerForm.value.min_price,
-      max_price: workerForm.value.max_price,
-      bio: workerForm.value.bio || null,
-      phone: workerForm.value.phone || null,
-      wechat: workerForm.value.wechat || null,
-    })
-    showToast('接单资料已更新', 'success')
-    await Promise.all([loadWorkers(), loadCategories()])
-  } catch (error: any) {
-    showToast(extractError(error, '保存失败'), 'error')
-  }
-}
-
 async function openWorkerDrawer(worker: WorkerProfile) {
   workerContactReveal.value = null
   workerContactLoading.value = false
@@ -489,42 +426,6 @@ async function handleWorkerContactAction(action: 'view_contact' | 'internal_cont
     showToast(extractError(error, '查看联系方式失败'), 'error')
   } finally {
     workerContactLoading.value = false
-  }
-}
-
-async function submitProfileUpdate() {
-  if (!profileForm.value.nickname || !profileForm.value.gender) {
-    showToast('请填写昵称和性别', 'error')
-    return
-  }
-  try {
-    const updated = await updateProfile({
-      nickname: profileForm.value.nickname,
-      gender: profileForm.value.gender as 'male' | 'female',
-    })
-    auth.user = updated
-    auth.displayName = updated.nickname || updated.name
-    localStorage.setItem('display_name', auth.displayName)
-    showToast('个人资料已更新', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '更新失败'), 'error')
-  }
-}
-
-async function handleAvatarUpload(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  avatarUploading.value = true
-  try {
-    const updated = await uploadAvatar(file)
-    auth.user = updated
-    showToast('头像已更新', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '头像上传失败'), 'error')
-  } finally {
-    avatarUploading.value = false
-    input.value = ''
   }
 }
 
@@ -681,9 +582,7 @@ function openMyPanel() {
 }
 
 function openSettings() {
-  initProfileForm()
-  settingsTab.value = 'profile'
-  showSettingsPanel.value = true
+  router.push('/settings')
 }
 
 function openReports() {
@@ -784,19 +683,6 @@ onUnmounted(() => {
     :status-of="statusOf"
     :is-expired="isExpired"
     @open-task="openDrawer"
-  />
-
-  <HomeSettingsDrawer
-    v-model="showSettingsPanel"
-    v-model:settings-tab="settingsTab"
-    :me="me"
-    :avatar-uploading="avatarUploading"
-    :profile-form="profileForm"
-    :worker-form="workerForm"
-    :categories="categories"
-    @submit-profile="submitProfileUpdate"
-    @submit-worker="submitWorkerProfile"
-    @avatar-upload="handleAvatarUpload"
   />
 
   <HomeReportsDrawer v-model="showReportsPanel" :my-reports="myReports" />

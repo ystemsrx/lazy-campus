@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/complete-profile', component: () => import('../views/CompleteProfileView.vue') },
     { path: '/admin', component: () => import('../views/AdminView.vue') },
     { path: '/tasks', component: () => import('../views/TaskManagementView.vue') },
+    { path: '/settings', component: () => import('../views/SettingsView.vue') },
     { path: '/', component: () => import('../views/HomeView.vue') }
   ]
 })
