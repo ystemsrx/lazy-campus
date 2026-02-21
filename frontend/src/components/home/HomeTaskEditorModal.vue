@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import HomeModal from './ui/HomeModal.vue'
 import type { Category } from '../../types/api'
+import { TASK_ICON_OPTIONS } from '../../utils/taskIcons'
 
 type TaskEditorForm = {
   title: string
@@ -14,6 +15,7 @@ type TaskEditorForm = {
   contact_visibility: 'after_accept' | 'internal_only'
   contact_info: string
   required_gender: 'male' | 'female' | null
+  icon: string
 }
 
 const props = defineProps<{
@@ -50,6 +52,27 @@ const categoryOptions = computed(() => [
       <div class="form-group">
         <label class="form-label">标题</label>
         <input v-model="form.title" class="form-input" placeholder="简要描述你需要完成的事项" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">任务图标</label>
+        <div class="hv-icon-picker-wrap">
+          <div class="hv-icon-picker">
+            <button
+              v-for="opt in TASK_ICON_OPTIONS"
+              :key="opt.name"
+              type="button"
+              class="hv-icon-picker__item"
+              :class="{ 'hv-icon-picker__item--active': form.icon === opt.name }"
+              @click="form.icon = opt.name"
+              :title="opt.label"
+            >
+              <div class="hv-icon-picker__circle" :style="{ backgroundColor: opt.bg, color: opt.color }">
+                <component :is="opt.component" :size="20" />
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="form-group">
@@ -147,5 +170,54 @@ const categoryOptions = computed(() => [
 
 .hv-description-textarea {
   min-height: 80px;
+}
+
+.hv-icon-picker-wrap {
+  max-height: 166px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.hv-icon-picker-wrap::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hv-icon-picker-wrap::-webkit-scrollbar-thumb {
+  background: var(--c-border);
+  border-radius: 2px;
+}
+
+.hv-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hv-icon-picker__item {
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 3px;
+  background: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+@media (hover: hover) {
+  .hv-icon-picker__item:hover {
+    border-color: var(--c-border);
+  }
+}
+
+.hv-icon-picker__item--active {
+  border-color: var(--c-accent);
+}
+
+.hv-icon-picker__circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

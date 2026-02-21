@@ -95,7 +95,9 @@ export interface Task {
   assignee_display_name: string | null
   publisher_rating_avg: number
   publisher_rating_count: number
+  icon: string | null
   created_at: string
+  updated_at: string
 }
 
 export interface Category {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { appConfirm } from '../components/AppConfirm.vue'
 import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, localToUTC, nowLocal, utcToLocal } from '../utils/time'
@@ -46,10 +46,13 @@ import { useAuthStore } from '../stores/auth'
 import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 
-const activeTab = ref<'hall' | 'workers'>('hall')
+const activeTab = ref<'hall' | 'workers'>(
+  route.query.tab === 'workers' ? 'workers' : 'hall'
+)
 
 const showPostModal = ref(false)
 const showEditModal = ref(false)
@@ -120,6 +123,7 @@ const newTask = ref({
   contact_visibility: 'after_accept' as 'after_accept' | 'internal_only',
   contact_info: '',
   required_gender: null as 'male' | 'female' | null,
+  icon: 'Hexagon',
 })
 
 const workerForm = ref({
@@ -147,6 +151,7 @@ const editTaskForm = ref({
   contact_visibility: 'after_accept' as 'after_accept' | 'internal_only',
   contact_info: '',
   required_gender: null as 'male' | 'female' | null,
+  icon: 'Hexagon',
 })
 
 const chatContent = ref('')
@@ -270,6 +275,13 @@ async function bootstrap() {
   } finally {
     loading.value = false
   }
+  const taskId = router.currentRoute.value.query.task
+  if (taskId) {
+    const id = Number(taskId)
+    const task = [...tasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
+    if (task) openDrawer(task)
+    router.replace({ query: {} })
+  }
 }
 
 async function loadCategories() {
@@ -382,6 +394,7 @@ async function submitCreateTask() {
       contact_visibility: newTask.value.contact_visibility,
       contact_info: newTask.value.contact_visibility === 'after_accept' ? newTask.value.contact_info || null : null,
       required_gender: newTask.value.required_gender,
+      icon: newTask.value.icon,
     })
     showToast('委托发布成功', 'success')
     newTask.value = {
@@ -394,6 +407,7 @@ async function submitCreateTask() {
       contact_visibility: 'after_accept',
       contact_info: '',
       required_gender: null,
+      icon: 'Hexagon',
     }
     showPostModal.value = false
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
@@ -597,6 +611,7 @@ function openEditModal() {
     contact_visibility: t.contact_visibility,
     contact_info: t.contact_info || '',
     required_gender: t.required_gender,
+    icon: t.icon || 'Hexagon',
   }
   closeDrawer()
   showEditModal.value = true
@@ -615,6 +630,7 @@ async function submitEditTask() {
       contact_visibility: editTaskForm.value.contact_visibility,
       contact_info: editTaskForm.value.contact_visibility === 'after_accept' ? editTaskForm.value.contact_info || null : null,
       required_gender: editTaskForm.value.required_gender,
+      icon: editTaskForm.value.icon,
     })
     showEditModal.value = false
     editingTask.value = null
@@ -661,7 +677,7 @@ function logout() {
 }
 
 function openMyPanel() {
-  showMyPanel.value = true
+  router.push('/tasks')
 }
 
 function openSettings() {

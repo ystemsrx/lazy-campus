@@ -640,8 +640,10 @@ onUnmounted(() => {
   color: #f59e0b;
 }
 
-.hv-star-btn:hover {
-  transform: scale(1.2);
+@media (hover: hover) {
+  .hv-star-btn:hover {
+    transform: scale(1.2);
+  }
 }
 
 .hv-reviewed-hint {

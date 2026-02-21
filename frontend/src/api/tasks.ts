@@ -21,6 +21,7 @@ export async function createTask(payload: {
   contact_visibility: 'after_accept' | 'internal_only'
   contact_info: string | null
   required_gender: 'male' | 'female' | null
+  icon?: string | null
 }) {
   const { data } = await api.post<Task>('/tasks', payload)
   return data
@@ -81,6 +82,7 @@ export async function updateTask(
     contact_visibility?: 'after_accept' | 'internal_only'
     contact_info?: string | null
     required_gender?: 'male' | 'female' | null
+    icon?: string | null
   }
 ) {
   const { data } = await api.put<Task>(`/tasks/${taskId}`, payload)

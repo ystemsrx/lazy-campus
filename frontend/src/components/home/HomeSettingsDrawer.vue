@@ -188,8 +188,10 @@ function toggleSkillTag(id: number) {
   transition: all var(--dur-fast) var(--ease);
 }
 
-.hv-pill:hover {
-  border-color: var(--c-text-muted);
+@media (hover: hover) {
+  .hv-pill:hover {
+    border-color: var(--c-text-muted);
+  }
 }
 
 .hv-pill--active {
@@ -307,20 +309,22 @@ function toggleSkillTag(id: number) {
   transition: all var(--dur-fast) var(--ease);
 }
 
-.hv-skill-chip:hover {
-  border-color: var(--c-accent);
-  color: var(--c-accent);
-}
-
 .hv-skill-chip--selected {
   background: var(--c-accent);
   color: var(--c-text-inverse);
   border-color: var(--c-accent);
 }
 
-.hv-skill-chip--selected:hover {
-  background: var(--c-accent-hover);
-  color: var(--c-text-inverse);
+@media (hover: hover) {
+  .hv-skill-chip:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+  }
+
+  .hv-skill-chip--selected:hover {
+    background: var(--c-accent-hover);
+    color: var(--c-text-inverse);
+  }
 }
 
 .form-price-row {

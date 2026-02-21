@@ -118,8 +118,10 @@ const emit = defineEmits<{
   transition: color 0.2s;
 }
 
-.hv-task-card:hover .hv-task-card__title {
-  color: var(--c-accent);
+@media (hover: hover) {
+  .hv-task-card:hover .hv-task-card__title {
+    color: var(--c-accent);
+  }
 }
 
 .hv-task-card__desc {

@@ -93,6 +93,7 @@ def _task_to_out(task: Task, publisher: User, assignee: User | None, viewer_id: 
         publisher_rating_avg=round(publisher.publisher_rating_avg, 1),
         publisher_rating_count=publisher.publisher_rating_count,
         created_at=task.created_at,
+        updated_at=task.updated_at,
     )
 
 

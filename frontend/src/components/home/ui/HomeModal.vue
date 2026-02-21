@@ -36,7 +36,7 @@ function onOverlayClick() {
             <slot name="header">
               <h3>{{ title }}</h3>
             </slot>
-            <button class="btn btn-ghost btn-sm" @click="close"><i class="fa-solid fa-xmark"></i></button>
+            <button class="hv-modal__close-btn" @click="close"><i class="fa-solid fa-xmark"></i></button>
           </div>
           <div class="hv-modal__body" :class="bodyClass">
             <slot></slot>
@@ -79,6 +79,29 @@ function onOverlayClick() {
 
 .hv-modal__header h3 {
   margin: 0;
+}
+
+.hv-modal__close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--c-bg-subtle, #f1f5f9);
+  color: var(--c-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+@media (hover: hover) {
+  .hv-modal__close-btn:hover {
+    background: var(--c-border);
+    color: var(--c-text);
+  }
 }
 
 .hv-modal__body {

@@ -162,8 +162,10 @@ function handleOverlay(e: MouseEvent) {
   color: #fff;
   border: none;
 }
-.btn-warning:hover {
-  background: #d97706;
+@media (hover: hover) {
+  .btn-warning:hover {
+    background: #d97706;
+  }
 }
 
 /* Transition */

@@ -217,11 +217,17 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.hv-sort-btn:hover,
 .hv-sort-btn--active {
   border-color: var(--c-accent);
   color: var(--c-accent);
   background: var(--c-accent-light);
+}
+@media (hover: hover) {
+  .hv-sort-btn:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+    background: var(--c-accent-light);
+  }
 }
 
 .hv-sort-menu {
@@ -256,9 +262,11 @@ onUnmounted(() => {
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
-.hv-sort-menu__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
+@media (hover: hover) {
+  .hv-sort-menu__item:hover {
+    background: var(--c-accent-light);
+    color: var(--c-accent);
+  }
 }
 
 .hv-sort-menu__item--active {
@@ -300,8 +308,10 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.hv-chip:hover {
-  border-color: var(--c-text-muted);
+@media (hover: hover) {
+  .hv-chip:hover {
+    border-color: var(--c-text-muted);
+  }
 }
 
 .hv-chip--active {
@@ -351,9 +361,11 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.hv-sidebar__item:hover {
-  background: var(--c-border-light);
-  color: var(--c-text);
+@media (hover: hover) {
+  .hv-sidebar__item:hover {
+    background: var(--c-border-light);
+    color: var(--c-text);
+  }
 }
 
 .hv-sidebar__item--active {
@@ -396,9 +408,11 @@ onUnmounted(() => {
               transform var(--dur-normal) var(--ease);
 }
 
-.hv-worker-card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+@media (hover: hover) {
+  .hv-worker-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
 }
 
 .hv-worker-card :deep(.hv-avatar) {
@@ -554,8 +568,10 @@ onUnmounted(() => {
   transition: background var(--dur-fast) var(--ease);
 }
 
-.hv-worker-card__btn-main:hover {
-  background: var(--c-primary-hover);
+@media (hover: hover) {
+  .hv-worker-card__btn-main:hover {
+    background: var(--c-primary-hover);
+  }
 }
 
 .hv-worker-card__btn-icon {
@@ -575,20 +591,22 @@ onUnmounted(() => {
   transition: all var(--dur-fast) var(--ease);
 }
 
-.hv-worker-card__btn-icon:hover {
-  background: var(--c-border-light);
-  border-color: var(--c-text-muted);
-}
-
 .hv-worker-card__btn-icon--warn {
   border-color: var(--c-danger-soft);
   color: var(--c-danger);
   background: var(--c-danger-light);
 }
 
-.hv-worker-card__btn-icon--warn:hover {
-  background: var(--c-danger-soft);
-  border-color: var(--c-danger);
+@media (hover: hover) {
+  .hv-worker-card__btn-icon:hover {
+    background: var(--c-border-light);
+    border-color: var(--c-text-muted);
+  }
+
+  .hv-worker-card__btn-icon--warn:hover {
+    background: var(--c-danger-soft);
+    border-color: var(--c-danger);
+  }
 }
 
 /* ---- transitions ---- */

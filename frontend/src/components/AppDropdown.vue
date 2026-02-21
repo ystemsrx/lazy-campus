@@ -132,9 +132,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   white-space: nowrap;
 }
 
-.app-dropdown__trigger:hover {
-  background: #f8fafc;
-  box-shadow: var(--shadow-md);
+@media (hover: hover) {
+  .app-dropdown__trigger:hover {
+    background: #f8fafc;
+    box-shadow: var(--shadow-md);
+  }
 }
 
 .app-dropdown--open .app-dropdown__trigger {
@@ -209,9 +211,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
-.app-dropdown__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
+@media (hover: hover) {
+  .app-dropdown__item:hover {
+    background: var(--c-accent-light);
+    color: var(--c-accent);
+  }
 }
 
 .app-dropdown__item--active {

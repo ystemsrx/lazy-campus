@@ -223,11 +223,17 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.hv-sort-btn:hover,
 .hv-sort-btn--active {
   border-color: var(--c-accent);
   color: var(--c-accent);
   background: var(--c-accent-light);
+}
+@media (hover: hover) {
+  .hv-sort-btn:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+    background: var(--c-accent-light);
+  }
 }
 
 .hv-sort-menu {
@@ -262,9 +268,11 @@ onUnmounted(() => {
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
-.hv-sort-menu__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
+@media (hover: hover) {
+  .hv-sort-menu__item:hover {
+    background: var(--c-accent-light);
+    color: var(--c-accent);
+  }
 }
 
 .hv-sort-menu__item--active {
@@ -304,8 +312,10 @@ onUnmounted(() => {
   transition: all var(--dur-fast) var(--ease);
 }
 
-.hv-chip:hover {
-  border-color: var(--c-text-muted);
+@media (hover: hover) {
+  .hv-chip:hover {
+    border-color: var(--c-text-muted);
+  }
 }
 
 .hv-chip--active {
@@ -353,9 +363,11 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.hv-sidebar__item:hover {
-  background: var(--c-border-light);
-  color: var(--c-text);
+@media (hover: hover) {
+  .hv-sidebar__item:hover {
+    background: var(--c-border-light);
+    color: var(--c-text);
+  }
 }
 
 .hv-sidebar__item--active {

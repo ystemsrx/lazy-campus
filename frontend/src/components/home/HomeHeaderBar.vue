@@ -4,7 +4,7 @@ import HomeAvatar from './ui/HomeAvatar.vue'
 
 const props = defineProps<{
   appTitle: string
-  activeTab: 'hall' | 'workers'
+  activeTab: 'hall' | 'workers' | null
   isAuthenticated: boolean
   displayName: string
   avatarUrl?: string | null
@@ -12,7 +12,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:activeTab', value: 'hall' | 'workers'): void
+  (e: 'update:activeTab', value: 'hall' | 'workers' | null): void
   (e: 'publish'): void
   (e: 'openMyPanel'): void
   (e: 'openSettings'): void
@@ -201,8 +201,10 @@ onUnmounted(() => {
   transition: background var(--dur-fast) var(--ease);
 }
 
-.hv-user-trigger:hover {
-  background: var(--c-border-light);
+@media (hover: hover) {
+  .hv-user-trigger:hover {
+    background: var(--c-border-light);
+  }
 }
 
 .hv-user-trigger__arrow {
@@ -251,22 +253,24 @@ onUnmounted(() => {
   color: var(--c-text-muted);
 }
 
-.hv-user-dropdown__item:hover {
-  background: var(--c-accent-light);
-  color: var(--c-accent);
-}
+@media (hover: hover) {
+  .hv-user-dropdown__item:hover {
+    background: var(--c-accent-light);
+    color: var(--c-accent);
+  }
 
-.hv-user-dropdown__item:hover i {
-  color: var(--c-accent);
-}
+  .hv-user-dropdown__item:hover i {
+    color: var(--c-accent);
+  }
 
-.hv-user-dropdown__item--danger:hover {
-  background: var(--c-danger-light);
-  color: var(--c-danger);
-}
+  .hv-user-dropdown__item--danger:hover {
+    background: var(--c-danger-light);
+    color: var(--c-danger);
+  }
 
-.hv-user-dropdown__item--danger:hover i {
-  color: var(--c-danger);
+  .hv-user-dropdown__item--danger:hover i {
+    color: var(--c-danger);
+  }
 }
 
 .hv-user-dropdown__divider {
@@ -298,9 +302,11 @@ onUnmounted(() => {
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 
-.hv-tab:hover {
-  color: var(--c-text);
-  background: var(--c-border-light);
+@media (hover: hover) {
+  .hv-tab:hover {
+    color: var(--c-text);
+    background: var(--c-border-light);
+  }
 }
 
 .hv-tab--active {
