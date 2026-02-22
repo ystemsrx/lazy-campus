@@ -1,6 +1,9 @@
+import json
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import ReportStatus, ReportType
 
@@ -8,8 +11,9 @@ from app.models.enums import ReportStatus, ReportType
 class ReportCreate(BaseModel):
     task_id: int
     reported_user_id: int
-    reason: str = Field(min_length=5)
-    evidence: str = Field(min_length=5)
+    reason: str = Field(min_length=1)
+    evidence: str = ''
+    images: list[str] = Field(default_factory=list)
 
 
 class ReportReview(BaseModel):
@@ -34,10 +38,27 @@ class ReportOut(BaseModel):
     reported_user_ban_count: int | None = None
     reason: str
     evidence: str
+    images: list[str] = Field(default_factory=list)
     status: ReportStatus
     admin_id: int | None
     admin_notes: str | None
     created_at: datetime
+
+    @field_validator('images', mode='before')
+    @classmethod
+    def _parse_images(cls, v: Any) -> list[str]:
+        """DB 中存的是 JSON 字符串，反序列化为列表。"""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, ValueError):
+                return []
+        return []
 
 
 class AppealCreate(BaseModel):

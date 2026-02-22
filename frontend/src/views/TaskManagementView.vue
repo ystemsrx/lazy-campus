@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeReportModal from '../components/home/HomeReportModal.vue'
 import HomeStatsSection from '../components/home/HomeStatsSection.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
@@ -32,7 +33,7 @@ const {
   chatContent,
   showReviewForm,
   reviewForm,
-  reportForm,
+  showReportModal,
   assigneeTotal,
   publisherTotal,
   assigneeProgress,
@@ -74,7 +75,9 @@ const {
   handleDeleteTask,
   openEditModal,
   submitEditTask,
-  submitReport,
+  openReportModal,
+  reportTargetId,
+  showToast,
   openCreateTask,
   submitCreateTask,
   closeDrawer,
@@ -200,7 +203,6 @@ const {
       :waiting-for-other-review="waitingForOtherReview"
       :can-review="canReview"
       :can-report="canReport"
-      :report-form="reportForm"
       :status-of="statusOf"
       :gender-label="genderLabel"
       :is-expired="isExpired"
@@ -215,7 +217,16 @@ const {
       @submit-message="submitMessage"
       @update:show-review-form="showReviewForm = $event"
       @submit-review="submitReview"
-      @submit-report="submitReport"
+      @open-report="openReportModal"
+    />
+
+    <HomeReportModal
+      v-model="showReportModal"
+      :task-id="selectedTask?.id ?? null"
+      :reported-user-id="reportTargetId"
+      :reported-user-name="selectedTask ? (me?.id === selectedTask.publisher_id ? selectedTask.assignee_display_name : selectedTask.publisher_display_name) ?? undefined : undefined"
+      @success="showToast('举报已提交，等待管理员审核', 'success')"
+      @error="showToast($event, 'error')"
     />
   </div>
 </template>

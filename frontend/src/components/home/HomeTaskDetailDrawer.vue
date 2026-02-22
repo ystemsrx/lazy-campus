@@ -8,10 +8,6 @@ type ReviewForm = {
   comment: string
 }
 
-type ReportForm = {
-  reason: string
-  evidence: string
-}
 
 const props = defineProps<{
   task: Task | null
@@ -37,7 +33,6 @@ const props = defineProps<{
   waitingForOtherReview: boolean
   canReview: boolean
   canReport: boolean
-  reportForm: ReportForm
   statusOf: (status: string) => { label: string; cls: string }
   genderLabel: (gender: string | null) => { label: string; icon: string; cls: string } | null
   isExpired: (iso: string) => boolean
@@ -55,7 +50,7 @@ const emit = defineEmits<{
   (e: 'submit-message'): void
   (e: 'update:showReviewForm', value: boolean): void
   (e: 'submit-review'): void
-  (e: 'submit-report'): void
+  (e: 'open-report'): void
 }>()
 
 const task = computed(() => props.task)
@@ -367,15 +362,11 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="canReport" class="hv-drawer__section">
-              <h4 class="hv-drawer__subtitle"><i class="fa-solid fa-flag"></i> 举报对方</h4>
-              <input v-model="reportForm.reason" class="form-input hv-report-input" placeholder="问题描述（必填）" />
-              <textarea
-                v-model="reportForm.evidence"
-                class="form-textarea hv-report-textarea"
-                placeholder="证据说明（链接、截图描述等）"
-              ></textarea>
-              <button class="btn btn-outline btn-sm hv-report-submit" @click="emit('submit-report')">提交举报</button>
+            <div v-if="canReport" class="hv-drawer__section hv-report-section">
+              <button class="btn btn-report-trigger" @click="emit('open-report')">
+                <i class="fa-solid fa-flag"></i>
+                举报对方
+              </button>
             </div>
           </div>
         </div>
@@ -672,16 +663,22 @@ onUnmounted(() => {
   color: var(--c-text-muted);
 }
 
-.hv-report-input {
-  margin-bottom: 8px;
+.hv-report-section {
+  display: flex;
+  justify-content: flex-start;
 }
 
-.hv-report-textarea {
-  min-height: 64px;
-}
-
-.hv-report-submit {
-  margin-top: 6px;
+.btn-report-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid #fca5a5;
+  background: #fff1f2;
+  color: #ef4444;
+  font-size: var(--text-sm);
+  cursor: pointer;
 }
 
 .hv-delete-hint {

@@ -1,11 +1,21 @@
 import api from './client'
 import type { AdminUserListResponse, BanContext, Report } from '../types/api'
 
+export async function uploadReportImage(blob: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('file', blob, 'screenshot.webp')
+  const { data } = await api.post<{ url: string }>('/uploads/images', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.url
+}
+
 export async function createReport(payload: {
   task_id: number
   reported_user_id: number
   reason: string
   evidence: string
+  images?: string[]
 }) {
   const { data } = await api.post<Report>('/moderation/reports', payload)
   return data

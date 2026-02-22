@@ -46,5 +46,6 @@ def healthz() -> dict[str, str]:
     return {'status': 'ok'}
 
 
-app.mount('/uploads', StaticFiles(directory=str(UPLOADS_DIR)), name='uploads')
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+# 挂载静态文件目录（用于头像等其他资源）；举报截图通过 /api/v1/uploads/reports/* 路由下发
+app.mount('/uploads', StaticFiles(directory=str(UPLOADS_DIR)), name='uploads')

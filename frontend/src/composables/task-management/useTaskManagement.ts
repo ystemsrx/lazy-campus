@@ -25,7 +25,6 @@ import {
   createReview,
 } from '../../api/tasks'
 import { fetchUserReviews } from '../../api/users'
-import { createReport } from '../../api/moderation'
 import type {
   Category,
   Task,
@@ -140,7 +139,7 @@ export function useTaskManagement() {
   const chatContent = ref('')
   const showReviewForm = ref(false)
   const reviewForm = ref({ stars: 5, comment: '' })
-  const reportForm = ref({ reason: '', evidence: '' })
+  const showReportModal = ref(false)
 
   const assigneeTotal = computed(() => myAccepted.value.length)
   const publisherTotal = computed(() => myPublished.value.length)
@@ -537,21 +536,8 @@ export function useTaskManagement() {
     }
   }
 
-  async function submitReport() {
-    if (!selectedTask.value || !reportTargetId.value) return
-    try {
-      await createReport({
-        task_id: selectedTask.value.id,
-        reported_user_id: reportTargetId.value,
-        reason: reportForm.value.reason,
-        evidence: reportForm.value.evidence,
-      })
-      reportForm.value.reason = ''
-      reportForm.value.evidence = ''
-      showToast('举报已提交，等待管理员审核', 'success')
-    } catch (error: unknown) {
-      showToast(extractError(error, '提交失败'), 'error')
-    }
+  function openReportModal() {
+    showReportModal.value = true
   }
 
   function openCreateTask() {
@@ -637,7 +623,7 @@ export function useTaskManagement() {
     chatContent,
     showReviewForm,
     reviewForm,
-    reportForm,
+    showReportModal,
     assigneeTotal,
     publisherTotal,
     assigneeProgress,
@@ -679,7 +665,9 @@ export function useTaskManagement() {
     handleDeleteTask,
     openEditModal,
     submitEditTask,
-    submitReport,
+    openReportModal,
+    reportTargetId,
+    showToast,
     openCreateTask,
     submitCreateTask,
     closeDrawer,

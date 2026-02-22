@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { proxyRefs } from 'vue'
+import { proxyRefs, ref } from 'vue'
 
 import AppDropdown from '../AppDropdown.vue'
 import AdminReviewModal from './AdminReviewModal.vue'
@@ -11,6 +11,7 @@ const props = defineProps<{
 }>()
 
 const vm = proxyRefs(props.model)
+const adminLightboxSrc = ref<string | null>(null)
 </script>
 
 <template>
@@ -96,8 +97,21 @@ const vm = proxyRefs(props.model)
             <span class="av-report-card__text">{{ report.reason }}</span>
           </div>
           <div v-if="report.evidence" class="av-report-card__col-row">
-            <span class="av-report-card__label">证据</span>
+            <span class="av-report-card__label">补充说明</span>
             <span class="av-report-card__text">{{ report.evidence }}</span>
+          </div>
+          <div v-if="report.images?.length" class="av-report-card__col-row">
+            <span class="av-report-card__label">截图证据</span>
+            <div class="av-report-imgs">
+              <img
+                v-for="(src, i) in report.images"
+                :key="i"
+                :src="src"
+                class="av-report-img"
+                alt="证据截图"
+                @click="adminLightboxSrc = src"
+              />
+            </div>
           </div>
         </div>
 
@@ -137,6 +151,14 @@ const vm = proxyRefs(props.model)
     :task-status-map="vm.TASK_STATUS_MAP"
     @close="vm.closeSnapshot"
   />
+
+  <Teleport to="body">
+    <Transition name="av-lb">
+      <div v-if="adminLightboxSrc" class="av-lightbox" @click="adminLightboxSrc = null">
+        <img :src="adminLightboxSrc" class="av-lightbox__img" alt="证据截图" />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -291,5 +313,57 @@ const vm = proxyRefs(props.model)
   display: block;
   margin-bottom: 12px;
   color: var(--c-border);
+}
+
+.av-report-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.av-report-img {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  cursor: zoom-in;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.av-report-img:hover {
+  opacity: 0.85;
+}
+
+.av-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+  backdrop-filter: blur(4px);
+}
+
+.av-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.av-lb-enter-active,
+.av-lb-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.av-lb-enter-from,
+.av-lb-leave-to {
+  opacity: 0;
 }
 </style>

@@ -24,6 +24,11 @@ def run_startup_migrations() -> None:
             if 'required_gender' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN required_gender VARCHAR(10) DEFAULT NULL'))
 
+        if 'reports' in tables:
+            report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}
+            if 'images' not in report_cols:
+                conn.execute(text('ALTER TABLE reports ADD COLUMN images TEXT DEFAULT NULL'))
+
         if 'worker_profiles' in tables:
             worker_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(worker_profiles)"))}
             if 'phone' not in worker_cols:

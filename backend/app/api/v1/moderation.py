@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -106,6 +107,7 @@ def create_report(
         reported_user_id=payload.reported_user_id,
         reason=payload.reason,
         evidence=payload.evidence,
+        images=json.dumps(payload.images, ensure_ascii=False) if payload.images else None,
     )
     db.add(report)
     db.commit()

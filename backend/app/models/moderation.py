@@ -17,6 +17,7 @@ class Report(Base):
     reported_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True, index=True)
     reason: Mapped[str] = mapped_column(Text)
     evidence: Mapped[str] = mapped_column(Text)
+    images: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus), default=ReportStatus.PENDING, index=True)
     admin_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
     admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

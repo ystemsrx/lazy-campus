@@ -29,6 +29,7 @@ const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 const me = computed(() => auth.user)
 
 const { toast, showToast, clearToast } = useAppToast()
+const lightboxSrc = ref<string | null>(null)
 
 const loading = ref(false)
 const myReports = ref<Report[]>([])
@@ -270,7 +271,7 @@ onMounted(() => {
               <div>
                 <div class="mr-status-banner__title">平台正在核实中</div>
                 <div class="mr-status-banner__message">
-                  我们已收到您的反馈，安全专员正在调查处理。一般情况下，处理结果将在
+                  我们已收到您的反馈，正在调查处理。一般情况下，处理结果将在
                   24-48 小时内反馈给您，请耐心等待。
                 </div>
               </div>
@@ -373,9 +374,23 @@ onMounted(() => {
 
                 <div v-if="selectedReport.evidence">
                   <div class="mr-info-field__label">
-                    {{ selectedReport.type === 'report' ? '证据 / 补充说明' : '申诉材料 / 说明' }}
+                    {{ selectedReport.type === 'report' ? '补充说明' : '申诉材料 / 说明' }}
                   </div>
                   <div class="mr-info-field__evidence">{{ selectedReport.evidence }}</div>
+                </div>
+
+                <div v-if="selectedReport.images?.length">
+                  <div class="mr-info-field__label">截图证据</div>
+                  <div class="mr-evidence-imgs">
+                    <img
+                      v-for="(src, i) in selectedReport.images"
+                      :key="i"
+                      :src="src"
+                      class="mr-evidence-img"
+                      alt="证据截图"
+                      @click="lightboxSrc = src"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -401,6 +416,63 @@ onMounted(() => {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <Transition name="mr-lb">
+      <div v-if="lightboxSrc" class="mr-lightbox" @click="lightboxSrc = null">
+        <img :src="lightboxSrc" class="mr-lightbox__img" alt="证据截图预览" />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped src="./my-reports-view.css"></style>
+
+<style scoped>
+.mr-evidence-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mr-evidence-img {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  cursor: zoom-in;
+}
+
+.mr-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+  backdrop-filter: blur(4px);
+}
+
+.mr-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.mr-lb-enter-active,
+.mr-lb-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.mr-lb-enter-from,
+.mr-lb-leave-to {
+  opacity: 0;
+}
+</style>

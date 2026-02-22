@@ -5,7 +5,6 @@ import { appConfirm } from '../components/AppConfirm.vue'
 import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, localToUTC, nowLocal, utcToLocal } from '../utils/time'
 
-import { createReport } from '../api/moderation'
 import {
   acceptTask,
   confirmTask,
@@ -31,6 +30,7 @@ import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import HomeLoadingState from '../components/home/HomeLoadingState.vue'
 import HomeMyTasksDrawer from '../components/home/HomeMyTasksDrawer.vue'
+import HomeReportModal from '../components/home/HomeReportModal.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import AppToast from '../components/AppToast.vue'
@@ -126,10 +126,7 @@ const reviewForm = ref({
   stars: 5,
   comment: '',
 })
-const reportForm = ref({
-  reason: '',
-  evidence: '',
-})
+const showReportModal = ref(false)
 
 const me = computed(() => auth.user)
 
@@ -596,21 +593,8 @@ const reportTargetId = computed(() => {
   return me.value.id === selectedTask.value.publisher_id ? selectedTask.value.assignee_id : selectedTask.value.publisher_id
 })
 
-async function submitReport() {
-  if (!selectedTask.value || !reportTargetId.value) return
-  try {
-    await createReport({
-      task_id: selectedTask.value.id,
-      reported_user_id: reportTargetId.value,
-      reason: reportForm.value.reason,
-      evidence: reportForm.value.evidence,
-    })
-    reportForm.value.reason = ''
-    reportForm.value.evidence = ''
-    showToast('举报已提交，等待管理员审核', 'success')
-  } catch (error: any) {
-    showToast(extractError(error, '提交失败'), 'error')
-  }
+function openReportModal() {
+  showReportModal.value = true
 }
 
 function logout() {
@@ -747,7 +731,6 @@ onMounted(() => {
     :waiting-for-other-review="waitingForOtherReview"
     :can-review="canReview"
     :can-report="canReport"
-    :report-form="reportForm"
     :status-of="statusOf"
     :gender-label="genderLabel"
     :is-expired="isExpired"
@@ -762,7 +745,16 @@ onMounted(() => {
     @submit-message="submitMessage"
     @update:show-review-form="showReviewForm = $event"
     @submit-review="submitReview"
-    @submit-report="submitReport"
+    @open-report="openReportModal"
+  />
+
+  <HomeReportModal
+    v-model="showReportModal"
+    :task-id="selectedTask?.id ?? null"
+    :reported-user-id="reportTargetId"
+    :reported-user-name="selectedTask ? (me?.id === selectedTask.publisher_id ? selectedTask.assignee_display_name : selectedTask.publisher_display_name) ?? undefined : undefined"
+    @success="showToast('举报已提交，等待管理员审核', 'success')"
+    @error="showToast($event, 'error')"
   />
 
   <HomeWorkerDetailDrawer

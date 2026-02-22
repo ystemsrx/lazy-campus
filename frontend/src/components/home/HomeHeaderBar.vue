@@ -114,10 +114,10 @@ onUnmounted(() => {
           <Transition name="app-dropdown">
             <div v-if="showUserMenu" class="hv-user-dropdown">
               <button class="hv-user-dropdown__item" @click="onOpenMyPanel">
-                <i class="fa-solid fa-list-check"></i> 任务
+                <i class="fa-solid fa-list-check"></i> 我的任务
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenSettings">
-                <i class="fa-solid fa-gear"></i> 设置
+                <i class="fa-solid fa-gear"></i> 个人设置
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenReports">
                 <i class="fa-solid fa-flag"></i> 举报与申诉

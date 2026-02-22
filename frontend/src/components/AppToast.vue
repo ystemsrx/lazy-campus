@@ -40,7 +40,7 @@ defineEmits<{
   position: fixed;
   top: 20px;
   right: 24px;
-  z-index: 200;
+  z-index: 600;
   padding: 12px 22px;
   border-radius: var(--radius-md);
   font-size: var(--text-sm);

@@ -187,6 +187,7 @@ export interface Report {
   reported_user_ban_count: number | null
   reason: string
   evidence: string
+  images: string[]
   status: 'pending' | 'approved' | 'rejected'
   admin_id: number | null
   admin_notes: string | null
