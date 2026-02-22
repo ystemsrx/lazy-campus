@@ -21,11 +21,21 @@ export async function createReport(payload: {
   return data
 }
 
+export async function uploadAppealImage(blob: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('file', blob, 'screenshot.webp')
+  const { data } = await api.post<{ url: string }>('/uploads/appeal-images', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.url
+}
+
 export async function createAppeal(payload: {
   account: string
   password: string
   reason: string
   evidence: string
+  images?: string[]
 }) {
   const { data } = await api.post<Report>('/moderation/appeals', payload)
   return data

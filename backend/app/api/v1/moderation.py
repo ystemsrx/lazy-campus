@@ -144,6 +144,7 @@ def create_appeal(
         reported_user_id=user.id,
         reason=payload.reason,
         evidence=payload.evidence,
+        images=json.dumps(payload.images, ensure_ascii=False) if payload.images else None,
     )
     db.add(report)
     db.commit()
@@ -203,9 +204,14 @@ def get_ban_context(
 
     records.sort(key=lambda x: x.created_at, reverse=True)
 
+    # ban_count is decremented on innocent unbans, so only show
+    # the most recent ban_count records to exclude innocently reversed bans.
+    ban_count = user.ban_count or 0
+    records = records[:ban_count]
+
     return BanContextOut(
         ban_until=user.ban_until,
-        ban_count=user.ban_count or 0,
+        ban_count=ban_count,
         records=records,
     )
 

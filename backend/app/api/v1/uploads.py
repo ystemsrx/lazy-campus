@@ -63,6 +63,33 @@ async def upload_image(
     return {'url': url}
 
 
+@router.post('/appeal-images', response_model=dict)
+async def upload_appeal_image(file: UploadFile) -> dict:
+    """与 upload_image 相同逻辑，但不要求登录（封禁用户提交申诉时使用）。"""
+    content_type = file.content_type or ''
+    if content_type not in ALLOWED_MIME:
+        raise HTTPException(
+            status_code=415,
+            detail=f'不支持的文件类型：{content_type}，仅接受 JPEG / PNG / WebP / GIF',
+        )
+
+    data = await file.read(MAX_FILE_SIZE + 1)
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail='文件过大，单张截图不得超过 8 MB')
+
+    ext = EXT_MAP.get(content_type, '.bin')
+
+    now = datetime.now(timezone.utc)
+    dest_dir = REPORTS_ROOT / str(now.year) / f'{now.month:02d}'
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f'{uuid.uuid4().hex}{ext}'
+    (dest_dir / filename).write_bytes(data)
+
+    url = f'{settings.backend_public_url}{settings.api_v1_prefix}/uploads/reports/{filename}'
+    return {'url': url}
+
+
 @router.get('/reports/{filename}')
 async def serve_report_image(filename: str) -> FileResponse:
     """

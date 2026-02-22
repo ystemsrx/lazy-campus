@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-import { createAppeal, fetchBanContext } from '../../api/moderation'
+import AppToast from '../AppToast.vue'
+import { createAppeal, fetchBanContext, uploadAppealImage } from '../../api/moderation'
+import { useAppToast } from '../../composables/useAppToast'
 import type { BanRecord } from '../../types/api'
 import { extractError } from '../../utils/error'
 import { formatBanUntil, formatShort } from '../../utils/time'
@@ -17,17 +19,83 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
+const REASON_MAX = 20
+const EVIDENCE_MAX = 200
+const MAX_IMAGES = 3
+
+type UploadedImage = {
+  id: string
+  previewUrl: string
+  blob: Blob
+}
+
 const banUntil = ref<string | null>(null)
 const banCount = ref(0)
 const banRecords = ref<BanRecord[]>([])
 const banContextLoading = ref(false)
 const appealReason = ref('')
 const appealEvidence = ref('')
+const appealImages = ref<UploadedImage[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const lightboxSrc = ref<string | null>(null)
 const appealLoading = ref(false)
-const appealMsg = ref<{ text: string; type: 'success' | 'error' } | null>(null)
+const { toast, showToast, clearToast } = useAppToast(3500)
 
 function closeModal() {
   emit('update:modelValue', false)
+}
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+async function compressToWebPBlob(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob)
+          else reject(new Error('WebP 转换失败'))
+        },
+        'image/webp',
+        0.8,
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('图片加载失败'))
+    }
+    img.src = objectUrl
+  })
+}
+
+async function handleFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  const files = Array.from(input.files)
+  input.value = ''
+  const remaining = MAX_IMAGES - appealImages.value.length
+  for (const file of files.slice(0, remaining)) {
+    try {
+      const blob = await compressToWebPBlob(file)
+      const previewUrl = URL.createObjectURL(blob)
+      appealImages.value.push({ id: Math.random().toString(36).slice(2), previewUrl, blob })
+    } catch { /* 单张失败不影响其他 */ }
+  }
+}
+
+function removeImage(id: string) {
+  const img = appealImages.value.find((i) => i.id === id)
+  if (img) URL.revokeObjectURL(img.previewUrl)
+  appealImages.value = appealImages.value.filter((i) => i.id !== id)
 }
 
 async function loadBanContext() {
@@ -49,24 +117,30 @@ async function loadBanContext() {
 
 async function submitAppeal() {
   if (!appealReason.value.trim() || !appealEvidence.value.trim()) {
-    appealMsg.value = { text: '请填写申诉理由和证据', type: 'error' }
+    showToast('请填写申诉理由和证据', 'error')
     return
   }
 
   appealLoading.value = true
-  appealMsg.value = null
+  clearToast()
   try {
+    const imageUrls = await Promise.all(
+      appealImages.value.map((img) => uploadAppealImage(img.blob)),
+    )
     await createAppeal({
       account: props.account,
       password: props.password,
       reason: appealReason.value,
       evidence: appealEvidence.value,
+      images: imageUrls,
     })
-    appealMsg.value = { text: '申诉已提交，请等待管理员审核', type: 'success' }
+    showToast('申诉已提交，请等待管理员审核', 'success')
     appealReason.value = ''
     appealEvidence.value = ''
+    appealImages.value.forEach((img) => URL.revokeObjectURL(img.previewUrl))
+    appealImages.value = []
   } catch (error: any) {
-    appealMsg.value = { text: extractError(error, '提交失败'), type: 'error' }
+    showToast(extractError(error, '提交失败'), 'error')
   } finally {
     appealLoading.value = false
   }
@@ -75,7 +149,12 @@ async function submitAppeal() {
 watch(
   () => props.modelValue,
   (visible) => {
-    if (!visible) return
+    if (!visible) {
+      appealImages.value.forEach((img) => URL.revokeObjectURL(img.previewUrl))
+      appealImages.value = []
+      lightboxSrc.value = null
+      return
+    }
     banUntil.value = props.initialBanUntil
     loadBanContext()
   }
@@ -96,21 +175,24 @@ watch(
   <Transition name="av-overlay">
     <div v-if="modelValue" class="av-appeal-overlay" @mousedown.self="closeModal">
       <div class="av-appeal-card">
+        <div class="av-appeal-header">
+          <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> 账号已被封禁</h3>
+          <button class="av-appeal-close" @click="closeModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         <div class="av-appeal-card__inner">
-          <div class="av-appeal-header">
-            <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> 账号已被封禁</h3>
-            <button class="av-appeal-close" @click="closeModal"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-
           <div class="av-appeal-meta">
             <div class="av-appeal-meta__item">
-              <i class="fa-solid fa-clock"></i>
-              <span class="av-appeal-meta__label">解封时间</span>
+              <div class="av-appeal-meta__top">
+                <i class="fa-solid fa-clock"></i>
+                <span class="av-appeal-meta__label">解封时间</span>
+              </div>
               <span class="av-appeal-meta__value">{{ banUntil ? formatBanUntil(banUntil) : '永久封禁' }}</span>
             </div>
             <div class="av-appeal-meta__item">
-              <i class="fa-solid fa-ban"></i>
-              <span class="av-appeal-meta__label">累计封禁</span>
+              <div class="av-appeal-meta__top">
+                <i class="fa-solid fa-ban"></i>
+                <span class="av-appeal-meta__label">累计封禁</span>
+              </div>
               <span class="av-appeal-meta__value">{{ banCount }} 次</span>
             </div>
           </div>
@@ -156,53 +238,62 @@ watch(
             <i class="fa-solid fa-paper-plane"></i> 提交申诉
           </div>
           <div class="av-appeal-form-group">
-            <label class="av-appeal-label">申诉理由</label>
-            <input v-model="appealReason" class="av-appeal-input" placeholder="请描述你认为封禁不合理的原因（至少5字）" />
+            <div class="av-appeal-label-row">
+              <label class="av-appeal-label">申诉理由 <span class="av-required">*</span></label>
+              <span class="av-charcount" :class="{ 'av-charcount--limit': appealReason.length >= REASON_MAX }">{{ appealReason.length }}/{{ REASON_MAX }}</span>
+            </div>
+            <input v-model="appealReason" class="av-appeal-input" :maxlength="REASON_MAX" placeholder="请描述你认为封禁不合理的原因" />
           </div>
           <div class="av-appeal-form-group">
-            <label class="av-appeal-label">证据说明</label>
-            <textarea v-model="appealEvidence" class="av-appeal-input" style="min-height: 80px; resize: vertical;" placeholder="提供相关证据（链接、截图描述等，至少5字）"></textarea>
+            <div class="av-appeal-label-row">
+              <label class="av-appeal-label">证据说明 <span class="av-required">*</span></label>
+              <span class="av-charcount" :class="{ 'av-charcount--limit': appealEvidence.length >= EVIDENCE_MAX }">{{ appealEvidence.length }}/{{ EVIDENCE_MAX }}</span>
+            </div>
+            <textarea v-model="appealEvidence" class="av-appeal-input" style="min-height: 80px; resize: vertical;" :maxlength="EVIDENCE_MAX" placeholder="提供相关证据（链接、截图描述等）"></textarea>
           </div>
+          <div class="av-appeal-form-group">
+            <div class="av-appeal-label-row">
+              <label class="av-appeal-label">上传截图</label>
+              <span class="av-charcount">最多 {{ MAX_IMAGES }} 张</span>
+            </div>
+            <div class="av-img-grid">
+              <div v-for="img in appealImages" :key="img.id" class="av-img-cell">
+                <img :src="img.previewUrl" class="av-img-thumb" alt="截图" @click="lightboxSrc = img.previewUrl" />
+                <button type="button" class="av-img-remove" @click.stop="removeImage(img.id)">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <button v-if="appealImages.length < MAX_IMAGES" type="button" class="av-img-add" @click="triggerFileInput">
+                <i class="fa-solid fa-cloud-arrow-up av-img-add__icon"></i>
+                <span>上传图片</span>
+              </button>
+            </div>
+            <input ref="fileInputRef" type="file" accept="image/*" multiple class="av-file-input" @change="handleFileChange" />
+          </div>
+
           <button class="av-appeal-btn" style="margin-top: 12px;" :disabled="appealLoading" @click="submitAppeal">
             {{ appealLoading ? '提交中...' : '提交申诉' }}
           </button>
 
-          <Transition name="av-msg">
-            <p v-if="appealMsg" class="av-msg" :class="appealMsg.type === 'success' ? 'av-msg--success' : 'av-msg--error'" style="margin-top: 12px;">
-              {{ appealMsg.text }}
-            </p>
-          </Transition>
         </div>
       </div>
+    </div>
+  </Transition>
+
+  <div class="av-toast-layer">
+    <AppToast :toast="toast" @dismiss="clearToast" />
+  </div>
+
+  <Transition name="av-overlay">
+    <div v-if="lightboxSrc" class="av-lightbox" @click="lightboxSrc = null">
+      <img :src="lightboxSrc" class="av-lightbox__img" alt="截图预览" />
     </div>
   </Transition>
 </template>
 
 <style scoped>
-.av-msg {
-  margin-top: 12px;
-  padding: 10px 16px;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.av-msg--error {
-  background: rgba(239, 68, 68, 0.12);
-  color: #dc2626;
-}
-.av-msg--success {
-  background: rgba(16, 185, 129, 0.12);
-  color: #059669;
-}
-
-.av-msg-enter-active,
-.av-msg-leave-active {
-  transition: all 0.3s ease;
-}
-.av-msg-enter-from,
-.av-msg-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+.av-toast-layer :deep(.app-toast--fixed) {
+  z-index: 1200;
 }
 
 .av-overlay-enter-active,
@@ -236,12 +327,15 @@ watch(
   border-radius: 32px;
   box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.1);
   max-height: 90vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 .av-appeal-card__inner {
-  padding: 32px 36px;
-  max-height: 90vh;
+  padding: 0 36px 32px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 .av-appeal-card__inner::-webkit-scrollbar {
   width: 6px;
@@ -261,7 +355,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  padding: 24px 36px 16px;
+  flex-shrink: 0;
 }
 .av-appeal-header h3 {
   display: flex;
@@ -289,29 +384,42 @@ watch(
   display: flex;
   gap: 12px;
   margin-bottom: 24px;
+  padding-top: 8px;
 }
 .av-appeal-meta__item {
   flex: 1;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   background: rgba(254, 242, 242, 0.6);
   border: 1px solid rgba(254, 226, 226, 0.5);
   border-radius: 16px;
   padding: 12px 16px;
   font-size: 13px;
 }
+.av-appeal-meta__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .av-appeal-meta__item i {
   color: #ef4444;
-  font-size: 14px;
+  font-size: 13px;
 }
 .av-appeal-meta__label {
   color: #6b7280;
   white-space: nowrap;
+  font-size: 12px;
 }
 .av-appeal-meta__value {
+  display: block;
+  width: 100%;
   font-weight: 600;
   color: #111827;
+  font-size: 14px;
+  word-break: break-all;
+  text-align: center;
 }
 
 .av-appeal-section-title {
@@ -439,11 +547,30 @@ watch(
   gap: 6px;
   margin-bottom: 12px;
 }
+.av-appeal-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 4px;
+}
 .av-appeal-label {
   font-size: 13px;
   font-weight: 500;
   color: #374151;
-  margin-left: 4px;
+}
+.av-required {
+  color: #ef4444;
+  font-weight: 600;
+}
+.av-charcount {
+  font-size: 11px;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s;
+}
+.av-charcount--limit {
+  color: #ef4444;
+  font-weight: 600;
 }
 .av-appeal-input {
   width: 100%;
@@ -494,6 +621,143 @@ watch(
 .av-appeal-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.av-img-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.av-img-cell {
+  position: relative;
+  aspect-ratio: 1;
+}
+.av-img-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  display: block;
+  cursor: zoom-in;
+}
+.av-img-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+.av-img-add {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 2px dashed rgba(0, 0, 0, 0.15);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 11px;
+  transition: border-color 0.2s;
+}
+.av-img-add:hover {
+  border-color: rgba(0, 0, 0, 0.3);
+}
+.av-img-add__icon {
+  font-size: 20px;
+}
+.av-file-input {
+  display: none;
+}
+.av-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.av-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+@media (max-width: 400px) {
+  .av-appeal-overlay {
+    padding: 12px;
+  }
+  .av-appeal-card {
+    border-radius: 24px;
+  }
+  .av-appeal-header {
+    padding: 18px 18px 12px;
+  }
+  .av-appeal-card__inner {
+    padding: 0 18px 20px;
+  }
+  .av-appeal-header h3 {
+    font-size: 15px;
+  }
+  .av-appeal-meta {
+    gap: 8px;
+  }
+  .av-appeal-meta__item {
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .av-appeal-meta__value {
+    font-size: 13px;
+  }
+  .av-appeal-table {
+    font-size: 11px;
+  }
+  .av-appeal-table th {
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+  .av-appeal-table td {
+    padding: 8px 10px;
+  }
+  .av-badge {
+    padding: 3px 7px;
+    font-size: 10px;
+  }
+  .av-appeal-time {
+    font-size: 10px;
+  }
+  .av-appeal-section-title {
+    font-size: 13px;
+  }
+  .av-appeal-input {
+    font-size: 12px;
+    padding: 10px 14px;
+  }
+  .av-appeal-btn {
+    font-size: 13px;
+    height: 40px;
+  }
 }
 
 @keyframes av-spin {

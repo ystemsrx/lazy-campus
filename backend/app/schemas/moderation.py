@@ -64,8 +64,9 @@ class ReportOut(BaseModel):
 class AppealCreate(BaseModel):
     account: str
     password: str
-    reason: str = Field(min_length=5)
-    evidence: str = Field(min_length=5)
+    reason: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    images: list[str] = Field(default_factory=list)
 
 
 class TaskSnapshotMessage(BaseModel):
