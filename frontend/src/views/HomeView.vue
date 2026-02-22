@@ -53,6 +53,21 @@ const activeTab = ref<'hall' | 'workers'>(
   route.query.tab === 'workers' ? 'workers' : 'hall'
 )
 
+function syncTabQuery(tab: 'hall' | 'workers') {
+  const nextQuery = { ...route.query }
+  if (tab === 'workers') {
+    nextQuery.tab = 'workers'
+  } else {
+    delete nextQuery.tab
+  }
+
+  const currentTabQuery = route.query.tab === 'workers' ? 'workers' : undefined
+  const nextTabQuery = tab === 'workers' ? 'workers' : undefined
+  if (currentTabQuery === nextTabQuery) return
+
+  router.replace({ query: nextQuery })
+}
+
 const showPostModal = ref(false)
 const showEditModal = ref(false)
 const editingTask = ref<Task | null>(null)
@@ -330,7 +345,9 @@ async function bootstrap() {
     const id = Number(taskId)
     const task = [...allTasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
     if (task) openDrawer(task)
-    router.replace({ query: {} })
+    const nextQuery = { ...route.query }
+    delete nextQuery.task
+    router.replace({ query: nextQuery })
   }
 }
 
@@ -692,7 +709,20 @@ watch(() => route.query.task, (newVal) => {
   const id = Number(newVal)
   const task = [...allTasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
   if (task) openDrawer(task)
-  router.replace({ query: {} })
+  const nextQuery = { ...route.query }
+  delete nextQuery.task
+  router.replace({ query: nextQuery })
+})
+
+watch(() => route.query.tab, (newVal) => {
+  const nextTab: 'hall' | 'workers' = newVal === 'workers' ? 'workers' : 'hall'
+  if (activeTab.value !== nextTab) {
+    activeTab.value = nextTab
+  }
+})
+
+watch(activeTab, (tab) => {
+  syncTabQuery(tab)
 })
 
 onMounted(() => {
