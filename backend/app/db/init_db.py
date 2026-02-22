@@ -35,6 +35,8 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN phone VARCHAR(32) DEFAULT NULL'))
             if 'wechat' not in worker_cols:
                 conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN wechat VARCHAR(64) DEFAULT NULL'))
+            if 'show_contact' not in worker_cols:
+                conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN show_contact BOOLEAN DEFAULT 1'))
 
 
 def init_db() -> None:

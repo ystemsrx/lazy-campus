@@ -76,6 +76,7 @@ def _to_worker_profile_out(profile: WorkerProfile, user: User, completed_count: 
         bio=profile.bio,
         phone=profile.phone,
         wechat=profile.wechat,
+        show_contact=profile.show_contact if profile.show_contact is not None else True,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
         gender=user.gender,
@@ -297,6 +298,7 @@ def upsert_worker_profile(
     profile.bio = payload.bio
     profile.phone = payload.phone.strip() if payload.phone else None
     profile.wechat = payload.wechat.strip() if payload.wechat else None
+    profile.show_contact = payload.show_contact
 
     db.add(profile)
     db.flush()
@@ -365,19 +367,20 @@ def view_worker_contact(
         raise HTTPException(status_code=400, detail='不能查看自己的联系方式')
 
     profile, _ = row
+    show = profile.show_contact if profile.show_contact is not None else True
     record = WorkerContactView(
         worker_user_id=user_id,
         viewer_user_id=viewer.id,
-        phone_snapshot=profile.phone,
-        wechat_snapshot=profile.wechat,
+        phone_snapshot=profile.phone if show else None,
+        wechat_snapshot=profile.wechat if show else None,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
 
     return WorkerContactRevealOut(
-        phone=profile.phone,
-        wechat=profile.wechat,
+        phone=profile.phone if show else None,
+        wechat=profile.wechat if show else None,
         viewed_at=record.created_at,
     )
 

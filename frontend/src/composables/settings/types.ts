@@ -13,6 +13,7 @@ export interface WorkerForm {
   bio: string
   phone: string
   wechat: string
+  show_contact: boolean
 }
 
 export function createProfileForm(): ProfileForm {
@@ -30,5 +31,6 @@ export function createWorkerForm(): WorkerForm {
     bio: '',
     phone: '',
     wechat: '',
+    show_contact: true,
   }
 }

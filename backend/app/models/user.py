@@ -61,6 +61,7 @@ class WorkerProfile(Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     wechat: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    show_contact: Mapped[bool] = mapped_column(Boolean, default=True)
 
     user = relationship('User', back_populates='worker_profile', primaryjoin='WorkerProfile.user_id == User.id')
     skill_tags = relationship('TaskCategory', secondary=worker_skill_tags, lazy='selectin')

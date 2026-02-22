@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 export interface DropdownOption {
   value: string | number | null
   label: string
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -41,6 +42,7 @@ function toggle() {
 }
 
 function select(opt: DropdownOption) {
+  if (opt.disabled) return
   emit('update:modelValue', opt.value)
   isOpen.value = false
 }
@@ -82,7 +84,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
           :key="String(opt.value)"
           type="button"
           class="app-dropdown__item"
-          :class="{ 'app-dropdown__item--active': opt.value === modelValue }"
+          :class="{ 'app-dropdown__item--active': opt.value === modelValue, 'app-dropdown__item--disabled': opt.disabled }"
+          :disabled="opt.disabled"
           @click="select(opt)"
         >
           <span>{{ opt.label }}</span>
@@ -222,6 +225,18 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   background: var(--c-accent-light);
   color: var(--c-accent);
   font-weight: 500;
+}
+
+.app-dropdown__item--disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .app-dropdown__item--disabled:hover {
+    background: transparent;
+    color: #94a3b8;
+  }
 }
 
 .app-dropdown__check {

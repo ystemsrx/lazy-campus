@@ -56,6 +56,7 @@ class WorkerProfileUpsert(BaseModel):
     bio: str | None = None
     phone: str | None = Field(default=None, max_length=32)
     wechat: str | None = Field(default=None, max_length=64)
+    show_contact: bool = True
 
 
 class WorkerProfileOut(BaseModel):
@@ -69,6 +70,7 @@ class WorkerProfileOut(BaseModel):
     bio: str | None
     phone: str | None
     wechat: str | None
+    show_contact: bool
     display_name: str
     avatar_url: str | None
     gender: Gender | None

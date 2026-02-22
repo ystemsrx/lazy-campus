@@ -10,6 +10,7 @@ import { useSettingsView } from '../composables/settings/useSettingsView'
 const {
   appTitle,
   toast,
+  showToast,
   clearToast,
   me,
   isAuthenticated,
@@ -115,6 +116,7 @@ const {
                   :worker-form="workerForm"
                   :categories="categories"
                   @toggle-skill-tag="toggleSkillTag"
+                  @enable-error="(msg) => showToast(msg, 'warning')"
                 />
               </div>
 

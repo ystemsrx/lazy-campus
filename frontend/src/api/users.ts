@@ -14,6 +14,7 @@ export async function updateWorkerProfile(payload: {
   bio: string | null
   phone: string | null
   wechat: string | null
+  show_contact: boolean
 }) {
   const { data } = await api.put<WorkerProfile>('/users/me/worker-profile', payload)
   return data

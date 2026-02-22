@@ -58,6 +58,7 @@ export interface WorkerProfile {
   bio: string | null
   phone: string | null
   wechat: string | null
+  show_contact: boolean
   display_name: string
   avatar_url: string | null
   gender: Gender | null

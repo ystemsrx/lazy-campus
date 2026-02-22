@@ -38,7 +38,7 @@ defineEmits<{
 /* ── Fixed mode ── */
 .app-toast--fixed {
   position: fixed;
-  top: 20px;
+  top: 68px;
   right: 24px;
   z-index: 600;
   padding: 12px 22px;

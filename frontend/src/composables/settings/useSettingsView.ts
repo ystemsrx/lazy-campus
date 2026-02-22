@@ -63,6 +63,7 @@ export function useSettingsView() {
       bio: workerForm.value.bio || null,
       phone: workerForm.value.phone || null,
       wechat: workerForm.value.wechat || null,
+      show_contact: workerForm.value.show_contact,
     })
   }
 
@@ -148,6 +149,7 @@ export function useSettingsView() {
         bio: workerProfile.bio || '',
         phone: workerProfile.phone || '',
         wechat: workerProfile.wechat || '',
+        show_contact: workerProfile.show_contact ?? true,
       }
     } catch (error) {
       showToast(extractError(error, '加载失败'), 'error')
@@ -169,6 +171,7 @@ export function useSettingsView() {
   return {
     appTitle,
     toast,
+    showToast,
     clearToast,
     me,
     isAuthenticated,

@@ -26,10 +26,14 @@ const emit = defineEmits<{
 
 const worker = computed(() => props.worker);
 const selectedContactAction = ref<string | number | null>(null);
-const contactOptions = [
-  { value: "view_contact", label: "查看联系方式" },
-  { value: "internal_contact", label: "站内联系" },
-];
+const contactOptions = computed(() => {
+  const w = worker.value;
+  const canViewContact = !!w && w.show_contact && !!(w.phone || w.wechat);
+  return [
+    { value: "view_contact", label: "查看联系方式", disabled: !canViewContact },
+    { value: "internal_contact", label: "站内联系" },
+  ];
+});
 
 const bottomSheetRef = ref<HTMLElement | null>(null);
 let sheetDragStartY = 0;

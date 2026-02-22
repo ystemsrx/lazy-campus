@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import type { Category } from '../../types/api'
 import type { WorkerForm } from '../../composables/settings/types'
 
@@ -10,7 +11,27 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'toggle-skill-tag', id: number): void
+  (e: 'enable-error', msg: string): void
 }>()
+
+function handleToggleEnabled() {
+  if (!props.workerForm.enabled) {
+    if (props.workerForm.skill_tag_ids.length === 0 || !props.workerForm.bio.trim()) {
+      emit('enable-error', '请完善信息后再开启接单')
+      return
+    }
+  }
+  props.workerForm.enabled = !props.workerForm.enabled
+}
+
+watch(
+  () => [props.workerForm.skill_tag_ids.length, props.workerForm.bio] as const,
+  ([tagCount, bio]) => {
+    if (props.workerForm.enabled && (tagCount === 0 || !bio.trim())) {
+      props.workerForm.enabled = false
+    }
+  },
+)
 </script>
 
 <template>
@@ -27,7 +48,7 @@ const emit = defineEmits<{
           type="button"
           class="sv-toggle"
           :class="{ 'sv-toggle--on': props.workerForm.enabled }"
-          @click="props.workerForm.enabled = !props.workerForm.enabled"
+          @click="handleToggleEnabled"
         >
           <span class="sv-toggle-thumb" :class="{ 'sv-toggle-thumb--on': props.workerForm.enabled }" />
         </button>
@@ -74,15 +95,36 @@ const emit = defineEmits<{
         />
       </div>
 
-      <div class="sv-grid-2">
-        <div class="sv-field">
-          <label class="sv-label">手机号码</label>
-          <input v-model.trim="props.workerForm.phone" class="sv-input" type="tel" placeholder="请输入联系电话" />
+      <div class="sv-field">
+        <div class="sv-contact-header">
+          <span class="sv-label">联系方式</span>
+          <label class="sv-contact-toggle-wrap">
+            <button
+              type="button"
+              class="sv-toggle sv-toggle--sm"
+              :class="{ 'sv-toggle--on': props.workerForm.show_contact }"
+              @click="props.workerForm.show_contact = !props.workerForm.show_contact"
+            >
+              <span class="sv-toggle-thumb sv-toggle-thumb--sm" :class="{ 'sv-toggle-thumb--on': props.workerForm.show_contact }" />
+            </button>
+            <span class="sv-contact-toggle-label" :class="{ 'sv-contact-toggle-label--active': props.workerForm.show_contact }">
+              {{ props.workerForm.show_contact ? '对外展示' : '不对外展示' }}
+            </span>
+          </label>
         </div>
-        <div class="sv-field">
-          <label class="sv-label">微信号</label>
-          <input v-model.trim="props.workerForm.wechat" class="sv-input" type="text" placeholder="请输入微信号" />
+        <div class="sv-grid-2">
+          <div class="sv-field sv-field--no-gap">
+            <label class="sv-label">手机号码</label>
+            <input v-model.trim="props.workerForm.phone" class="sv-input" type="tel" placeholder="请输入联系电话" />
+          </div>
+          <div class="sv-field sv-field--no-gap">
+            <label class="sv-label">微信号</label>
+            <input v-model.trim="props.workerForm.wechat" class="sv-input" type="text" placeholder="请输入微信号" />
+          </div>
         </div>
+        <p class="sv-hint sv-hint--warn" style="margin-top:6px">
+          {{ props.workerForm.show_contact ? '用户可以在请求后查看你的联系方式' : '用户仅能通过站内信息与您联系' }}
+        </p>
       </div>
     </div>
   </div>
