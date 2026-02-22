@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
 from app.models.notification import Notification
-from app.models.task import Task, TaskAttachment, TaskCategory, TaskMessage, TaskReview
+from app.models.task import Task, TaskAbandonLog, TaskAttachment, TaskCategory, TaskMessage, TaskReview
 from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.task import (
     TaskAttachmentCreate,
@@ -421,6 +421,20 @@ def update_task(
     return _task_to_out(task, user, None, viewer_id=user.id)
 
 
+_ABANDON_WINDOW_H = 24
+_ABANDON_LIMIT = 3
+
+
+def _abandon_count_in_window(db: Session, user_id: int) -> int:
+    window_start = datetime.utcnow() - timedelta(hours=_ABANDON_WINDOW_H)
+    return (
+        db.query(func.count(TaskAbandonLog.id))
+        .filter(TaskAbandonLog.user_id == user_id, TaskAbandonLog.abandoned_at >= window_start)
+        .scalar()
+        or 0
+    )
+
+
 @router.post('/{task_id}/accept', response_model=TaskOut)
 def accept_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
     task = db.get(Task, task_id)
@@ -434,6 +448,8 @@ def accept_task(task_id: int, user: User = Depends(require_completed_user), db: 
         raise HTTPException(status_code=403, detail='Blocked relation detected')
     if task.required_gender and user.gender != task.required_gender:
         raise HTTPException(status_code=400, detail='您的性别不满足该任务要求')
+    if _abandon_count_in_window(db, user.id) >= _ABANDON_LIMIT:
+        raise HTTPException(status_code=429, detail='您在24小时内取消接取次数已达上限，暂时无法接取新任务')
 
     task.assignee_id = user.id
     task.status = TaskStatus.IN_PROGRESS
@@ -461,7 +477,7 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
         raise HTTPException(status_code=404, detail='Task not found')
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='Only publisher can confirm completion')
-    if task.status != TaskStatus.IN_PROGRESS:
+    if task.status not in (TaskStatus.IN_PROGRESS, TaskStatus.UNDER_REVIEW):
         raise HTTPException(status_code=400, detail='Task not in progress')
 
     task.status = TaskStatus.COMPLETED
@@ -480,6 +496,39 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
 
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
     return _task_to_out(task, user, assignee, viewer_id=user.id)
+
+
+@router.post('/{task_id}/abandon', response_model=TaskOut)
+def abandon_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
+    """接单者放弃接取任务：任务回到 OPEN 状态，保留聊天记录，通知发布者，记录放弃日志"""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    if task.assignee_id != user.id:
+        raise HTTPException(status_code=403, detail='只有接单者才能放弃接取')
+    if task.status not in (TaskStatus.IN_PROGRESS, TaskStatus.UNDER_REVIEW):
+        raise HTTPException(status_code=400, detail='任务不在进行中状态')
+
+    db.add(TaskAbandonLog(user_id=user.id, task_id=task.id))
+
+    task.assignee_id = None
+    task.status = TaskStatus.OPEN
+    db.add(task)
+
+    db.add(Notification(
+        user_id=task.publisher_id,
+        type='task_abandoned',
+        title='接单者放弃了任务',
+        description=f'{display_name(user)} 放弃了你的任务「{task.title}」的接取，任务已重新开放',
+        related_task_id=task.id,
+        related_user_id=user.id,
+        dismiss_type='read',
+    ))
+    db.commit()
+    db.refresh(task)
+
+    publisher = db.get(User, task.publisher_id)
+    return _task_to_out(task, publisher, None, viewer_id=user.id)
 
 
 @router.post('/{task_id}/cancel', response_model=TaskOut)
@@ -529,16 +578,57 @@ def list_messages(task_id: int, user: User = Depends(require_completed_user), db
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can read messages')
 
-    rows = db.query(TaskMessage).filter(TaskMessage.task_id == task_id).order_by(asc(TaskMessage.created_at)).limit(500).all()
+    # 会话隔离：
+    # - 发布者：只看当前接单会话的消息（session_assignee_id == 当前 assignee）
+    # - 接单者：只看自己参与的会话（session_assignee_id == 自己的 id），包含历史会话
+    # - 兼容旧数据（session_assignee_id 为 NULL）：视为属于当前会话
+    if user.id == task.publisher_id:
+        if task.assignee_id:
+            rows = (
+                db.query(TaskMessage)
+                .filter(
+                    TaskMessage.task_id == task_id,
+                    or_(
+                        TaskMessage.session_assignee_id == task.assignee_id,
+                        TaskMessage.session_assignee_id.is_(None),
+                    ),
+                )
+                .order_by(asc(TaskMessage.created_at))
+                .limit(500)
+                .all()
+            )
+        else:
+            rows = (
+                db.query(TaskMessage)
+                .filter(TaskMessage.task_id == task_id, TaskMessage.session_assignee_id.is_(None))
+                .order_by(asc(TaskMessage.created_at))
+                .limit(500)
+                .all()
+            )
+    else:
+        rows = (
+            db.query(TaskMessage)
+            .filter(
+                TaskMessage.task_id == task_id,
+                or_(
+                    TaskMessage.session_assignee_id == user.id,
+                    TaskMessage.session_assignee_id.is_(None),
+                ),
+            )
+            .order_by(asc(TaskMessage.created_at))
+            .limit(500)
+            .all()
+        )
+
     sender_ids = {row.sender_id for row in rows}
-    users = {u.id: u for u in db.query(User).filter(User.id.in_(sender_ids)).all()} if sender_ids else {}
+    users_map = {u.id: u for u in db.query(User).filter(User.id.in_(sender_ids)).all()} if sender_ids else {}
 
     return [
         TaskMessageOut(
             id=row.id,
             task_id=row.task_id,
             sender_id=row.sender_id,
-            sender_display_name=display_name(users.get(row.sender_id)) if users.get(row.sender_id) else '未知用户',
+            sender_display_name=display_name(users_map.get(row.sender_id)) if users_map.get(row.sender_id) else '未知用户',
             content=row.content,
             created_at=row.created_at,
         )
@@ -572,7 +662,7 @@ def send_message(
     if last_message and datetime.utcnow() - last_message.created_at < timedelta(seconds=3):
         raise HTTPException(status_code=429, detail='Message sending too frequently')
 
-    message = TaskMessage(task_id=task_id, sender_id=user.id, content=payload.content)
+    message = TaskMessage(task_id=task_id, sender_id=user.id, content=payload.content, session_assignee_id=task.assignee_id)
     db.add(message)
 
     if other_id:

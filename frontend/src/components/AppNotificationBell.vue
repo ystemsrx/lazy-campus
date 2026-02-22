@@ -6,6 +6,7 @@ import {
   Bell,
   Check,
   CheckCircle,
+  LogOut,
   MessageCircle,
   ShieldCheck,
   UserCheck,
@@ -87,6 +88,7 @@ const iconMap: Record<NotificationType, any> = {
   task_accepted: UserCheck,
   report_reviewed: ShieldCheck,
   task_completed: CheckCircle,
+  task_abandoned: LogOut,
 }
 
 function getIcon(type: string) {
@@ -411,6 +413,11 @@ onUnmounted(() => {
 .notif-icon--task_completed {
   background: #ecfdf5;
   color: #10b981;
+}
+
+.notif-icon--task_abandoned {
+  background: #fff7ed;
+  color: #f97316;
 }
 
 .notif-item__body {

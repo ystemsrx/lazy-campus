@@ -6,6 +6,7 @@ import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, localToUTC, nowLocal, utcToLocal } from '../utils/time'
 
 import {
+  abandonTask,
   acceptTask,
   confirmTask,
   createReview,
@@ -158,6 +159,11 @@ const genderMismatch = computed(() => {
 const canConfirm = computed(() => {
   if (!selectedTask.value || !me.value) return false
   return selectedTask.value.status === 'in_progress' && selectedTask.value.publisher_id === me.value.id
+})
+
+const canAbandon = computed(() => {
+  if (!selectedTask.value || !me.value) return false
+  return selectedTask.value.status === 'in_progress' && selectedTask.value.assignee_id === me.value.id
 })
 
 const myReviewTargetRole = computed<'worker' | 'publisher' | null>(() => {
@@ -499,6 +505,25 @@ async function handleConfirmTask() {
   }
 }
 
+async function handleAbandonTask() {
+  if (!selectedTask.value) return
+  const yes = await appConfirm({
+    title: '确认放弃接取',
+    message: '放弃后任务将重新开放，24小时内累计放弃3次将无法继续接取任务。是否确认放弃？',
+    confirmText: '放弃接取',
+    type: 'danger',
+  })
+  if (!yes) return
+  try {
+    selectedTask.value = await abandonTask(selectedTask.value.id)
+    showToast('已放弃接取该委托', 'success')
+    await Promise.all([loadTasks(), loadMyTasks(), loadCategories(), refreshTaskMeta()])
+    notifStore.pollCount()
+  } catch (error: any) {
+    showToast(extractError(error, '放弃失败'), 'error')
+  }
+}
+
 async function submitMessage() {
   if (!selectedTask.value || !chatContent.value.trim()) return
   try {
@@ -734,6 +759,7 @@ onMounted(() => {
     :can-accept="canAccept"
     :gender-mismatch="genderMismatch"
     :can-confirm="canConfirm"
+    :can-abandon="canAbandon"
     :can-edit-task="canEditTask"
     :can-delete-task="canDeleteTask"
     :delete-blocked-by-assignee="deleteBlockedByAssignee"
@@ -757,6 +783,7 @@ onMounted(() => {
     @login="router.push('/login')"
     @accept-task="handleAcceptTask"
     @confirm-task="handleConfirmTask"
+    @abandon-task="handleAbandonTask"
     @edit-task="openEditModal"
     @delete-task="handleDeleteTask"
     @update:chat-content="chatContent = $event"

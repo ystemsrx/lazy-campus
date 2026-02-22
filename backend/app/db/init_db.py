@@ -38,6 +38,25 @@ def run_startup_migrations() -> None:
             if 'show_contact' not in worker_cols:
                 conn.execute(text('ALTER TABLE worker_profiles ADD COLUMN show_contact BOOLEAN DEFAULT 1'))
 
+        if 'task_messages' in tables:
+            msg_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(task_messages)"))}
+            if 'session_assignee_id' not in msg_cols:
+                conn.execute(text('ALTER TABLE task_messages ADD COLUMN session_assignee_id INTEGER DEFAULT NULL'))
+                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_messages_session_assignee_id ON task_messages (session_assignee_id)'))
+
+        if 'task_abandon_logs' not in tables:
+            conn.execute(text('''
+                CREATE TABLE task_abandon_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    task_id INTEGER NOT NULL,
+                    abandoned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_abandon_logs_user_id ON task_abandon_logs (user_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_abandon_logs_task_id ON task_abandon_logs (task_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_abandon_logs_abandoned_at ON task_abandon_logs (abandoned_at)'))
+
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)

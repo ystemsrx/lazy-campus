@@ -98,9 +98,6 @@ def create_report(
     if existing:
         raise HTTPException(status_code=400, detail='该任务已有待处理的举报，请等待管理员审核')
 
-    task.status = TaskStatus.UNDER_REVIEW
-    db.add(task)
-
     report = Report(
         type=ReportType.REPORT,
         task_id=payload.task_id,

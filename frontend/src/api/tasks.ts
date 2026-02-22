@@ -37,6 +37,11 @@ export async function confirmTask(taskId: number) {
   return data
 }
 
+export async function abandonTask(taskId: number) {
+  const { data } = await api.post<Task>(`/tasks/${taskId}/abandon`)
+  return data
+}
+
 export async function fetchPublishedTasks() {
   const { data } = await api.get<Task[]>('/tasks/me/published')
   return data

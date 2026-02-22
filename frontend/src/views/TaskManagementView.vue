@@ -52,6 +52,7 @@ const {
   canAccept,
   genderMismatch,
   canConfirm,
+  canAbandon,
   canEditTask,
   canDeleteTask,
   deleteBlockedByAssignee,
@@ -70,6 +71,7 @@ const {
   handleHeaderTabChange,
   handleAcceptTask,
   handleConfirmTask,
+  handleAbandonTask,
   submitMessage,
   submitReview,
   handleDeleteTask,
@@ -188,6 +190,7 @@ const {
       :can-accept="canAccept"
       :gender-mismatch="genderMismatch"
       :can-confirm="canConfirm"
+      :can-abandon="canAbandon"
       :can-edit-task="canEditTask"
       :can-delete-task="canDeleteTask"
       :delete-blocked-by-assignee="deleteBlockedByAssignee"
@@ -211,6 +214,7 @@ const {
       @login="goLogin"
       @accept-task="handleAcceptTask"
       @confirm-task="handleConfirmTask"
+      @abandon-task="handleAbandonTask"
       @edit-task="openEditModal"
       @delete-task="handleDeleteTask"
       @update:chat-content="chatContent = $event"

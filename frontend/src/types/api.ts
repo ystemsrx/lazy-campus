@@ -195,7 +195,7 @@ export interface Report {
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned'
 export type DismissType = 'read' | 'action' | 'source'
 
 export interface AppNotification {

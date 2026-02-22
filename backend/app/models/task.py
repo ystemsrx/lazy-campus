@@ -56,8 +56,20 @@ class TaskMessage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey('tasks.id'), index=True)
     sender_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    # 发消息时任务的接单者，用于会话隔离
+    session_assignee_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TaskAbandonLog(Base):
+    """记录接单者放弃接取任务的日志，用于24小时滑动窗口限速"""
+    __tablename__ = 'task_abandon_logs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    abandoned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class TaskReview(Base):

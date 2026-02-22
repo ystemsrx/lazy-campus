@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { appConfirm } from '../../components/AppConfirm.vue'
 import {
+  abandonTask,
   acceptTask,
   confirmTask,
   createTask,
@@ -145,7 +146,7 @@ export function useTaskManagement() {
   const publisherTotal = computed(() => myPublished.value.length)
 
   const assigneeProgress = computed(() =>
-    myAccepted.value.filter((t) => t.status === 'open' || t.status === 'in_progress').length,
+    myAccepted.value.filter((t) => t.status === 'open' || t.status === 'in_progress' || t.status === 'under_review').length,
   )
   const publisherPending = computed(() =>
     myPublished.value.filter((t) => t.status === 'open').length,
@@ -168,10 +169,10 @@ export function useTaskManagement() {
         if (activeStatus.value === 'pending') return task.status === 'open'
         if (activeStatus.value === 'progress') {
           return activeRole.value === 'assignee'
-            ? task.status === 'open' || task.status === 'in_progress'
-            : task.status === 'in_progress'
+            ? task.status === 'open' || task.status === 'in_progress' || task.status === 'under_review'
+            : task.status === 'in_progress' || task.status === 'under_review'
         }
-        return ['completed', 'canceled', 'under_review'].includes(task.status)
+        return task.status === 'completed' || task.status === 'canceled'
       })
       .sort(byDateDesc)
   })
@@ -243,7 +244,7 @@ export function useTaskManagement() {
     in_progress: { label: '进行中', cls: 'badge-amber' },
     completed: { label: '已完成', cls: 'badge-green' },
     canceled: { label: '已取消', cls: 'badge-default' },
-    under_review: { label: '审核中', cls: 'badge-red' },
+    under_review: { label: '进行中', cls: 'badge-amber' },
   }
 
   function statusOf(status: string) {
@@ -288,7 +289,12 @@ export function useTaskManagement() {
 
   const canConfirm = computed(() => {
     if (!selectedTask.value || !me.value) return false
-    return selectedTask.value.status === 'in_progress' && selectedTask.value.publisher_id === me.value.id
+    return (selectedTask.value.status === 'in_progress' || selectedTask.value.status === 'under_review') && selectedTask.value.publisher_id === me.value.id
+  })
+
+  const canAbandon = computed(() => {
+    if (!selectedTask.value || !me.value) return false
+    return (selectedTask.value.status === 'in_progress' || selectedTask.value.status === 'under_review') && selectedTask.value.assignee_id === me.value.id
   })
 
   const canEditTask = computed(() => {
@@ -435,6 +441,24 @@ export function useTaskManagement() {
       await Promise.all([loadMyTasks(), refreshTaskMeta()])
     } catch (error: unknown) {
       showToast(extractError(error, '确认失败'), 'error')
+    }
+  }
+
+  async function handleAbandonTask() {
+    if (!selectedTask.value) return
+    const confirmed = await appConfirm({
+      title: '确认放弃接取',
+      message: '放弃后任务将重新开放，24小时内累计放弃3次将无法继续接取任务。是否确认放弃？',
+      confirmText: '放弃接取',
+      type: 'danger',
+    })
+    if (!confirmed) return
+    try {
+      selectedTask.value = await abandonTask(selectedTask.value.id)
+      showToast('已放弃接取该委托', 'success')
+      await Promise.all([loadMyTasks(), refreshTaskMeta()])
+    } catch (error: unknown) {
+      showToast(extractError(error, '放弃失败'), 'error')
     }
   }
 
@@ -642,6 +666,7 @@ export function useTaskManagement() {
     canAccept,
     genderMismatch,
     canConfirm,
+    canAbandon,
     canEditTask,
     canDeleteTask,
     deleteBlockedByAssignee,
@@ -660,6 +685,7 @@ export function useTaskManagement() {
     handleHeaderTabChange,
     handleAcceptTask,
     handleConfirmTask,
+    handleAbandonTask,
     submitMessage,
     submitReview,
     handleDeleteTask,
