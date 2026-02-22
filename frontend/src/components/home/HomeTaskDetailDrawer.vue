@@ -753,10 +753,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 900px) {
-  .hv-detail-grid {
-    grid-template-columns: 1fr;
-  }
-
   .hv-task-detail-overlay {
     flex-direction: column;
     justify-content: flex-end;

@@ -110,6 +110,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 .app-dropdown {
   position: relative;
   display: inline-block;
+  min-width: 0;
 }
 
 /* ── 触发按钮 ── */
@@ -133,6 +134,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   box-shadow: var(--shadow-sm);
   user-select: none;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 @media (hover: hover) {

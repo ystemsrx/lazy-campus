@@ -672,7 +672,7 @@ onMounted(() => {
   </main>
 
   <button
-    v-if="auth.isAuthenticated && activeTab === 'hall' && !showPostModal && !selectedTask"
+    v-if="auth.isAuthenticated && activeTab === 'hall' && !showPostModal && !showEditModal && !selectedTask"
     class="hv-fab-publish"
     aria-label="发布任务"
     @click="showPostModal = true"

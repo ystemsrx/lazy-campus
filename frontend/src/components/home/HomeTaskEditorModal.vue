@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
+import AppCategoryPicker from '../AppCategoryPicker.vue'
+import AppDateTimePicker from '../AppDateTimePicker.vue'
 import HomeModal from './ui/HomeModal.vue'
 import type { Category } from '../../types/api'
 import { TASK_ICON_OPTIONS } from '../../utils/taskIcons'
@@ -39,10 +41,24 @@ const hint = computed(() =>
 )
 const submitText = computed(() => (props.mode === 'create' ? '发布委托' : '保存修改'))
 
-const categoryOptions = computed(() => [
-  { value: null, label: '选择类目' },
-  ...props.categories.map((c) => ({ value: c.id, label: c.name })),
-])
+const categoryOptions = computed(() =>
+  props.categories.map((c) => ({ value: c.id, label: c.name })),
+)
+
+const GENDER_OPTIONS = [
+  { value: null,     label: '不限',   color: '#64748b' },
+  { value: 'male',   label: '仅男生', color: '#3b82f6' },
+  { value: 'female', label: '仅女生', color: '#ec4899' },
+] as const
+
+const genderTrackRef = ref<HTMLElement | null>(null)
+
+const activeGenderIndex = computed(() => {
+  const idx = GENDER_OPTIONS.findIndex(o => o.value === props.form.required_gender)
+  return idx === -1 ? 0 : idx
+})
+
+const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value].color)
 </script>
 
 <template>
@@ -50,7 +66,7 @@ const categoryOptions = computed(() => [
     <p class="hv-hint hv-hint--spaced">{{ hint }}</p>
     <form class="hv-form" @submit.prevent="emit('submit')">
       <div class="form-group">
-        <label class="form-label">标题</label>
+        <label class="form-label">标题<span class="required-star">*</span></label>
         <input v-model="form.title" class="form-input" placeholder="简要描述你需要完成的事项" required />
       </div>
 
@@ -76,7 +92,7 @@ const categoryOptions = computed(() => [
       </div>
 
       <div class="form-group">
-        <label class="form-label">详细描述</label>
+        <label class="form-label">详细描述<span class="required-star">*</span></label>
         <textarea
           v-model="form.description"
           class="form-textarea hv-description-textarea"
@@ -90,25 +106,25 @@ const categoryOptions = computed(() => [
           <input v-model="form.location" class="form-input" placeholder="任务执行地点（选填）" />
         </div>
         <div class="form-group">
-          <label class="form-label">价格 (¥)</label>
+          <label class="form-label">价格 (¥)<span class="required-star">*</span></label>
           <input v-model.number="form.price" class="form-input" type="number" min="1" placeholder="报酬金额" />
         </div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row hv-row-fixed">
         <div class="form-group">
           <label class="form-label">截止时间</label>
-          <input v-model="form.deadline" class="form-input" type="datetime-local" :min="nowLocal()" />
+          <AppDateTimePicker v-model="form.deadline" :min="nowLocal()" placeholder="选择截止时间" />
         </div>
         <div class="form-group">
-          <label class="form-label">所属类目</label>
-          <AppDropdown v-model="form.category_id" :options="categoryOptions" placeholder="选择类目" />
+          <label class="form-label">所属类目<span class="required-star">*</span></label>
+          <AppCategoryPicker v-model="form.category_id" :options="categoryOptions" placeholder="选择类目" />
         </div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row hv-row-fixed">
         <div class="form-group">
-          <label class="form-label">联系方式可见性</label>
+          <label class="form-label">联系方式可见性<span class="required-star">*</span></label>
           <AppDropdown
             v-model="form.contact_visibility"
             :options="[
@@ -130,15 +146,26 @@ const categoryOptions = computed(() => [
 
       <div class="form-group">
         <label class="form-label">接单者性别要求</label>
-        <AppDropdown
-          v-model="form.required_gender"
-          :options="[
-            { value: null, label: '不限性别' },
-            { value: 'male', label: '仅限男生' },
-            { value: 'female', label: '仅限女生' },
-          ]"
-          placeholder="不限性别"
-        />
+        <div ref="genderTrackRef" class="gender-toggle">
+          <div
+            class="gender-toggle__slider"
+            :style="{
+              left: `calc(4px + ${activeGenderIndex} * (100% - 8px) / 3)`,
+              width: 'calc((100% - 8px) / 3)',
+            }"
+          />
+          <button
+            v-for="(opt, i) in GENDER_OPTIONS"
+            :key="String(opt.value)"
+            type="button"
+            class="gender-toggle__option"
+            :class="{ 'gender-toggle__option--active': activeGenderIndex === i }"
+            :style="activeGenderIndex === i ? { color: opt.color } : {}"
+            @click="form.required_gender = opt.value as 'male' | 'female' | null"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
       </div>
 
       <button class="btn btn-primary btn-block hv-submit-btn" type="submit">{{ submitText }}</button>
@@ -170,6 +197,26 @@ const categoryOptions = computed(() => [
 
 .hv-description-textarea {
   min-height: 80px;
+}
+
+.required-star {
+  color: #ef4444;
+  margin-left: 2px;
+  font-weight: 600;
+}
+
+.hv-row-fixed {
+  grid-template-columns: 1fr 1fr !important;
+}
+
+.hv-row-fixed > .form-group {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .hv-row-fixed {
+    grid-template-columns: 1fr 1fr !important;
+  }
 }
 
 .hv-icon-picker-wrap {
@@ -219,5 +266,49 @@ const categoryOptions = computed(() => [
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── Gender Toggle ── */
+.gender-toggle {
+  position: relative;
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 4px;
+  gap: 0;
+}
+
+.gender-toggle__slider {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: left 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gender-toggle__option {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.25s ease;
+  text-align: center;
+  user-select: none;
+  border-radius: 999px;
+}
+
+.gender-toggle__option--active {
+  font-weight: 600;
 }
 </style>
