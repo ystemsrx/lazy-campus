@@ -56,6 +56,7 @@ export interface WorkerProfile {
   min_price: number | null
   max_price: number | null
   bio: string | null
+  has_contact: boolean
   phone: string | null
   wechat: string | null
   show_contact: boolean

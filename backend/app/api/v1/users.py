@@ -66,8 +66,9 @@ def _worker_mu(rows: list[tuple[WorkerProfile, User]]) -> float:
     return float(sum(values) / len(values)) if values else 3.0
 
 
-def _to_worker_profile_out(profile: WorkerProfile, user: User, completed_count: int) -> WorkerProfileOut:
+def _to_worker_profile_out(profile: WorkerProfile, user: User, completed_count: int, is_self: bool = False) -> WorkerProfileOut:
     overall_avg, overall_count = _overall_rating_stats(user)
+    show_contact = profile.show_contact if profile.show_contact is not None else True
     return WorkerProfileOut(
         user_id=user.id,
         enabled=profile.enabled,
@@ -75,9 +76,10 @@ def _to_worker_profile_out(profile: WorkerProfile, user: User, completed_count: 
         min_price=profile.min_price,
         max_price=profile.max_price,
         bio=profile.bio,
-        phone=profile.phone,
-        wechat=profile.wechat,
-        show_contact=profile.show_contact if profile.show_contact is not None else True,
+        has_contact=show_contact and bool(profile.phone or profile.wechat),
+        phone=profile.phone if is_self else None,
+        wechat=profile.wechat if is_self else None,
+        show_contact=show_contact,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
         gender=user.gender,
@@ -286,7 +288,8 @@ def list_workers(
 
         rows.sort(key=lambda r: _worker_score(r[1]), reverse=True)
 
-    return [_to_worker_profile_out(profile, user, completed_map.get(user.id, 0)) for profile, user in rows]
+    me_id = current_user.id if current_user else None
+    return [_to_worker_profile_out(profile, user, completed_map.get(user.id, 0), is_self=user.id == me_id) for profile, user in rows]
 
 
 @router.put('/me/worker-profile', response_model=WorkerProfileOut)
@@ -330,7 +333,7 @@ def upsert_worker_profile(
     db.refresh(profile)
 
     completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
-    return _to_worker_profile_out(profile, user, completed_count)
+    return _to_worker_profile_out(profile, user, completed_count, is_self=True)
 
 
 @router.get('/me/worker-profile', response_model=WorkerProfileOut)
@@ -343,11 +346,15 @@ def get_my_worker_profile(user: User = Depends(require_user), db: Session = Depe
         db.refresh(profile)
 
     completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
-    return _to_worker_profile_out(profile, user, completed_count)
+    return _to_worker_profile_out(profile, user, completed_count, is_self=True)
 
 
 @router.get('/workers/{user_id}', response_model=WorkerProfileOut)
-def get_worker_detail(user_id: int, db: Session = Depends(get_db)) -> WorkerProfileOut:
+def get_worker_detail(
+    user_id: int,
+    current_user: User | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+) -> WorkerProfileOut:
     row = (
         db.query(WorkerProfile, User)
         .join(User, User.id == WorkerProfile.user_id)
@@ -359,7 +366,8 @@ def get_worker_detail(user_id: int, db: Session = Depends(get_db)) -> WorkerProf
 
     profile, user = row
     completed_count = _completed_count_map(db, {user.id}).get(user.id, 0)
-    return _to_worker_profile_out(profile, user, completed_count)
+    is_self = current_user is not None and current_user.id == user_id
+    return _to_worker_profile_out(profile, user, completed_count, is_self=is_self)
 
 
 @router.post('/workers/{user_id}/contact-view', response_model=WorkerContactRevealOut)

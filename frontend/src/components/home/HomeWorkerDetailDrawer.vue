@@ -27,10 +27,11 @@ const emit = defineEmits<{
 }>();
 
 const worker = computed(() => props.worker);
+const isSelf = computed(() => props.meId !== null && worker.value?.user_id === props.meId);
 const selectedContactAction = ref<string | number | null>(null);
 const contactOptions = computed(() => {
   const w = worker.value;
-  const canViewContact = !!w && w.show_contact && !!(w.phone || w.wechat);
+  const canViewContact = !!w && w.has_contact;
   return [
     { value: "view_contact", label: "查看联系方式", disabled: !canViewContact },
     { value: "internal_contact", label: "站内联系" },
@@ -256,7 +257,22 @@ onUnmounted(() => {
               <p v-else class="hv-section-hint">该接单者暂无历史评价</p>
             </div>
 
-            <div v-if="contactReveal" class="hv-drawer__section">
+            <div v-if="isSelf" class="hv-drawer__section">
+              <h4 class="hv-drawer__subtitle">
+                <i class="fa-solid fa-address-book"></i> 我的联系方式
+              </h4>
+              <div class="hv-contact-card">
+                <div class="hv-contact-row">
+                  <span>手机号</span>
+                  <strong>{{ worker.phone || "未填写" }}</strong>
+                </div>
+                <div class="hv-contact-row">
+                  <span>微信号</span>
+                  <strong>{{ worker.wechat || "未填写" }}</strong>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="contactReveal" class="hv-drawer__section">
               <h4 class="hv-drawer__subtitle">
                 <i class="fa-solid fa-address-book"></i> 联系方式
               </h4>
@@ -283,7 +299,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="hv-worker-footer">
+          <div v-if="!isSelf" class="hv-worker-footer">
             <AppDropdown
               v-model="selectedContactAction"
               :options="contactOptions"

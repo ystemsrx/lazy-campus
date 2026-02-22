@@ -69,8 +69,9 @@ class WorkerProfileOut(BaseModel):
     min_price: float | None
     max_price: float | None
     bio: str | None
-    phone: str | None
-    wechat: str | None
+    has_contact: bool
+    phone: str | None = None
+    wechat: str | None = None
     show_contact: bool
     display_name: str
     avatar_url: str | None
