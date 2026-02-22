@@ -42,6 +42,7 @@ class User(Base):
     worker_rating_count: Mapped[int] = mapped_column(Integer, default=0)
     blocked_by_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    last_active: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

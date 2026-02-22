@@ -54,7 +54,7 @@ const adminLightboxSrc = ref<string | null>(null)
             <i class="fa-solid fa-arrow-up-right-from-square av-task-link__icon"></i>
             任务 #{{ report.task_id }}
           </a>
-          <span v-else class="av-report-type">账号申诉</span>
+          <span v-else class="av-report-type">{{ report.type === 'appeal' ? '账号申诉' : '账号举报' }}</span>
           <span class="badge" :class="vm.reportStatusClass(report.status)">
             {{ vm.reportStatusLabel(report.status) }}
           </span>

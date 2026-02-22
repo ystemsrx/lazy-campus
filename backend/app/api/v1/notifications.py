@@ -22,7 +22,7 @@ def list_notifications(
 ) -> list[NotificationOut]:
     db_rows = (
         db.query(Notification)
-        .filter(Notification.user_id == user.id)
+        .filter(Notification.user_id == user.id, Notification.is_read == False)  # noqa: E712
         .order_by(desc(Notification.created_at))
         .limit(50)
         .all()

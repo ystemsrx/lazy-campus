@@ -68,7 +68,12 @@ function handleClick(n: AppNotification) {
     notifStore.markRead(n.id).catch(() => {})
   }
 
-  if (n.type === 'report_reviewed') {
+  if (n.type === 'chat_message') {
+    const query: Record<string, string> = {}
+    if (n.related_user_id) query.peer = String(n.related_user_id)
+    if (n.related_task_id) query.task = String(n.related_task_id)
+    router.push({ path: '/chat', query })
+  } else if (n.type === 'report_reviewed') {
     router.push('/reports')
   } else if (n.related_task_id) {
     router.push({ path: '/', query: { task: String(n.related_task_id) } })

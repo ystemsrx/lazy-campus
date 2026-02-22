@@ -469,11 +469,9 @@ async function handleWorkerContactAction(action: 'view_contact' | 'internal_cont
       router.push('/login')
       return
     }
+    const workerId = selectedWorker.value.user_id
     closeWorkerDrawer()
-    activeTab.value = 'hall'
-    newTask.value.contact_visibility = 'internal_only'
-    showPostModal.value = true
-    showToast('已打开发布任务，任务被接取后即可站内沟通', 'info')
+    router.push({ path: '/chat', query: { peer: String(workerId) } })
     return
   }
 
@@ -704,6 +702,10 @@ function openReports() {
   router.push('/reports')
 }
 
+function openChat() {
+  router.push('/chat')
+}
+
 watch(() => route.query.task, (newVal) => {
   if (!newVal || loading.value) return
   const id = Number(newVal)
@@ -744,6 +746,7 @@ onMounted(() => {
     @open-my-panel="openMyPanel"
     @open-settings="openSettings"
     @open-reports="openReports"
+    @open-chat="openChat"
     @login="router.push('/login')"
     @logout="logout"
   />

@@ -69,34 +69,49 @@ def create_report(
     user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> ReportOut:
-    if not payload.task_id:
-        raise HTTPException(status_code=400, detail='举报必须关联任务')
     if not payload.reported_user_id:
         raise HTTPException(status_code=400, detail='举报必须指定被举报用户')
     if payload.reported_user_id == user.id:
         raise HTTPException(status_code=400, detail='不能举报自己')
 
-    task = db.get(Task, payload.task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail='任务不存在')
-    if task.publisher_id != user.id and task.assignee_id != user.id:
-        raise HTTPException(status_code=403, detail='只有任务参与者可以举报')
-    if not task.assignee_id:
-        raise HTTPException(status_code=400, detail='该任务尚无接单者，无法举报')
+    if payload.task_id:
+        # 任务举报：校验任务存在且举报者为参与者
+        task = db.get(Task, payload.task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail='任务不存在')
+        if task.publisher_id != user.id and task.assignee_id != user.id:
+            raise HTTPException(status_code=403, detail='只有任务参与者可以举报')
+        if not task.assignee_id:
+            raise HTTPException(status_code=400, detail='该任务尚无接单者，无法举报')
 
-    existing = (
-        db.query(Report)
-        .filter(
-            Report.reporter_id == user.id,
-            Report.task_id == payload.task_id,
-            Report.reported_user_id == payload.reported_user_id,
-            Report.type == ReportType.REPORT,
-            Report.status == ReportStatus.PENDING,
+        existing = (
+            db.query(Report)
+            .filter(
+                Report.reporter_id == user.id,
+                Report.task_id == payload.task_id,
+                Report.reported_user_id == payload.reported_user_id,
+                Report.type == ReportType.REPORT,
+                Report.status == ReportStatus.PENDING,
+            )
+            .first()
         )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail='该任务已有待处理的举报，请等待管理员审核')
+        if existing:
+            raise HTTPException(status_code=400, detail='该任务已有待处理的举报，请等待管理员审核')
+    else:
+        # 账号举报（来自接单广场，无具体任务）：每人对同一用户只能有一条待处理举报
+        existing = (
+            db.query(Report)
+            .filter(
+                Report.reporter_id == user.id,
+                Report.task_id.is_(None),
+                Report.reported_user_id == payload.reported_user_id,
+                Report.type == ReportType.REPORT,
+                Report.status == ReportStatus.PENDING,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail='已有对该用户待处理的举报，请等待管理员审核')
 
     report = Report(
         type=ReportType.REPORT,

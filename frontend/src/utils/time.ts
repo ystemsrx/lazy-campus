@@ -82,3 +82,36 @@ export function formatRelativeTime(iso: string): string {
   if (diffDay < 30) return `${Math.floor(diffDay / 7)} 周前`
   return formatShort(iso)
 }
+
+/** 聊天列表 & 消息时间：今天只显示时间，昨天显示"昨天"，近 7 天显示"X天前"，更久显示日期 */
+export function formatChatTime(iso: string): string {
+  const d = parseUTC(iso)
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diffDays = Math.floor((todayStart.getTime() - msgDay.getTime()) / 86400000)
+
+  if (diffDays === 0) return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (diffDays === 1) return '昨天'
+  if (diffDays < 7) return `${diffDays}天前`
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** Telegram 风格最后在线状态 */
+export function formatLastSeen(iso: string | null | undefined): { online: boolean; text: string } {
+  if (!iso) return { online: false, text: '从未上线' }
+  const d = parseUTC(iso)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHour = Math.floor(diffMs / 3600000)
+
+  if (diffSec < 45) return { online: true, text: '在线' }
+  if (diffMin < 3) return { online: false, text: '刚刚在线' }
+  if (diffMin < 60) return { online: false, text: `${diffMin} 分钟前在线` }
+  if (diffHour < 24) return { online: false, text: `${diffHour} 小时前在线` }
+  return { online: false, text: '最近上线' }
+}

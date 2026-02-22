@@ -58,6 +58,13 @@ def get_current_auth(
             db.commit()
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User banned')
+
+    now = datetime.now(timezone.utc)
+    if not user.last_active or (now - user.last_active.replace(tzinfo=timezone.utc)).total_seconds() > 15:
+        user.last_active = now
+        db.add(user)
+        db.commit()
+
     return AuthContext(role=user.role.value, user=user)
 
 

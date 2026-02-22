@@ -11,7 +11,7 @@ export async function uploadReportImage(blob: Blob): Promise<string> {
 }
 
 export async function createReport(payload: {
-  task_id: number
+  task_id?: number | null
   reported_user_id: number
   reason: string
   evidence: string

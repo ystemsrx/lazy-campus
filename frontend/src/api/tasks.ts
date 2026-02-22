@@ -6,6 +6,11 @@ export async function fetchCategories() {
   return data
 }
 
+export async function fetchTask(taskId: number) {
+  const { data } = await api.get<Task>(`/tasks/${taskId}`)
+  return data
+}
+
 export async function fetchTasks(params: Record<string, string | number | undefined>) {
   const { data } = await api.get<Task[]>('/tasks', { params })
   return data

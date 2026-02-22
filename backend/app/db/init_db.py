@@ -18,11 +18,15 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE users ADD COLUMN ban_count INTEGER DEFAULT 0'))
             if 'ban_until' not in user_cols:
                 conn.execute(text('ALTER TABLE users ADD COLUMN ban_until DATETIME DEFAULT NULL'))
+            if 'last_active' not in user_cols:
+                conn.execute(text('ALTER TABLE users ADD COLUMN last_active DATETIME DEFAULT NULL'))
 
         if 'tasks' in tables:
             task_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))}
             if 'required_gender' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN required_gender VARCHAR(10) DEFAULT NULL'))
+            if 'icon' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN icon VARCHAR(50) DEFAULT NULL'))
 
         if 'reports' in tables:
             report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}
@@ -43,6 +47,43 @@ def run_startup_migrations() -> None:
             if 'session_assignee_id' not in msg_cols:
                 conn.execute(text('ALTER TABLE task_messages ADD COLUMN session_assignee_id INTEGER DEFAULT NULL'))
                 conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_messages_session_assignee_id ON task_messages (session_assignee_id)'))
+
+        if 'chat_messages' not in tables:
+            conn.execute(text('''
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL REFERENCES users(id),
+                    receiver_id INTEGER NOT NULL REFERENCES users(id),
+                    task_id INTEGER REFERENCES tasks(id),
+                    content TEXT NOT NULL,
+                    is_read BOOLEAN NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_sender ON chat_messages (sender_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_receiver ON chat_messages (receiver_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_task ON chat_messages (task_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_is_read ON chat_messages (is_read)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_created ON chat_messages (created_at)'))
+
+        if 'chat_attachments' not in tables:
+            conn.execute(text('''
+                CREATE TABLE chat_attachments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uploader_id INTEGER NOT NULL REFERENCES users(id),
+                    peer_id INTEGER NOT NULL REFERENCES users(id),
+                    task_id INTEGER REFERENCES tasks(id),
+                    message_id INTEGER REFERENCES chat_messages(id),
+                    file_name VARCHAR(255) NOT NULL,
+                    file_url VARCHAR(1000) NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    mime_type VARCHAR(100) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_att_uploader ON chat_attachments (uploader_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_att_peer ON chat_attachments (peer_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_att_task ON chat_attachments (task_id)'))
 
         if 'task_abandon_logs' not in tables:
             conn.execute(text('''

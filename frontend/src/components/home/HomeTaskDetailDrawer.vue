@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import HomeStars from './ui/HomeStars.vue'
+import { fetchMessageSnapshot } from '../../api/chat'
 import type { Task, TaskMessage, TaskReview, UserReview } from '../../types/api'
+import type { ChatMessage } from '../../types/chat'
+
+const chatRouter = useRouter()
 
 type ReviewForm = {
   stars: number
   comment: string
 }
+
+const chatSnapshot = ref<ChatMessage[]>([])
+const chatSnapshotLoading = ref(false)
+const chatHasMore = ref(false)
 
 
 const props = defineProps<{
@@ -183,13 +192,35 @@ watch(
 
 watch(
   () => props.task?.id,
-  (newId) => {
+  async (newId) => {
     if (newId != null) {
       resetSheetStyles()
+      await loadChatSnapshot()
     }
     scrollMessagesToBottom()
   },
 )
+
+async function loadChatSnapshot() {
+  const t = props.task
+  if (!t || !props.isParticipant || !props.meId) return
+  const peerId = t.publisher_id === props.meId ? t.assignee_id : t.publisher_id
+  if (!peerId) return
+  chatSnapshotLoading.value = true
+  try {
+    chatSnapshot.value = await fetchMessageSnapshot(peerId, t.id)
+    chatHasMore.value = chatSnapshot.value.length >= 10
+  } catch { chatSnapshot.value = [] }
+  chatSnapshotLoading.value = false
+}
+
+function openFullChat() {
+  const t = props.task
+  if (!t || !props.meId) return
+  const peerId = t.publisher_id === props.meId ? t.assignee_id : t.publisher_id
+  if (!peerId) return
+  chatRouter.push({ path: '/chat', query: { peer: String(peerId), task: String(t.id) } })
+}
 
 onUnmounted(() => {
   document.removeEventListener('touchmove', onSheetTouchMove)
@@ -292,17 +323,25 @@ onUnmounted(() => {
               <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-comment-dots"></i> 站内消息</h4>
               <div v-if="isParticipant" class="hv-chat">
                 <div class="hv-chat__messages">
-                  <div v-for="m in taskMessages" :key="m.id" class="hv-chat__msg" :class="{ 'hv-chat__msg--mine': meId !== null && m.sender_id === meId }">
-                    <span class="hv-chat__sender">{{ m.sender_display_name }}</span>
-                    <span class="hv-chat__text">{{ m.content }}</span>
-                  </div>
-                  <p v-if="taskMessages.length === 0" class="hv-chat-empty">暂无消息</p>
+                  <div v-if="chatSnapshotLoading" class="hv-chat-empty">加载中...</div>
+                  <template v-else>
+                    <div v-if="chatHasMore" class="hv-chat-more-hint">
+                      <span>仅显示最近 10 条，</span>
+                      <button class="hv-chat-more-link" @click="openFullChat">查看全部消息</button>
+                    </div>
+                    <div v-for="m in chatSnapshot" :key="m.id" class="hv-chat__msg" :class="{ 'hv-chat__msg--mine': meId !== null && m.sender_id === meId }">
+                      <span class="hv-chat__sender">{{ m.sender_id === meId ? '我' : task?.publisher_display_name }}</span>
+                      <span class="hv-chat__text">{{ m.content }}</span>
+                    </div>
+                    <p v-if="chatSnapshot.length === 0" class="hv-chat-empty">暂无消息</p>
+                  </template>
                   <div ref="messagesEnd"></div>
                 </div>
-                <form class="hv-chat__input" @submit.prevent="emit('submit-message')">
-                  <input v-model="chatContentValue" class="form-input" placeholder="输入消息..." />
-                  <button class="btn btn-primary btn-sm" type="submit">发送</button>
-                </form>
+                <div class="hv-chat-snapshot-footer">
+                  <button class="btn btn-outline btn-sm" @click="openFullChat">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> 进入聊天页面发送消息
+                  </button>
+                </div>
               </div>
               <p v-else class="hv-section-hint">仅任务参与者可查看和发送消息。</p>
             </div>
@@ -587,6 +626,29 @@ onUnmounted(() => {
 .hv-chat-empty {
   text-align: center;
   padding: 16px 0;
+}
+
+.hv-chat-more-hint {
+  text-align: center;
+  padding: 6px 0 10px;
+  font-size: var(--text-xs);
+  color: var(--c-text-muted);
+}
+
+.hv-chat-more-link {
+  background: none;
+  border: none;
+  color: var(--c-accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.hv-chat-snapshot-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
 }
 
 .hv-reviews {

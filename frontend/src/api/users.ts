@@ -45,6 +45,11 @@ export async function fetchUserReviews(userId: number, role: 'publisher' | 'work
   return data
 }
 
+export async function fetchUserPublic(userId: number) {
+  const { data } = await api.get<{ id: number; display_name: string; avatar_url: string | null; gender: 'male' | 'female' | null }>(`/users/${userId}`)
+  return data
+}
+
 export async function uploadAvatar(file: File) {
   const form = new FormData()
   form.append('file', file)

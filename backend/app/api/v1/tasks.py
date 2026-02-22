@@ -93,6 +93,7 @@ def _task_to_out(
         contact_visibility=task.contact_visibility,
         contact_info=task.contact_info if _contact_visible(task, viewer_id) else None,
         required_gender=task.required_gender,
+        icon=task.icon,
         publisher_display_name=display_name(publisher),
         assignee_display_name=display_name(assignee) if assignee else None,
         publisher_rating_avg=round(publisher.publisher_rating_avg, 1),
@@ -387,6 +388,7 @@ def create_task(
         contact_visibility=payload.contact_visibility,
         contact_info=payload.contact_info,
         required_gender=payload.required_gender,
+        icon=payload.icon,
         publisher_id=user.id,
     )
     db.add(task)

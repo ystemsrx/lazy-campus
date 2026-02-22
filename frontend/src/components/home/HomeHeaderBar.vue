@@ -23,6 +23,7 @@ const emit = defineEmits<{
   (e: 'openMyPanel'): void
   (e: 'openSettings'): void
   (e: 'openReports'): void
+  (e: 'openChat'): void
   (e: 'login'): void
   (e: 'logout'): void
 }>()
@@ -49,6 +50,11 @@ function onOpenSettings() {
 function onOpenReports() {
   showUserMenu.value = false
   emit('openReports')
+}
+
+function onOpenChat() {
+  showUserMenu.value = false
+  emit('openChat')
 }
 
 function onLogout() {
@@ -123,6 +129,9 @@ onUnmounted(() => {
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenReports">
                 <i class="fa-solid fa-flag"></i> 举报与申诉
+              </button>
+              <button class="hv-user-dropdown__item" @click="onOpenChat">
+                <i class="fa-regular fa-comment-dots"></i> 我的消息
               </button>
               <div class="hv-user-dropdown__divider"></div>
               <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="onLogout">

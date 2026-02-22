@@ -133,6 +133,7 @@ onMounted(() => {
       @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="loadReports"
+      @open-chat="router.push('/chat')"
       @login="router.push('/login')"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"

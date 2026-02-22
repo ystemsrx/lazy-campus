@@ -107,6 +107,7 @@ const {
       @open-my-panel="() => {}"
       @open-settings="openSettings"
       @open-reports="openReports"
+      @open-chat="$router.push('/chat')"
       @login="goLogin"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"

@@ -9,7 +9,7 @@ from app.models.enums import ReportStatus, ReportType
 
 
 class ReportCreate(BaseModel):
-    task_id: int
+    task_id: int | None = None
     reported_user_id: int
     reason: str = Field(min_length=1)
     evidence: str = ''

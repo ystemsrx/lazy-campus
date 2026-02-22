@@ -53,6 +53,7 @@ const {
       @open-my-panel="openMyPanel"
       @open-settings="openSettings"
       @open-reports="$router.push('/reports')"
+      @open-chat="$router.push('/chat')"
       @login="goLogin"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"

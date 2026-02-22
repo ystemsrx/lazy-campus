@@ -126,7 +126,7 @@ function removeImage(id: string) {
 }
 
 async function submit() {
-  if (!props.taskId || !props.reportedUserId || isSubmitting.value) return
+  if (!props.reportedUserId || isSubmitting.value) return
   isSubmitting.value = true
   try {
     // 1. 并发上传所有图片，获取服务端 URL
@@ -138,7 +138,7 @@ async function submit() {
     const reasonObj = REPORT_REASONS.find((r) => r.id === selectedReason.value)
     const reasonText = reasonObj ? reasonObj.label : selectedReason.value
     await createReport({
-      task_id: props.taskId,
+      task_id: props.taskId ?? null,
       reported_user_id: props.reportedUserId,
       reason: reasonText,
       evidence: evidence.value.trim(),

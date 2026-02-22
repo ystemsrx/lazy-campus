@@ -32,6 +32,7 @@ class TaskCreate(BaseModel):
     contact_visibility: ContactVisibility = ContactVisibility.AFTER_ACCEPT
     contact_info: str | None = None
     required_gender: Gender | None = None
+    icon: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -44,6 +45,7 @@ class TaskUpdate(BaseModel):
     contact_visibility: ContactVisibility | None = None
     contact_info: str | None = None
     required_gender: Gender | None = None
+    icon: str | None = None
 
 
 class TaskOut(BaseModel):
@@ -62,6 +64,7 @@ class TaskOut(BaseModel):
     contact_visibility: ContactVisibility
     contact_info: str | None
     required_gender: Gender | None
+    icon: str | None = None
     publisher_display_name: str
     assignee_display_name: str | None
     publisher_rating_avg: float = 0

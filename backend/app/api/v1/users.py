@@ -98,6 +98,7 @@ def to_user_public(user: User) -> UserPublic:
         account=user.account,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
+        gender=user.gender,
         worker_rating_avg=user.worker_rating_avg,
         worker_rating_count=user.worker_rating_count,
         publisher_rating_avg=user.publisher_rating_avg,

@@ -29,6 +29,7 @@ class Task(Base):
     contact_visibility: Mapped[ContactVisibility] = mapped_column(Enum(ContactVisibility), default=ContactVisibility.AFTER_ACCEPT)
     contact_info: Mapped[str | None] = mapped_column(String(255), nullable=True)
     required_gender: Mapped[Gender | None] = mapped_column(Enum(Gender), nullable=True, default=None)
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.OPEN)
     publisher_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
