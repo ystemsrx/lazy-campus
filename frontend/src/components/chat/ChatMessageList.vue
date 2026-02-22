@@ -14,32 +14,64 @@ import {
   isImageMime,
 } from '../../composables/chat/attachmentUtils'
 
-defineProps<{
+const props = defineProps<{
   messages: ChatMessage[]
   loading: boolean
   myId: number
   conversation: Conversation
   attachments: ChatAttachment[]
+  hasMore: boolean
+  loadingMore: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'missingAttachment'): void
+  (e: 'loadMore'): void
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
 
+// 滚动到底部
 function scrollToBottom() {
   if (!containerRef.value) return
   containerRef.value.scrollTop = containerRef.value.scrollHeight
 }
 
+// 预存滚动位置，用于加载旧消息后恢复
+const savedScroll = ref<{ top: number; height: number } | null>(null)
+
+function saveScrollPos() {
+  if (!containerRef.value) return
+  savedScroll.value = {
+    top: containerRef.value.scrollTop,
+    height: containerRef.value.scrollHeight,
+  }
+}
+
+function restoreScrollPos() {
+  if (!containerRef.value || !savedScroll.value) return
+  const newHeight = containerRef.value.scrollHeight
+  containerRef.value.scrollTop = savedScroll.value.top + (newHeight - savedScroll.value.height)
+  savedScroll.value = null
+}
+
+// 滚动监听：距顶部 80px 以内时触发加载更多
+function onScroll() {
+  if (!containerRef.value || !props.hasMore || props.loadingMore) return
+  if (containerRef.value.scrollTop < 80) {
+    emit('loadMore')
+  }
+}
+
 defineExpose({
   scrollToBottom,
+  saveScrollPos,
+  restoreScrollPos,
 })
 </script>
 
 <template>
-  <div ref="containerRef" class="chat-messages">
+  <div ref="containerRef" class="chat-messages" @scroll="onScroll">
     <div v-if="loading" class="messages-loading">
       <div class="spinner"></div>
     </div>
@@ -50,6 +82,15 @@ defineExpose({
     </div>
 
     <template v-else>
+      <div class="load-more-bar">
+        <div v-if="loadingMore" class="load-more-spinner">
+          <div class="spinner spinner-sm"></div>
+          <span>加载中…</span>
+        </div>
+        <div v-else-if="!hasMore" class="load-more-end">
+          <span>— 没有更多消息了 —</span>
+        </div>
+      </div>
       <div
         v-for="msg in messages"
         :key="msg.id"
@@ -152,6 +193,34 @@ defineExpose({
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+}
+
+.load-more-bar {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 12px;
+  min-height: 32px;
+}
+
+.load-more-spinner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c-text-muted);
+  font-size: var(--text-xs);
+}
+
+.load-more-end {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  opacity: 0.6;
+  user-select: none;
+}
+
+.spinner-sm {
+  width: 16px !important;
+  height: 16px !important;
+  border-width: 2px !important;
 }
 
 .messages-loading {

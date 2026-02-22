@@ -65,6 +65,8 @@ const statusMap = getSnapshotStatusMap()
 
 type ChatMessageListExpose = {
   scrollToBottom: () => void
+  saveScrollPos: () => void
+  restoreScrollPos: () => void
 }
 
 const messageListRef = ref<ChatMessageListExpose | null>(null)
@@ -104,7 +106,10 @@ const {
   activeConversation,
   messages,
   loading,
+  hasMore,
+  loadingMore,
   loadConversations,
+  loadMoreMessages,
   selectConversation,
   goBack,
 } = useChatSync({
@@ -204,6 +209,13 @@ function checkMobile() {
 async function handleSelectConversation(conversation: Conversation) {
   unhideConversation(convKey(conversation))
   await selectConversation(conversation)
+}
+
+async function handleLoadMore() {
+  messageListRef.value?.saveScrollPos()
+  await loadMoreMessages()
+  await nextTick()
+  messageListRef.value?.restoreScrollPos()
 }
 
 function handleSearchQueryUpdate(value: string) {
@@ -370,7 +382,10 @@ onUnmounted(() => {
             :my-id="myId"
             :conversation="activeConversation"
             :attachments="attachments"
+            :has-more="hasMore"
+            :loading-more="loadingMore"
             @missing-attachment="showToast('文件不存在', 'warning')"
+            @load-more="handleLoadMore"
           />
 
           <ChatInputArea

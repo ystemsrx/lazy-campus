@@ -6,6 +6,8 @@ import { fetchTask } from '../../api/tasks'
 import { fetchUserPublic } from '../../api/users'
 import type { ChatMessage, Conversation } from '../../types/chat'
 
+const PAGE_SIZE = 30
+
 interface UseChatSyncOptions {
   route: RouteLocationNormalizedLoaded
   router: Router
@@ -25,6 +27,8 @@ export function useChatSync(options: UseChatSyncOptions) {
   const activeConversation = ref<Conversation | null>(null)
   const messages = ref<ChatMessage[]>([])
   const loading = ref(false)
+  const hasMore = ref(false)
+  const loadingMore = ref(false)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -68,7 +72,9 @@ export function useChatSync(options: UseChatSyncOptions) {
 
     loading.value = true
     try {
-      messages.value = await fetchMessages(activeConversation.value.peer_id, activeConversation.value.task_id)
+      const loaded = await fetchMessages(activeConversation.value.peer_id, activeConversation.value.task_id, undefined, PAGE_SIZE)
+      messages.value = loaded
+      hasMore.value = loaded.length >= PAGE_SIZE
       await markRead(activeConversation.value.peer_id, activeConversation.value.task_id)
       options.pollNotificationCount?.()
       if (activeConversation.value) {
@@ -82,9 +88,34 @@ export function useChatSync(options: UseChatSyncOptions) {
     await options.onAfterMessagesUpdated?.()
   }
 
+  async function loadMoreMessages() {
+    if (!activeConversation.value || loadingMore.value || !hasMore.value) return
+
+    loadingMore.value = true
+    try {
+      const oldestId = messages.value[0]?.id
+      const older = await fetchMessages(
+        activeConversation.value.peer_id,
+        activeConversation.value.task_id,
+        oldestId,
+        PAGE_SIZE,
+      )
+      if (older.length === 0) {
+        hasMore.value = false
+      } else {
+        messages.value = [...older, ...messages.value]
+        hasMore.value = older.length >= PAGE_SIZE
+      }
+    } catch {
+      // ignore
+    }
+    loadingMore.value = false
+  }
+
   async function selectConversation(conversation: Conversation) {
     activeConversation.value = conversation
     messages.value = []
+    hasMore.value = false
     options.onBeforeSelectConversation?.(conversation)
 
     const query: Record<string, string> = { peer: String(conversation.peer_id) }
@@ -182,16 +213,19 @@ export function useChatSync(options: UseChatSyncOptions) {
     if (!activeConversation.value) return
 
     try {
-      const previousMessages = messages.value
-      const latestMessages = await fetchMessages(activeConversation.value.peer_id, activeConversation.value.task_id)
+      const latestBatch = await fetchMessages(activeConversation.value.peer_id, activeConversation.value.task_id, undefined, PAGE_SIZE)
+      if (latestBatch.length === 0) return
 
-      const hasChanged =
-        latestMessages.length !== previousMessages.length ||
-        (latestMessages.length > 0 && latestMessages[latestMessages.length - 1].id !== previousMessages[previousMessages.length - 1]?.id)
+      const newestInBatch = latestBatch.at(-1)!.id
+      const newestLocal = messages.value.at(-1)?.id ?? 0
 
-      if (!hasChanged) return
+      if (newestInBatch <= newestLocal) return
 
-      messages.value = latestMessages
+      // Only append genuinely new messages (don't replace existing paginated history)
+      const newOnes = latestBatch.filter(m => m.id > newestLocal)
+      if (newOnes.length === 0) return
+
+      messages.value = [...messages.value, ...newOnes]
       await Promise.all([
         markRead(activeConversation.value.peer_id, activeConversation.value.task_id),
         options.onLoadAttachments?.() ?? Promise.resolve(),
@@ -228,8 +262,11 @@ export function useChatSync(options: UseChatSyncOptions) {
     activeConversation,
     messages,
     loading,
+    hasMore,
+    loadingMore,
     loadConversations,
     loadMessages,
+    loadMoreMessages,
     selectConversation,
     goBack,
   }
