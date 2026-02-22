@@ -9,6 +9,7 @@ from app.api.deps import optional_user, require_admin, require_completed_user, r
 from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
+from app.models.notification import Notification
 from app.models.task import Task, TaskAttachment, TaskCategory, TaskMessage, TaskReview
 from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.task import (
@@ -437,6 +438,15 @@ def accept_task(task_id: int, user: User = Depends(require_completed_user), db: 
     task.assignee_id = user.id
     task.status = TaskStatus.IN_PROGRESS
     db.add(task)
+    db.add(Notification(
+        user_id=task.publisher_id,
+        type='task_accepted',
+        title='任务被接取',
+        description=f'{display_name(user)} 接取了你的任务「{task.title}」',
+        related_task_id=task.id,
+        related_user_id=user.id,
+        dismiss_type='read',
+    ))
     db.commit()
     db.refresh(task)
 
@@ -456,6 +466,15 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
 
     task.status = TaskStatus.COMPLETED
     db.add(task)
+    if task.assignee_id:
+        db.add(Notification(
+            user_id=task.assignee_id,
+            type='task_completed',
+            title='任务已完成',
+            description=f'你接取的任务「{task.title}」已被发布者确认完成',
+            related_task_id=task.id,
+            dismiss_type='read',
+        ))
     db.commit()
     db.refresh(task)
 
@@ -555,6 +574,31 @@ def send_message(
 
     message = TaskMessage(task_id=task_id, sender_id=user.id, content=payload.content)
     db.add(message)
+
+    if other_id:
+        existing_notif = db.query(Notification).filter(
+            Notification.user_id == other_id,
+            Notification.type == 'chat_message',
+            Notification.related_task_id == task_id,
+        ).first()
+        if existing_notif:
+            existing_notif.title = display_name(user)
+            existing_notif.description = f'在「{task.title}」中发来了新消息'
+            existing_notif.is_read = False
+            existing_notif.updated_at = datetime.utcnow()
+            existing_notif.related_user_id = user.id
+            db.add(existing_notif)
+        else:
+            db.add(Notification(
+                user_id=other_id,
+                type='chat_message',
+                title=display_name(user),
+                description=f'在「{task.title}」中发来了新消息',
+                related_task_id=task_id,
+                related_user_id=user.id,
+                dismiss_type='source',
+            ))
+
     db.commit()
     db.refresh(message)
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { appConfirm } from '../components/AppConfirm.vue'
 import { extractError } from '../utils/error'
@@ -38,11 +38,13 @@ import { useAppToast } from '../composables/useAppToast'
 import HomeWorkerDetailDrawer from '../components/home/HomeWorkerDetailDrawer.vue'
 import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
 import { useAuthStore } from '../stores/auth'
+import { useNotificationStore } from '../stores/notifications'
 import type { Category, Task, TaskMessage, TaskReview, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const notifStore = useNotificationStore()
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 
 const activeTab = ref<'hall' | 'workers'>(
@@ -362,6 +364,9 @@ async function refreshTaskMeta() {
     const [msgs, revs] = await Promise.all([fetchMessages(taskId), fetchReviews(taskId)])
     taskMessages.value = msgs
     taskReviews.value = revs
+    if (auth.isAuthenticated) {
+      notifStore.dismissChat(taskId).catch(() => {})
+    }
   } catch {
     taskMessages.value = []
     taskReviews.value = await fetchReviews(taskId).catch(() => [])
@@ -406,6 +411,7 @@ async function submitCreateTask() {
     }
     showPostModal.value = false
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
+    notifStore.pollCount()
   } catch (error: any) {
     showToast(extractError(error, '发布失败'), 'error')
   }
@@ -475,6 +481,7 @@ async function handleAcceptTask() {
     selectedTask.value = await acceptTask(selectedTask.value.id)
     showToast('已接取该委托', 'success')
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories(), refreshTaskMeta()])
+    notifStore.pollCount()
   } catch (error: any) {
     showToast(extractError(error, '接取失败'), 'error')
   }
@@ -486,6 +493,7 @@ async function handleConfirmTask() {
     selectedTask.value = await confirmTask(selectedTask.value.id)
     showToast('已确认完成', 'success')
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories(), refreshTaskMeta()])
+    notifStore.pollCount()
   } catch (error: any) {
     showToast(extractError(error, '确认失败'), 'error')
   }
@@ -533,6 +541,7 @@ async function handleDeleteTask() {
     closeDrawer()
     showToast('任务已删除', 'success')
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
+    notifStore.pollCount()
   } catch (error: any) {
     showToast(extractError(error, '删除失败'), 'error')
   }
@@ -577,6 +586,7 @@ async function submitEditTask() {
     editingTask.value = null
     showToast('委托信息已更新', 'success')
     await Promise.all([loadTasks(), loadMyTasks(), loadCategories()])
+    notifStore.pollCount()
     openDrawer(updated)
   } catch (error: any) {
     showToast(extractError(error, '修改失败'), 'error')
@@ -614,6 +624,14 @@ function openSettings() {
 function openReports() {
   router.push('/reports')
 }
+
+watch(() => route.query.task, (newVal) => {
+  if (!newVal || loading.value) return
+  const id = Number(newVal)
+  const task = [...allTasks.value, ...myPublished.value, ...myAccepted.value].find(t => t.id === id)
+  if (task) openDrawer(task)
+  router.replace({ query: {} })
+})
 
 onMounted(() => {
   bootstrap()

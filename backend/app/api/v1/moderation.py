@@ -9,6 +9,7 @@ from app.api.deps import AuthContext, require_admin, require_completed_user
 from app.db.session import get_db
 from app.models.enums import ReportStatus, ReportType, TaskStatus
 from app.models.moderation import AdminActionLog, Blacklist, Report
+from app.models.notification import Notification
 from app.models.task import Task, TaskMessage, TaskReview
 from app.models.user import User, WorkerProfile
 from app.schemas.moderation import (
@@ -360,6 +361,19 @@ def admin_review_report(
             detail=f'status={payload.status.value}{ban_detail}',
         )
     )
+
+    type_label = '举报' if report.type == ReportType.REPORT else '申诉'
+    status_label = '已通过' if payload.status == ReportStatus.APPROVED else '已驳回'
+    db.add(Notification(
+        user_id=report.reporter_id,
+        type='report_reviewed',
+        title=f'{type_label}{status_label}',
+        description=f'你提交的{type_label}已被管理员审核，结果：{status_label}',
+        related_report_id=report.id,
+        related_task_id=report.task_id,
+        dismiss_type='read',
+    ))
+
     db.commit()
     db.refresh(report)
     return _enrich_reports([report], db)[0]

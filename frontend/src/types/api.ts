@@ -194,3 +194,19 @@ export interface Report {
   admin_notes: string | null
   created_at: string
 }
+
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed'
+export type DismissType = 'read' | 'action' | 'source'
+
+export interface AppNotification {
+  id: number
+  type: NotificationType
+  title: string
+  description: string | null
+  related_task_id: number | null
+  related_report_id: number | null
+  related_user_id: number | null
+  dismiss_type: DismissType
+  is_read: boolean
+  created_at: string
+}

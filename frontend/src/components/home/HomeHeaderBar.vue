@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import AppNotificationBell from '../AppNotificationBell.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
 
 const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined
@@ -67,7 +68,7 @@ onUnmounted(() => {
 <template>
   <header class="hv-header">
     <div class="hv-header__brand">
-      <div class="hv-logo">
+      <div class="hv-logo" :class="{ 'hv-logo--mobile-hidden': isAuthenticated }">
         <img v-if="logoUrl" :src="logoUrl" class="hv-logo__img" alt="Logo" />
         <i v-else class="fa-solid fa-handshake"></i>
       </div>
@@ -97,6 +98,7 @@ onUnmounted(() => {
 
     <div class="hv-header__right">
       <template v-if="isAuthenticated">
+        <AppNotificationBell />
         <button class="btn btn-primary btn-sm hv-publish-btn" @click="emit('publish')">
           <i class="fa-solid fa-plus"></i> 发布
         </button>
@@ -384,6 +386,18 @@ onUnmounted(() => {
 
   .hv-tab {
     padding: 8px 14px;
+  }
+
+  .hv-logo--mobile-hidden {
+    display: none;
+  }
+
+  .hv-header__right :deep(.notif-bell-wrap) {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
   }
 }
 </style>
