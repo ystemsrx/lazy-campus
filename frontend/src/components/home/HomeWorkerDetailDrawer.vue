@@ -14,6 +14,7 @@ const props = defineProps<{
   reviews: UserReview[];
   contactReveal: WorkerContactReveal | null;
   isAuthenticated: boolean;
+  meId: number | null;
   revealLoading: boolean;
   formatFull: (iso: string) => string;
 }>();
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "login"): void;
   (e: "contactAction", value: "view_contact" | "internal_contact"): void;
+  (e: "block-user", userId: number): void;
 }>();
 
 const worker = computed(() => props.worker);
@@ -272,6 +274,13 @@ onUnmounted(() => {
                 </p>
               </div>
             </div>
+
+            <div v-if="isAuthenticated && meId !== null && worker.user_id !== meId" class="hv-drawer__section hv-block-section">
+              <button class="btn btn-block-trigger" @click="emit('block-user', worker.user_id)">
+                <i class="fa-solid fa-ban"></i>
+                拉黑此用户
+              </button>
+            </div>
           </div>
 
           <div class="hv-worker-footer">
@@ -467,6 +476,28 @@ onUnmounted(() => {
   color: var(--c-accent);
 }
 
+.hv-block-section {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.btn-block-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid #fca5a5;
+  background: #fff1f2;
+  color: #ef4444;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.btn-block-trigger:hover {
+  background: #fee2e2;
+}
+
 .hv-worker-footer {
   border-top: 1px solid var(--c-border);
   padding: 12px 16px;
@@ -550,7 +581,7 @@ onUnmounted(() => {
   }
 
   .hv-detail-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .drawer-enter-from .hv-worker-detail-drawer,

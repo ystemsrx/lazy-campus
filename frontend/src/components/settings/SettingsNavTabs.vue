@@ -4,7 +4,7 @@ import type { SettingsTab } from '../../composables/settings/types'
 const props = defineProps<{
   modelValue: SettingsTab
   indicatorStyle: Record<string, string | number>
-  setTabRef: (index: 0 | 1, el: HTMLElement | null) => void
+  setTabRef: (index: 0 | 1 | 2, el: HTMLElement | null) => void
 }>()
 
 const emit = defineEmits<{
@@ -38,6 +38,18 @@ const emit = defineEmits<{
         <path d="M7 3a2 2 0 0 0-2 2v1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2V5a2 2 0 0 0-2-2H7Zm0 2h6v1H7V5Zm-4 3h14v8H3V8Z" fill="currentColor"/>
       </svg>
       接单设置
+    </button>
+
+    <button
+      :ref="(el) => props.setTabRef(2, el as HTMLElement | null)"
+      class="sv-nav-btn"
+      :class="{ 'sv-nav-btn--active': props.modelValue === 'blacklist' }"
+      @click="emit('update:modelValue', 'blacklist')"
+    >
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+        <path d="M10 1a9 9 0 1 0 0 18A9 9 0 0 0 10 1Zm0 2a7 7 0 0 1 4.95 11.95L5.05 5.05A6.97 6.97 0 0 1 10 3Zm0 14a7 7 0 0 1-4.95-11.95l9.9 9.9A6.97 6.97 0 0 1 10 17Z" fill="currentColor"/>
+      </svg>
+      黑名单
     </button>
   </nav>
 </template>

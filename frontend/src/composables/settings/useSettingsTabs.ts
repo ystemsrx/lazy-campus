@@ -3,11 +3,11 @@ import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import type { SettingsTab } from './types'
 
 export function useSettingsTabs(activeTab: Ref<SettingsTab>) {
-  const tabRefs = ref<(HTMLElement | null)[]>([null, null])
+  const tabRefs = ref<(HTMLElement | null)[]>([null, null, null])
   const indicatorStyle = ref<Record<string, string | number>>({ opacity: 0 })
 
   function updateIndicator() {
-    const idx = activeTab.value === 'profile' ? 0 : 1
+    const idx = activeTab.value === 'profile' ? 0 : activeTab.value === 'worker' ? 1 : 2
     const el = tabRefs.value[idx]
     if (!el) return
 
@@ -32,7 +32,7 @@ export function useSettingsTabs(activeTab: Ref<SettingsTab>) {
     window.removeEventListener('resize', updateIndicator)
   })
 
-  function setTabRef(index: 0 | 1, el: HTMLElement | null) {
+  function setTabRef(index: 0 | 1 | 2, el: HTMLElement | null) {
     tabRefs.value[index] = el
   }
 

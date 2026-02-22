@@ -196,13 +196,6 @@ onUnmounted(() => {
 
               <div class="hv-worker-card__actions">
                 <button class="hv-worker-card__btn-main" @click.stop="emit('openWorker', w)">查看详情</button>
-                <button
-                  v-if="w.blocked_by_count > 0"
-                  class="hv-worker-card__btn-icon hv-worker-card__btn-icon--warn"
-                  :title="`被 ${w.blocked_by_count} 人拉黑`"
-                >
-                  <i class="fa-solid fa-triangle-exclamation"></i>
-                </button>
               </div>
             </div>
           </div>

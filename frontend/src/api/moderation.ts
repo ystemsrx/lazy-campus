@@ -1,5 +1,5 @@
 import api from './client'
-import type { AdminUserListResponse, BanContext, Report } from '../types/api'
+import type { AdminUserListResponse, BanContext, BlacklistItem, Report } from '../types/api'
 
 export async function uploadReportImage(blob: Blob): Promise<string> {
   const form = new FormData()
@@ -49,6 +49,21 @@ export async function fetchBanContext(payload: { account: string; password: stri
 export async function blockUser(payload: { blocked_user_id: number; reason?: string }) {
   const { data } = await api.post('/moderation/blacklist', payload)
   return data
+}
+
+export async function unblockUser(blockedUserId: number) {
+  const { data } = await api.delete(`/moderation/blacklist/${blockedUserId}`)
+  return data
+}
+
+export async function fetchBlacklist() {
+  const { data } = await api.get<BlacklistItem[]>('/moderation/blacklist')
+  return data
+}
+
+export async function checkBlocked(targetUserId: number) {
+  const { data } = await api.get<{ is_blocked: boolean }>(`/moderation/blacklist/check/${targetUserId}`)
+  return data.is_blocked
 }
 
 export async function fetchMyReports() {

@@ -2,6 +2,7 @@
 import AppSaveStatusBar from '../components/AppSaveStatusBar.vue'
 import AppToast from '../components/AppToast.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import SettingsBlacklistPanel from '../components/settings/SettingsBlacklistPanel.vue'
 import SettingsNavTabs from '../components/settings/SettingsNavTabs.vue'
 import SettingsProfilePanel from '../components/settings/SettingsProfilePanel.vue'
 import SettingsWorkerPanel from '../components/settings/SettingsWorkerPanel.vue'
@@ -117,6 +118,11 @@ const {
                   :categories="categories"
                   @toggle-skill-tag="toggleSkillTag"
                   @enable-error="(msg) => showToast(msg, 'warning')"
+                />
+
+                <SettingsBlacklistPanel
+                  :active="activeTab === 'blacklist'"
+                  @toast="(msg, type) => showToast(msg, type)"
                 />
               </div>
 

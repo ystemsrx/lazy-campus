@@ -67,6 +67,8 @@ class TaskOut(BaseModel):
     publisher_rating_avg: float = 0
     publisher_rating_count: int = 0
     publisher_completed_count: int = 0
+    publisher_blocked_by_count: int = 0
+    publisher_task_count: int = 0
     created_at: datetime
     updated_at: datetime
 

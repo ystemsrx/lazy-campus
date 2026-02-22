@@ -97,6 +97,8 @@ export interface Task {
   publisher_rating_avg: number
   publisher_rating_count: number
   publisher_completed_count: number
+  publisher_blocked_by_count: number
+  publisher_task_count: number
   icon: string | null
   created_at: string
   updated_at: string
@@ -208,5 +210,13 @@ export interface AppNotification {
   related_user_id: number | null
   dismiss_type: DismissType
   is_read: boolean
+  created_at: string
+}
+
+export interface BlacklistItem {
+  blocked_user_id: number
+  blocked_display_name: string
+  blocked_avatar_url: string | null
+  reason: string | null
   created_at: string
 }

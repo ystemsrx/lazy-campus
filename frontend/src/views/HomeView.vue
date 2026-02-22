@@ -27,6 +27,7 @@ import {
   fetchUserReviews,
   fetchWorkers,
 } from '../api/users'
+import { blockUser } from '../api/moderation'
 import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import HomeLoadingState from '../components/home/HomeLoadingState.vue'
@@ -618,6 +619,42 @@ async function submitEditTask() {
   }
 }
 
+async function handleBlockWorkerUser(userId: number) {
+  const yes = await appConfirm({
+    title: '确认拉黑',
+    message: '拉黑后双方将无法看到对方的任务和接单信息。确认拉黑？',
+    confirmText: '拉黑',
+    type: 'danger',
+  })
+  if (!yes) return
+  try {
+    await blockUser({ blocked_user_id: userId })
+    closeWorkerDrawer()
+    showToast('已拉黑该用户', 'success')
+    await Promise.all([loadTasks(), loadWorkers()])
+  } catch (error: any) {
+    showToast(extractError(error, '拉黑失败'), 'error')
+  }
+}
+
+async function handleBlockTaskUser(userId: number) {
+  const yes = await appConfirm({
+    title: '确认拉黑',
+    message: '拉黑后双方将无法看到对方的任务和接单信息。确认拉黑？',
+    confirmText: '拉黑',
+    type: 'danger',
+  })
+  if (!yes) return
+  try {
+    await blockUser({ blocked_user_id: userId })
+    closeDrawer()
+    showToast('已拉黑该用户', 'success')
+    await Promise.all([loadTasks(), loadWorkers()])
+  } catch (error: any) {
+    showToast(extractError(error, '拉黑失败'), 'error')
+  }
+}
+
 const canReport = computed(() => {
   if (!me.value || !selectedTask.value) return false
   return isParticipant.value && !!selectedTask.value.assignee_id
@@ -791,6 +828,7 @@ onMounted(() => {
     @update:show-review-form="showReviewForm = $event"
     @submit-review="submitReview"
     @open-report="openReportModal"
+    @block-user="handleBlockTaskUser"
   />
 
   <HomeReportModal
@@ -807,11 +845,13 @@ onMounted(() => {
     :reviews="workerHistoryReviews"
     :contact-reveal="workerContactReveal"
     :is-authenticated="auth.isAuthenticated"
+    :me-id="me?.id ?? null"
     :reveal-loading="workerContactLoading"
     :format-full="formatFull"
     @close="closeWorkerDrawer"
     @login="router.push('/login')"
     @contact-action="handleWorkerContactAction"
+    @block-user="handleBlockWorkerUser"
   />
 </template>
 

@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_completed_user, require_user
+from app.api.deps import optional_user, require_completed_user, require_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.enums import RatingTargetRole, TaskStatus
+from app.models.moderation import Blacklist
 from app.models.task import Task, TaskCategory, TaskReview
 from app.models.user import User, WorkerContactView, WorkerProfile, worker_skill_tags
 from app.schemas.user import (
@@ -203,6 +204,7 @@ def list_workers(
     min_price: float | None = Query(default=None),
     max_price: float | None = Query(default=None),
     sort: str = Query(default='ranking', pattern='^(ranking|worker_rating|worker_completed)$'),
+    current_user: User | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> list[WorkerProfileOut]:
     query = (
@@ -238,6 +240,16 @@ def list_workers(
         query = query.filter(WorkerProfile.min_price.is_(None) | (WorkerProfile.min_price <= max_price))
 
     rows = query.all()
+
+    if current_user:
+        blocked_ids = set(
+            r[0] for r in db.query(Blacklist.blocked_user_id).filter(Blacklist.user_id == current_user.id).all()
+        ) | set(
+            r[0] for r in db.query(Blacklist.user_id).filter(Blacklist.blocked_user_id == current_user.id).all()
+        )
+        if blocked_ids:
+            rows = [(p, u) for p, u in rows if u.id not in blocked_ids]
+
     uid_set = {u.id for _, u in rows}
     completed_map = _completed_count_map(db, uid_set)
 

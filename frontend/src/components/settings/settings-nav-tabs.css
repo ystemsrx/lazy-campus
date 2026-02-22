@@ -44,13 +44,6 @@
   color: #18181b;
 }
 
-@media (hover: hover) {
-  .sv-nav-btn:not(.sv-nav-btn--active):hover {
-    background: rgba(203, 213, 225, 0.5);
-    color: #18181b;
-  }
-}
-
 @media (max-width: 768px) {
   .sv-nav {
     width: 100%;

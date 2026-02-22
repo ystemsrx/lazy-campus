@@ -53,6 +53,7 @@ const emit = defineEmits<{
   (e: 'update:showReviewForm', value: boolean): void
   (e: 'submit-review'): void
   (e: 'open-report'): void
+  (e: 'block-user', userId: number): void
 }>()
 
 const task = computed(() => props.task)
@@ -245,6 +246,16 @@ onUnmounted(() => {
                 </div>
 
                 <div class="hv-detail-item">
+                  <span class="hv-detail-label">任务数</span>
+                  <span>{{ task.publisher_task_count }} 个</span>
+                </div>
+
+                <div class="hv-detail-item">
+                  <span class="hv-detail-label">被拉黑</span>
+                  <span>{{ task.publisher_blocked_by_count }} 次</span>
+                </div>
+
+                <div class="hv-detail-item">
                   <span class="hv-detail-label">截止</span>
                   <span v-if="task.deadline" :class="{ 'hv-meta--expired': isExpired(task.deadline) }">
                     {{ formatFull(task.deadline) }}
@@ -365,10 +376,18 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="canReport" class="hv-drawer__section hv-report-section">
-              <button class="btn btn-report-trigger" @click="emit('open-report')">
+            <div v-if="canReport || (isAuthenticated && meId !== null && (!isPublisher || (isPublisher && task.assignee_id)))" class="hv-drawer__section hv-report-section">
+              <button v-if="canReport" class="btn btn-report-trigger" @click="emit('open-report')">
                 <i class="fa-solid fa-flag"></i>
                 举报对方
+              </button>
+              <button v-if="isAuthenticated && !isPublisher && meId !== null" class="btn btn-block-trigger" @click="emit('block-user', task.publisher_id)">
+                <i class="fa-solid fa-ban"></i>
+                拉黑发布者
+              </button>
+              <button v-if="isAuthenticated && isPublisher && task.assignee_id" class="btn btn-block-trigger" @click="emit('block-user', task.assignee_id as number)">
+                <i class="fa-solid fa-ban"></i>
+                拉黑接单者
               </button>
             </div>
           </div>
@@ -669,9 +688,12 @@ onUnmounted(() => {
 .hv-report-section {
   display: flex;
   justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.btn-report-trigger {
+.btn-report-trigger,
+.btn-block-trigger {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -682,6 +704,10 @@ onUnmounted(() => {
   color: #ef4444;
   font-size: var(--text-sm);
   cursor: pointer;
+}
+
+.btn-block-trigger:hover {
+  background: #fee2e2;
 }
 
 .hv-delete-hint {

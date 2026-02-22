@@ -77,6 +77,7 @@ def _contact_visible(task: Task, user_id: int | None) -> bool:
 def _task_to_out(
     task: Task, publisher: User, assignee: User | None,
     viewer_id: int | None = None, publisher_completed_count: int = 0,
+    publisher_task_count: int = 0,
 ) -> TaskOut:
     return TaskOut(
         id=task.id,
@@ -97,6 +98,8 @@ def _task_to_out(
         publisher_rating_avg=round(publisher.publisher_rating_avg, 1),
         publisher_rating_count=publisher.publisher_rating_count,
         publisher_completed_count=publisher_completed_count,
+        publisher_blocked_by_count=publisher.blocked_by_count,
+        publisher_task_count=publisher_task_count,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
@@ -327,8 +330,18 @@ def list_tasks(
     if user_ids:
         assignees = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
+    if user:
+        blocked_ids = set(
+            r[0] for r in db.query(Blacklist.blocked_user_id).filter(Blacklist.user_id == user.id).all()
+        ) | set(
+            r[0] for r in db.query(Blacklist.user_id).filter(Blacklist.blocked_user_id == user.id).all()
+        )
+        if blocked_ids:
+            rows = [(t, p) for t, p in rows if p.id not in blocked_ids]
+
     out_pub_ids = {pub.id for _, pub in rows}
     pub_completed: dict[int, int] = {}
+    pub_total_tasks: dict[int, int] = {}
     if out_pub_ids:
         pub_completed = dict(
             db.query(Task.publisher_id, func.count(Task.id))
@@ -336,10 +349,16 @@ def list_tasks(
             .group_by(Task.publisher_id)
             .all()
         )
+        pub_total_tasks = dict(
+            db.query(Task.publisher_id, func.count(Task.id))
+            .filter(Task.publisher_id.in_(out_pub_ids))
+            .group_by(Task.publisher_id)
+            .all()
+        )
 
     viewer_id = user.id if user else None
     return [
-        _task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id, pub_completed.get(publisher.id, 0))
+        _task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id, pub_completed.get(publisher.id, 0), pub_total_tasks.get(publisher.id, 0))
         for task, publisher in rows
     ]
 
@@ -374,7 +393,8 @@ def create_task(
     db.commit()
     db.refresh(task)
 
-    return _task_to_out(task, user, assignee=None, viewer_id=user.id)
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
+    return _task_to_out(task, user, assignee=None, viewer_id=user.id, publisher_task_count=pub_total)
 
 
 @router.get('/{task_id}', response_model=TaskOut)
@@ -384,7 +404,9 @@ def get_task(task_id: int, user: User | None = Depends(optional_user), db: Sessi
         raise HTTPException(status_code=404, detail='Task not found')
     publisher = db.get(User, task.publisher_id)
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
-    return _task_to_out(task, publisher, assignee, viewer_id=user.id if user else None)
+    pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
+    return _task_to_out(task, publisher, assignee, viewer_id=user.id if user else None, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.put('/{task_id}', response_model=TaskOut)
@@ -418,7 +440,8 @@ def update_task(
     db.commit()
     db.refresh(task)
 
-    return _task_to_out(task, user, None, viewer_id=user.id)
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
+    return _task_to_out(task, user, None, viewer_id=user.id, publisher_task_count=pub_total)
 
 
 _ABANDON_WINDOW_H = 24
@@ -467,7 +490,9 @@ def accept_task(task_id: int, user: User = Depends(require_completed_user), db: 
     db.refresh(task)
 
     publisher = db.get(User, task.publisher_id)
-    return _task_to_out(task, publisher, user, viewer_id=user.id)
+    pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
+    return _task_to_out(task, publisher, user, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.post('/{task_id}/confirm-complete', response_model=TaskOut)
@@ -495,7 +520,9 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
     db.refresh(task)
 
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
-    return _task_to_out(task, user, assignee, viewer_id=user.id)
+    pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id, Task.status == TaskStatus.COMPLETED).scalar() or 0
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
+    return _task_to_out(task, user, assignee, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.post('/{task_id}/abandon', response_model=TaskOut)
@@ -528,7 +555,9 @@ def abandon_task(task_id: int, user: User = Depends(require_completed_user), db:
     db.refresh(task)
 
     publisher = db.get(User, task.publisher_id)
-    return _task_to_out(task, publisher, None, viewer_id=user.id)
+    pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
+    return _task_to_out(task, publisher, None, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.post('/{task_id}/cancel', response_model=TaskOut)
@@ -548,7 +577,9 @@ def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: 
 
     publisher = db.get(User, task.publisher_id)
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
-    return _task_to_out(task, publisher, assignee, viewer_id=user.id)
+    pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
+    pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
+    return _task_to_out(task, publisher, assignee, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.delete('/{task_id}')
@@ -820,7 +851,9 @@ def list_my_published(user: User = Depends(require_completed_user), db: Session 
     rows = db.query(Task).filter(Task.publisher_id == user.id).order_by(desc(Task.created_at)).limit(200).all()
     assignee_ids = {r.assignee_id for r in rows if r.assignee_id}
     assignees = {u.id: u for u in db.query(User).filter(User.id.in_(assignee_ids)).all()} if assignee_ids else {}
-    return [_task_to_out(task, user, assignees.get(task.assignee_id), viewer_id=user.id) for task in rows]
+    pub_total = len(rows)
+    pub_completed = sum(1 for t in rows if t.status == TaskStatus.COMPLETED)
+    return [_task_to_out(task, user, assignees.get(task.assignee_id), viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total) for task in rows]
 
 
 @router.get('/me/accepted', response_model=list[TaskOut])
@@ -828,4 +861,17 @@ def list_my_accepted(user: User = Depends(require_completed_user), db: Session =
     rows = db.query(Task).filter(Task.assignee_id == user.id).order_by(desc(Task.created_at)).limit(200).all()
     publisher_ids = {r.publisher_id for r in rows}
     publishers = {u.id: u for u in db.query(User).filter(User.id.in_(publisher_ids)).all()} if publisher_ids else {}
-    return [_task_to_out(task, publishers.get(task.publisher_id), user, viewer_id=user.id) for task in rows]
+    pub_completed_map: dict[int, int] = {}
+    pub_total_map: dict[int, int] = {}
+    if publisher_ids:
+        pub_completed_map = dict(
+            db.query(Task.publisher_id, func.count(Task.id))
+            .filter(Task.publisher_id.in_(publisher_ids), Task.status == TaskStatus.COMPLETED)
+            .group_by(Task.publisher_id).all()
+        )
+        pub_total_map = dict(
+            db.query(Task.publisher_id, func.count(Task.id))
+            .filter(Task.publisher_id.in_(publisher_ids))
+            .group_by(Task.publisher_id).all()
+        )
+    return [_task_to_out(task, publishers.get(task.publisher_id), user, viewer_id=user.id, publisher_completed_count=pub_completed_map.get(task.publisher_id, 0), publisher_task_count=pub_total_map.get(task.publisher_id, 0)) for task in rows]

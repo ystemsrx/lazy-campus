@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import AuthContext, require_admin, require_completed_user
+from app.api.deps import AuthContext, require_admin, require_completed_user, require_user
 from app.db.session import get_db
 from app.models.enums import ReportStatus, ReportType, TaskStatus
 from app.models.moderation import AdminActionLog, Blacklist, Report
@@ -254,9 +254,12 @@ def list_blacklist(user: User = Depends(require_completed_user), db: Session = D
     return [
         {
             'blocked_user_id': row.blocked_user_id,
-            'blocked_display_name': (users[row.blocked_user_id].nickname or users[row.blocked_user_id].name)
+            'blocked_display_name': display_name(users[row.blocked_user_id])
             if row.blocked_user_id in users
             else '未知用户',
+            'blocked_avatar_url': users[row.blocked_user_id].avatar_url
+            if row.blocked_user_id in users
+            else None,
             'reason': row.reason,
             'created_at': row.created_at,
         }
@@ -286,6 +289,20 @@ def remove_blacklist(
     db.delete(row)
     db.commit()
     return {'message': 'Unblocked'}
+
+
+@router.get('/blacklist/check/{target_user_id}')
+def check_blocked(
+    target_user_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = (
+        db.query(Blacklist)
+        .filter(Blacklist.user_id == user.id, Blacklist.blocked_user_id == target_user_id)
+        .first()
+    )
+    return {'is_blocked': row is not None}
 
 
 @router.get('/admin/reports', response_model=list[ReportOut])

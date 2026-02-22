@@ -1,4 +1,4 @@
-export type SettingsTab = 'profile' | 'worker'
+export type SettingsTab = 'profile' | 'worker' | 'blacklist'
 export type SettingsSaveStatus = 'idle' | 'saving' | 'saved'
 
 export interface ProfileForm {
