@@ -50,7 +50,7 @@ const {
       @publish="openHome"
       @open-my-panel="openMyPanel"
       @open-settings="openSettings"
-      @open-reports="openHome"
+      @open-reports="$router.push('/reports')"
       @login="goLogin"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"

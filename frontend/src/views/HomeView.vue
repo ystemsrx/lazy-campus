@@ -5,7 +5,7 @@ import { appConfirm } from '../components/AppConfirm.vue'
 import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, localToUTC, nowLocal, utcToLocal } from '../utils/time'
 
-import { createReport, fetchMyReports } from '../api/moderation'
+import { createReport } from '../api/moderation'
 import {
   acceptTask,
   confirmTask,
@@ -31,7 +31,6 @@ import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import HomeLoadingState from '../components/home/HomeLoadingState.vue'
 import HomeMyTasksDrawer from '../components/home/HomeMyTasksDrawer.vue'
-import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import AppToast from '../components/AppToast.vue'
@@ -39,7 +38,7 @@ import { useAppToast } from '../composables/useAppToast'
 import HomeWorkerDetailDrawer from '../components/home/HomeWorkerDetailDrawer.vue'
 import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
 import { useAuthStore } from '../stores/auth'
-import type { Category, Report, Task, TaskMessage, TaskReview, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
+import type { Category, Task, TaskMessage, TaskReview, UserReview, WorkerContactReveal, WorkerProfile } from '../types/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -54,7 +53,6 @@ const showPostModal = ref(false)
 const showEditModal = ref(false)
 const editingTask = ref<Task | null>(null)
 const showMyPanel = ref(false)
-const showReportsPanel = ref(false)
 
 const { toast, showToast, clearToast } = useAppToast()
 
@@ -97,8 +95,6 @@ const taskMessages = ref<TaskMessage[]>([])
 const taskReviews = ref<TaskReview[]>([])
 const publisherHistoryReviews = ref<UserReview[]>([])
 const showReviewForm = ref(false)
-const myReports = ref<Report[]>([])
-
 const newTask = ref({
   title: '',
   description: '',
@@ -315,7 +311,7 @@ async function bootstrap() {
   try {
     const publicLoads = [loadCategories(), loadTasks(), loadWorkers()]
     if (auth.isAuthenticated) {
-      publicLoads.push(loadMyTasks(), loadMyReports())
+      publicLoads.push(loadMyTasks())
     }
     await Promise.all(publicLoads)
   } catch (error: any) {
@@ -349,10 +345,6 @@ async function loadMyTasks() {
   const [published, accepted] = await Promise.all([fetchPublishedTasks(), fetchAcceptedTasks()])
   myPublished.value = published
   myAccepted.value = accepted
-}
-
-async function loadMyReports() {
-  myReports.value = await fetchMyReports()
 }
 
 function openDrawer(task: Task) {
@@ -615,7 +607,6 @@ async function submitReport() {
     })
     reportForm.value.reason = ''
     reportForm.value.evidence = ''
-    await loadMyReports()
     showToast('举报已提交，等待管理员审核', 'success')
   } catch (error: any) {
     showToast(extractError(error, '提交失败'), 'error')
@@ -637,7 +628,7 @@ function openSettings() {
 }
 
 function openReports() {
-  showReportsPanel.value = true
+  router.push('/reports')
 }
 
 onMounted(() => {
@@ -731,8 +722,6 @@ onMounted(() => {
     :is-expired="isExpired"
     @open-task="openDrawer"
   />
-
-  <HomeReportsDrawer v-model="showReportsPanel" :my-reports="myReports" />
 
   <HomeTaskDetailDrawer
     :task="selectedTask"

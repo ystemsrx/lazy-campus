@@ -25,10 +25,9 @@ import {
   createReview,
 } from '../../api/tasks'
 import { fetchUserReviews } from '../../api/users'
-import { createReport, fetchMyReports } from '../../api/moderation'
+import { createReport } from '../../api/moderation'
 import type {
   Category,
-  Report,
   Task,
   TaskMessage,
   TaskReview,
@@ -127,9 +126,6 @@ export function useTaskManagement() {
   const showCreateModal = ref(false)
   const showEditModal = ref(false)
   const editingTask = ref<Task | null>(null)
-
-  const showReportsPanel = ref(false)
-  const myReports = ref<Report[]>([])
 
   const { toast, showToast, clearToast } = useAppToast()
 
@@ -356,14 +352,6 @@ export function useTaskManagement() {
     categories.value = await fetchCategories()
   }
 
-  async function loadMyReports() {
-    try {
-      myReports.value = await fetchMyReports()
-    } catch {
-      // ignore
-    }
-  }
-
   function goLogin() {
     router.push('/login')
   }
@@ -377,8 +365,7 @@ export function useTaskManagement() {
   }
 
   function openReports() {
-    loadMyReports()
-    showReportsPanel.value = true
+    router.push('/reports')
   }
 
   function logout() {
@@ -389,7 +376,7 @@ export function useTaskManagement() {
   async function bootstrap() {
     loading.value = true
     try {
-      await Promise.all([loadMyTasks(), loadCategories(), loadMyReports()])
+      await Promise.all([loadMyTasks(), loadCategories()])
     } catch (error: unknown) {
       showToast(extractError(error, '加载失败'), 'error')
     } finally {
@@ -639,8 +626,6 @@ export function useTaskManagement() {
     categories,
     showCreateModal,
     showEditModal,
-    showReportsPanel,
-    myReports,
     toast,
     clearToast,
     newTask,

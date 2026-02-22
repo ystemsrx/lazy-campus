@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
-import HomeReportsDrawer from '../components/home/HomeReportsDrawer.vue'
 import HomeStatsSection from '../components/home/HomeStatsSection.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
@@ -22,8 +21,6 @@ const {
   categories,
   showCreateModal,
   showEditModal,
-  showReportsPanel,
-  myReports,
   toast,
   clearToast,
   newTask,
@@ -160,8 +157,6 @@ const {
       @update:active-view="activeView = $event"
       @create="openCreateTask"
     />
-
-    <HomeReportsDrawer v-model="showReportsPanel" :my-reports="myReports" />
 
     <HomeTaskEditorModal
       v-model="showCreateModal"

@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/admin', component: () => import('../views/AdminView.vue') },
     { path: '/tasks', component: () => import('../views/TaskManagementView.vue') },
     { path: '/settings', component: () => import('../views/SettingsView.vue') },
+    { path: '/reports', component: () => import('../views/MyReportsView.vue') },
     { path: '/', component: () => import('../views/HomeView.vue') }
   ]
 })

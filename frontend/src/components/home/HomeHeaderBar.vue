@@ -120,7 +120,7 @@ onUnmounted(() => {
                 <i class="fa-solid fa-gear"></i> 设置
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenReports">
-                <i class="fa-solid fa-flag"></i> 我的举报
+                <i class="fa-solid fa-flag"></i> 举报与申诉
               </button>
               <div class="hv-user-dropdown__divider"></div>
               <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="onLogout">
