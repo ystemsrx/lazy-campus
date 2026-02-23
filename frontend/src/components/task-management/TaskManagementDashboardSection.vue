@@ -16,11 +16,12 @@ import TaskManagementTimeline from './TaskManagementTimeline.vue'
 const props = defineProps<{
   loading: boolean
   activeRole: 'assignee' | 'publisher'
-  activeStatus: 'pending' | 'progress' | 'completed'
+  activeStatus: 'pending' | 'progress' | 'completed' | 'canceled'
   assigneeTotal: number
   assigneeProgress: number
   publisherTotal: number
   publisherPending: number
+  canceledCount: number
   currentTasks: MyTask[]
   displayedTasks: MyTask[]
   taskGroups: TaskTimelineGroup[]
@@ -35,7 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:activeRole', value: 'assignee' | 'publisher'): void
-  (e: 'update:activeStatus', value: 'pending' | 'progress' | 'completed'): void
+  (e: 'update:activeStatus', value: 'pending' | 'progress' | 'completed' | 'canceled'): void
   (e: 'openTask', task: MyTask): void
 }>()
 
@@ -79,6 +80,7 @@ onUnmounted(() => {
       :active-role="activeRole"
       :model-value="activeStatus"
       :publisher-pending="publisherPending"
+      :canceled-count="canceledCount"
       @update:model-value="emit('update:activeStatus', $event)"
     />
 

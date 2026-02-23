@@ -13,6 +13,7 @@ import { appConfirm } from '../../components/AppConfirm.vue'
 import {
   abandonTask,
   acceptTask,
+  cancelTask,
   confirmTask,
   createTask,
   deleteTask,
@@ -47,7 +48,7 @@ import { useAppToast } from '../useAppToast'
 
 export type TaskManagementView = 'dashboard' | 'stats'
 export type TaskManagementRole = 'assignee' | 'publisher'
-export type TaskManagementStatus = 'pending' | 'progress' | 'completed'
+export type TaskManagementStatus = 'pending' | 'progress' | 'completed' | 'canceled'
 
 export type TaskEditorForm = {
   title: string
@@ -154,7 +155,7 @@ export function useTaskManagement() {
   )
 
   watch(activeRole, (role) => {
-    if (role === 'assignee' && activeStatus.value === 'pending') {
+    if (role === 'assignee' && (activeStatus.value === 'pending' || activeStatus.value === 'canceled')) {
       activeStatus.value = 'progress'
     }
   })
@@ -173,20 +174,28 @@ export function useTaskManagement() {
             ? task.status === 'open' || task.status === 'in_progress' || task.status === 'under_review'
             : task.status === 'in_progress' || task.status === 'under_review'
         }
-        return task.status === 'completed' || task.status === 'canceled'
+        if (activeStatus.value === 'canceled') return task.status === 'canceled'
+        return task.status === 'completed'
       })
       .sort(byDateDesc)
   })
 
+  const canceledCount = computed(() => {
+    const base =
+      activeRole.value === 'assignee' ? myAccepted.value : myPublished.value
+    return base.filter((t) => t.status === 'canceled').length
+  })
+
   const emptyText = computed(() => {
     if (activeRole.value === 'assignee') {
-      return activeStatus.value === 'progress'
-        ? '还没有进行中的委托，去任务大厅接取任务吧'
-        : '还没有完成过的委托'
+      if (activeStatus.value === 'progress') return '还没有进行中的委托，去任务大厅接取任务吧'
+      if (activeStatus.value === 'canceled') return '没有已取消的委托'
+      return '还没有完成过的委托'
     }
     if (activeStatus.value === 'pending') return '暂无等待接单的任务'
     if (activeStatus.value === 'progress') return '暂无正在进行中的任务'
-    return '没有已结束的发布任务'
+    if (activeStatus.value === 'canceled') return '没有已取消的任务'
+    return '没有已完成的任务'
   })
 
   const PAGE_SIZE = 8
@@ -296,6 +305,16 @@ export function useTaskManagement() {
   const canAbandon = computed(() => {
     if (!selectedTask.value || !me.value) return false
     return (selectedTask.value.status === 'in_progress' || selectedTask.value.status === 'under_review') && selectedTask.value.assignee_id === me.value.id
+  })
+
+  const canCancelTask = computed(() => {
+    if (!selectedTask.value || !me.value) return false
+    return (selectedTask.value.status === 'in_progress' || selectedTask.value.status === 'under_review') && selectedTask.value.publisher_id === me.value.id
+  })
+
+  const canRepublish = computed(() => {
+    if (!isPublisher.value || !selectedTask.value) return false
+    return selectedTask.value.status === 'canceled'
   })
 
   const canEditTask = computed(() => {
@@ -449,7 +468,7 @@ export function useTaskManagement() {
     if (!selectedTask.value) return
     const confirmed = await appConfirm({
       title: '确认放弃接取',
-      message: '放弃后任务将重新开放，24小时内累计放弃3次将无法继续接取任务。是否确认放弃？',
+      message: '放弃后任务将重新开放，24小时内累计放弃5次将无法继续接取任务。是否确认放弃？',
       confirmText: '放弃接取',
       type: 'danger',
     })
@@ -460,6 +479,24 @@ export function useTaskManagement() {
       await Promise.all([loadMyTasks(), refreshTaskMeta()])
     } catch (error: unknown) {
       showToast(extractError(error, '放弃失败'), 'error')
+    }
+  }
+
+  async function handleCancelTask() {
+    if (!selectedTask.value) return
+    const confirmed = await appConfirm({
+      title: '确认取消任务',
+      message: '取消后任务将结束并通知接单者。24小时内累计取消5次将暂时无法发布新任务。是否确认取消？',
+      confirmText: '取消任务',
+      type: 'danger',
+    })
+    if (!confirmed) return
+    try {
+      selectedTask.value = await cancelTask(selectedTask.value.id)
+      showToast('任务已取消', 'success')
+      await Promise.all([loadMyTasks(), refreshTaskMeta()])
+    } catch (error: unknown) {
+      showToast(extractError(error, '取消失败'), 'error')
     }
   }
 
@@ -573,6 +610,32 @@ export function useTaskManagement() {
     showCreateModal.value = true
   }
 
+  const republishSourceId = ref<number | null>(null)
+
+  watch(showCreateModal, (open) => {
+    if (!open) republishSourceId.value = null
+  })
+
+  function handleRepublishTask() {
+    if (!selectedTask.value) return
+    const task = selectedTask.value
+    republishSourceId.value = task.id
+    newTask.value = {
+      title: task.title,
+      description: task.description,
+      deadline: '',
+      location: task.location || '',
+      price: task.price,
+      category_id: task.category_id,
+      contact_visibility: task.contact_visibility,
+      contact_info: task.contact_info || '',
+      required_gender: task.required_gender,
+      icon: task.icon || 'Hexagon',
+    }
+    closeDrawer()
+    showCreateModal.value = true
+  }
+
   async function submitCreateTask() {
     try {
       await createTask({
@@ -590,6 +653,10 @@ export function useTaskManagement() {
         required_gender: newTask.value.required_gender,
         icon: newTask.value.icon,
       })
+      if (republishSourceId.value) {
+        await deleteTask(republishSourceId.value).catch(() => {})
+        republishSourceId.value = null
+      }
       showToast('委托发布成功', 'success')
       newTask.value = createEditorForm()
       showCreateModal.value = false
@@ -679,6 +746,7 @@ export function useTaskManagement() {
     publisherTotal,
     assigneeProgress,
     publisherPending,
+    canceledCount,
     currentTasks,
     displayedTasks,
     hasMore,
@@ -694,6 +762,8 @@ export function useTaskManagement() {
     genderMismatch,
     canConfirm,
     canAbandon,
+    canCancelTask,
+    canRepublish,
     canEditTask,
     canDeleteTask,
     deleteBlockedByAssignee,
@@ -713,6 +783,7 @@ export function useTaskManagement() {
     handleAcceptTask,
     handleConfirmTask,
     handleAbandonTask,
+    handleCancelTask,
     submitMessage,
     submitReview,
     handleDeleteTask,
@@ -722,6 +793,7 @@ export function useTaskManagement() {
     reportTargetId,
     showToast,
     openCreateTask,
+    handleRepublishTask,
     submitCreateTask,
     closeDrawer,
     openTaskDetail,

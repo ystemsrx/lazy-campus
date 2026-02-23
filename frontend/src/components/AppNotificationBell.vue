@@ -11,6 +11,7 @@ import {
   MessageCircle,
   ShieldCheck,
   UserCheck,
+  XCircle,
   X,
 } from 'lucide-vue-next'
 
@@ -97,6 +98,7 @@ const iconMap: Record<NotificationType, any> = {
   report_reviewed: ShieldCheck,
   task_completed: CheckCircle,
   task_abandoned: LogOut,
+  task_canceled: XCircle,
   punishment: Ban,
   admin_notice: Bell,
   admin_task_notice: AlertTriangle,
@@ -432,6 +434,11 @@ onUnmounted(() => {
 .notif-icon--task_abandoned {
   background: #fff7ed;
   color: #f97316;
+}
+
+.notif-icon--task_canceled {
+  background: #fef2f2;
+  color: #ef4444;
 }
 
 .notif-icon--punishment {

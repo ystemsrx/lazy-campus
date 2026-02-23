@@ -325,6 +325,24 @@ async function openTaskSnapshot(taskId: number) {
                   <input v-model.number="vm.profileForm.ban_count" class="form-input" type="number" min="0" />
                 </label>
               </div>
+              <div class="form-row aupd-ban-details aupd-ban-details--4col">
+                <label class="form-group">
+                  <span class="form-label">24h 取消接取</span>
+                  <input v-model.number="vm.profileForm.abandon_count_24h" class="form-input" type="number" min="0" />
+                </label>
+                <label class="form-group">
+                  <span class="form-label">24h 取消任务</span>
+                  <input v-model.number="vm.profileForm.cancel_count_24h" class="form-input" type="number" min="0" />
+                </label>
+                <label class="form-group">
+                  <span class="form-label">24h 接取数量</span>
+                  <input v-model.number="vm.profileForm.accept_count_24h" class="form-input" type="number" min="0" />
+                </label>
+                <label class="form-group">
+                  <span class="form-label">24h 发布数量</span>
+                  <input v-model.number="vm.profileForm.publish_count_24h" class="form-input" type="number" min="0" />
+                </label>
+              </div>
               <label class="form-group">
                 <span class="form-label">封禁理由</span>
                 <textarea v-model="vm.profileForm.ban_reason" class="form-textarea" rows="2" />
@@ -670,6 +688,15 @@ async function openTaskSnapshot(taskId: number) {
 
 .aupd-ban-details .form-group {
   flex: 1;
+  min-width: 0;
+}
+
+.aupd-ban-details--4col {
+  flex-wrap: wrap;
+}
+
+.aupd-ban-details--4col .form-group {
+  flex: 1 1 calc(25% - 9px);
   min-width: 0;
 }
 
@@ -1077,6 +1104,10 @@ async function openTaskSnapshot(taskId: number) {
 
   .aupd-ban-details {
     flex-wrap: wrap;
+  }
+
+  .aupd-ban-details--4col .form-group {
+    flex: 1 1 calc(50% - 6px);
   }
 
   .aupd-check-grid label {

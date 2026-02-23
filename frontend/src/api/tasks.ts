@@ -50,6 +50,11 @@ export async function abandonTask(taskId: number) {
   return data
 }
 
+export async function cancelTask(taskId: number) {
+  const { data } = await api.post<Task>(`/tasks/${taskId}/cancel`)
+  return data
+}
+
 export async function fetchPublishedTasks() {
   const { data } = await api.get<Task[]>('/tasks/me/published')
   return data

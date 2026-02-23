@@ -15,8 +15,10 @@ from app.models.task import (
     TaskAbandonLog,
     TaskAcceptLog,
     TaskAttachment,
+    TaskCancelLog,
     TaskCategory,
     TaskMessage,
+    TaskPublishLog,
     TaskReview,
 )
 from app.models.user import User, WorkerProfile, worker_skill_tags
@@ -418,6 +420,8 @@ def create_task(
 ) -> TaskOut:
     if user.ban_publish:
         raise HTTPException(status_code=403, detail='你的账号已被禁止发布任务')
+    if _cancel_count_in_window(db, user.id) >= _CANCEL_LIMIT:
+        raise HTTPException(status_code=429, detail='您在24小时内取消任务次数已达上限，暂时无法发布新任务')
     if payload.contact_visibility == ContactVisibility.AFTER_ACCEPT and not payload.contact_info:
         raise HTTPException(status_code=422, detail='contact_info is required when contact visibility is after_accept')
     if payload.contact_visibility == ContactVisibility.INTERNAL_ONLY and payload.contact_info:
@@ -449,6 +453,8 @@ def create_task(
         publisher_id=user.id,
     )
     db.add(task)
+    db.flush()
+    db.add(TaskPublishLog(user_id=user.id, task_id=task.id))
     db.commit()
     db.refresh(task)
 
@@ -504,7 +510,9 @@ def update_task(
 
 
 _ABANDON_WINDOW_H = 24
-_ABANDON_LIMIT = 3
+_ABANDON_LIMIT = 5
+_CANCEL_WINDOW_H = 24
+_CANCEL_LIMIT = 5
 _DAILY_CAPTCHA_FREE_LIMIT = 5
 
 
@@ -540,6 +548,16 @@ def _abandon_count_in_window(db: Session, user_id: int) -> int:
     return (
         db.query(func.count(TaskAbandonLog.id))
         .filter(TaskAbandonLog.user_id == user_id, TaskAbandonLog.abandoned_at >= window_start)
+        .scalar()
+        or 0
+    )
+
+
+def _cancel_count_in_window(db: Session, user_id: int) -> int:
+    window_start = datetime.utcnow() - timedelta(hours=_CANCEL_WINDOW_H)
+    return (
+        db.query(func.count(TaskCancelLog.id))
+        .filter(TaskCancelLog.user_id == user_id, TaskCancelLog.canceled_at >= window_start)
         .scalar()
         or 0
     )
@@ -665,24 +683,39 @@ def abandon_task(task_id: int, user: User = Depends(require_completed_user), db:
 
 @router.post('/{task_id}/cancel', response_model=TaskOut)
 def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
+    """发布者取消已接取的任务：任务变为 CANCELED 状态，通知接单者，记录取消日志"""
     task = db.get(Task, task_id)
     if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
-    if not _is_participant(task, user.id):
-        raise HTTPException(status_code=403, detail='Not allowed')
-    if task.status == TaskStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail='Completed task cannot be canceled')
+    if task.publisher_id != user.id:
+        raise HTTPException(status_code=403, detail='只有发布者才能取消任务')
+    if task.status not in (TaskStatus.IN_PROGRESS, TaskStatus.UNDER_REVIEW):
+        raise HTTPException(status_code=400, detail='只有进行中的任务才能取消')
 
+    db.add(TaskCancelLog(user_id=user.id, task_id=task.id))
+
+    assignee_id = task.assignee_id
     task.status = TaskStatus.CANCELED
+    task.assignee_id = None
     db.add(task)
+
+    if assignee_id:
+        db.add(Notification(
+            user_id=assignee_id,
+            type='task_canceled',
+            title='发布者取消了任务',
+            description=f'{display_name(user)} 取消了任务「{task.title}」，该任务已结束',
+            related_task_id=task.id,
+            related_user_id=user.id,
+            dismiss_type='read',
+        ))
     db.commit()
     db.refresh(task)
 
     publisher = db.get(User, task.publisher_id)
-    assignee = db.get(User, task.assignee_id) if task.assignee_id else None
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
-    return _task_to_out(task, publisher, assignee, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    return _task_to_out(task, publisher, None, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
 
 
 @router.delete('/{task_id}')
@@ -693,7 +726,7 @@ def delete_task(task_id: int, user: User = Depends(require_completed_user), db: 
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='Only publisher can delete task')
     if task.status == TaskStatus.IN_PROGRESS:
-        raise HTTPException(status_code=400, detail='任务已被接取，请等待接单者取消后再删除')
+        raise HTTPException(status_code=400, detail='任务正在进行中，请先取消任务后再删除')
     if task.status not in (TaskStatus.OPEN, TaskStatus.CANCELED):
         raise HTTPException(status_code=400, detail='当前任务状态不允许删除')
 

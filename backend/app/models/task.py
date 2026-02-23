@@ -80,6 +80,16 @@ class TaskAbandonLog(Base):
     abandoned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class TaskCancelLog(Base):
+    """记录发布者取消已接取任务的日志，用于24小时滑动窗口限速"""
+    __tablename__ = 'task_cancel_logs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    canceled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class TaskAcceptLog(Base):
     """记录接单行为，用于按日统计并触发验证码"""
     __tablename__ = 'task_accept_logs'
@@ -88,6 +98,16 @@ class TaskAcceptLog(Base):
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     task_id: Mapped[int] = mapped_column(Integer, index=True)
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class TaskPublishLog(Base):
+    """记录发布任务行为，用于24小时滑动窗口统计"""
+    __tablename__ = 'task_publish_logs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class TaskReview(Base):

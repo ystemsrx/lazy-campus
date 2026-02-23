@@ -33,6 +33,10 @@ interface AdminUserEditForm {
   ban_reason: string
   ban_count: number
   blocked_by_count: number
+  abandon_count_24h: number
+  cancel_count_24h: number
+  accept_count_24h: number
+  publish_count_24h: number
   ban_until_local: string
   worker_enabled: boolean
   worker_bio: string
@@ -59,6 +63,10 @@ function toForm(profile: AdminUserProfile): AdminUserEditForm {
     ban_reason: profile.ban_reason || '',
     ban_count: profile.ban_count || 0,
     blocked_by_count: profile.blocked_by_count || 0,
+    abandon_count_24h: profile.abandon_count_24h || 0,
+    cancel_count_24h: profile.cancel_count_24h || 0,
+    accept_count_24h: profile.accept_count_24h || 0,
+    publish_count_24h: profile.publish_count_24h || 0,
     ban_until_local: profile.ban_until ? utcToLocal(profile.ban_until) : '',
     worker_enabled: profile.worker_enabled,
     worker_bio: profile.worker_bio || '',
@@ -136,6 +144,10 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     ban_reason: '',
     ban_count: 0,
     blocked_by_count: 0,
+    abandon_count_24h: 0,
+    cancel_count_24h: 0,
+    accept_count_24h: 0,
+    publish_count_24h: 0,
     ban_until_local: '',
     worker_enabled: false,
     worker_bio: '',
@@ -148,6 +160,29 @@ export function useAdminUsers(showToast: AppToastNotifier) {
   })
 
   const totalPages = computed(() => Math.max(1, Math.ceil(userTotal.value / PAGE_SIZE)))
+
+  function syncUserInList(profile: AdminUserProfile) {
+    const idx = userList.value.findIndex(u => u.id === profile.id)
+    if (idx === -1) return
+    const item = userList.value[idx]
+    item.name = profile.name
+    item.nickname = profile.nickname
+    item.email = profile.email
+    item.gender = profile.gender
+    item.display_name = profile.display_name
+    item.avatar_url = profile.avatar_url
+    item.role = profile.role
+    item.is_active = profile.is_active
+    item.is_banned = profile.is_banned
+    item.ban_reason = profile.ban_reason
+    item.ban_count = profile.ban_count
+    item.ban_until = profile.ban_until
+    item.ban_publish = profile.ban_publish
+    item.ban_accept = profile.ban_accept
+    item.ban_contact = profile.ban_contact
+    item.blocked_by_count = profile.blocked_by_count
+    item.worker_enabled = profile.worker_enabled
+  }
 
   const banPreselectedTypes = computed<string[]>(() => {
     const u = banTargetUser.value
@@ -223,7 +258,6 @@ export function useAdminUsers(showToast: AppToastNotifier) {
       banTargetUser.value.ban_count = result.ban_count ?? banTargetUser.value.ban_count
       showToast('用户限制已更新', 'success')
       showBanModal.value = false
-      await loadUsers()
       if (selectedProfile.value && selectedProfile.value.id === banTargetUser.value.id) {
         await loadUserProfile(banTargetUser.value.id)
       }
@@ -460,6 +494,10 @@ export function useAdminUsers(showToast: AppToastNotifier) {
         ban_reason: profileForm.ban_reason.trim() || null,
         ban_count: Number(profileForm.ban_count) || 0,
         blocked_by_count: Number(profileForm.blocked_by_count) || 0,
+        abandon_count_24h: Number(profileForm.abandon_count_24h) || 0,
+        cancel_count_24h: Number(profileForm.cancel_count_24h) || 0,
+        accept_count_24h: Number(profileForm.accept_count_24h) || 0,
+        publish_count_24h: Number(profileForm.publish_count_24h) || 0,
         ban_until: profileForm.ban_until_local ? localToUTC(profileForm.ban_until_local) : null,
         worker_enabled: profileForm.worker_enabled,
         worker_bio: profileForm.worker_bio.trim() || null,
@@ -472,8 +510,8 @@ export function useAdminUsers(showToast: AppToastNotifier) {
       }
       const updated = await updateAdminUserProfile(selectedProfile.value.id, payload)
       selectedProfile.value = updated
+      syncUserInList(updated)
       markSaved()
-      await loadUsers()
     } catch (error: unknown) {
       profileSaveStatus.value = 'idle'
       showToast(extractError(error, '自动保存失败'), 'error')

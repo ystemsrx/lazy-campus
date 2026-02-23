@@ -91,6 +91,8 @@ const {
   genderMismatch,
   canConfirm,
   canAbandon,
+  canCancelTask,
+  canRepublish,
   myReviewTargetRole,
   hasAlreadyReviewed,
   bothSidesReviewed,
@@ -104,9 +106,11 @@ const {
   openDrawer: openTaskDrawer,
   closeDrawer: closeTaskDrawer,
   submitCreateTask,
-  handleAcceptTask,
+  handleAcceptTask: _handleAcceptTask,
   handleConfirmTask,
   handleAbandonTask,
+  handleCancelTask,
+  handleRepublishTask,
   submitMessage,
   submitReview,
   handleDeleteTask,
@@ -146,6 +150,14 @@ const {
   loadWorkers,
   requestCaptcha: appSlideCaptcha,
 })
+
+async function handleAcceptTask() {
+  await _handleAcceptTask()
+  if (selectedTask.value?.status === 'in_progress') {
+    closeTaskDrawer()
+    router.push('/tasks')
+  }
+}
 
 function findTaskById(taskId: number): Task | undefined {
   return [...allTasks.value, ...myPublished.value, ...myAccepted.value].find(
@@ -298,6 +310,8 @@ onMounted(() => {
     :gender-mismatch="genderMismatch"
     :can-confirm="canConfirm"
     :can-abandon="canAbandon"
+    :can-cancel-task="canCancelTask"
+    :can-republish="canRepublish"
     :can-edit-task="canEditTask"
     :can-delete-task="canDeleteTask"
     :delete-blocked-by-assignee="deleteBlockedByAssignee"
@@ -322,6 +336,8 @@ onMounted(() => {
     @accept-task="handleAcceptTask"
     @confirm-task="handleConfirmTask"
     @abandon-task="handleAbandonTask"
+    @cancel-task="handleCancelTask"
+    @republish-task="handleRepublishTask"
     @edit-task="openEditModal"
     @delete-task="handleDeleteTask"
     @update:chat-content="chatContent = $event"

@@ -28,6 +28,8 @@ const props = defineProps<{
   genderMismatch: boolean
   canConfirm: boolean
   canAbandon: boolean
+  canCancelTask: boolean
+  canRepublish: boolean
   canEditTask: boolean
   canDeleteTask: boolean
   deleteBlockedByAssignee: boolean
@@ -55,6 +57,8 @@ const emit = defineEmits<{
   (e: 'accept-task'): void
   (e: 'confirm-task'): void
   (e: 'abandon-task'): void
+  (e: 'cancel-task'): void
+  (e: 'republish-task'): void
   (e: 'edit-task'): void
   (e: 'delete-task'): void
   (e: 'update:chatContent', value: string): void
@@ -305,13 +309,14 @@ onUnmounted(() => {
                 <button class="btn btn-primary" @click="emit('login')"><i class="fa-solid fa-right-to-bracket"></i> 登录后接取任务</button>
               </div>
 
-              <div v-else-if="canAccept || canConfirm || canAbandon || isPublisher || genderMismatch" class="hv-drawer__actions">
+              <div v-else-if="canAccept || canConfirm || canAbandon || canCancelTask || canRepublish || isPublisher || genderMismatch" class="hv-drawer__actions">
                 <button v-if="canAccept" class="btn btn-primary" @click="emit('accept-task')"><i class="fa-solid fa-hand-pointer"></i> 接取此任务</button>
                 <button v-if="canConfirm" class="btn btn-success" @click="emit('confirm-task')"><i class="fa-solid fa-circle-check"></i> 确认完成</button>
                 <button v-if="canAbandon" class="btn btn-danger btn-sm" @click="emit('abandon-task')"><i class="fa-solid fa-person-running"></i> 放弃接取</button>
+                <button v-if="canCancelTask" class="btn btn-danger btn-sm" @click="emit('cancel-task')"><i class="fa-solid fa-xmark"></i> 取消任务</button>
+                <button v-if="canRepublish" class="btn btn-primary btn-sm" @click="emit('republish-task')"><i class="fa-solid fa-rotate-right"></i> 重新发布</button>
                 <button v-if="canEditTask" class="btn btn-outline btn-sm" @click="emit('edit-task')"><i class="fa-solid fa-pen-to-square"></i> 编辑</button>
                 <button v-if="canDeleteTask" class="btn btn-danger btn-sm" @click="emit('delete-task')"><i class="fa-solid fa-trash"></i> 删除任务</button>
-                <span v-if="deleteBlockedByAssignee" class="hv-delete-hint"><i class="fa-solid fa-lock"></i> 任务已被接取，接单者放弃后方可删除</span>
                 <span v-if="genderMismatch" class="hv-delete-hint">
                   <i class="fa-solid fa-ban"></i>
                   该任务限{{ task.required_gender === 'male' ? '男生' : '女生' }}接取，您不满足要求

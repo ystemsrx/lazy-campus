@@ -193,6 +193,8 @@ class AdminUserItem(BaseModel):
     accepted_task_count: int = 0
     completed_task_count: int = 0
     report_received_count: int = 0
+    publish_count_24h: int = 0
+    accept_count_24h: int = 0
     last_active: datetime | None = None
     created_at: datetime
 
@@ -411,6 +413,10 @@ class AdminUserProfileOut(BaseModel):
     publisher_rating_count: int = 0
     worker_rating_avg: float = 0
     worker_rating_count: int = 0
+    abandon_count_24h: int = 0
+    cancel_count_24h: int = 0
+    publish_count_24h: int = 0
+    accept_count_24h: int = 0
     radar: AdminUserRadarMetrics
     recent_tasks: list[AdminUserTaskBrief] = Field(default_factory=list)
     recent_reports: list[AdminUserReportBrief] = Field(default_factory=list)
@@ -431,6 +437,10 @@ class AdminUserUpdateRequest(BaseModel):
     ban_until: datetime | None = None
     ban_count: int | None = Field(default=None, ge=0, le=9999)
     blocked_by_count: int | None = Field(default=None, ge=0, le=999999)
+    abandon_count_24h: int | None = Field(default=None, ge=0, le=999)
+    cancel_count_24h: int | None = Field(default=None, ge=0, le=999)
+    accept_count_24h: int | None = Field(default=None, ge=0, le=999)
+    publish_count_24h: int | None = Field(default=None, ge=0, le=999)
     worker_enabled: bool | None = None
     worker_bio: str | None = Field(default=None, max_length=2000)
     worker_min_price: float | None = Field(default=None, ge=0)

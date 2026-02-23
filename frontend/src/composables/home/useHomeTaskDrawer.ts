@@ -1,9 +1,10 @@
-import { computed, ref, type ComputedRef } from 'vue'
+import { computed, ref, watch, type ComputedRef } from 'vue'
 import { appConfirm } from '../../components/AppConfirm.vue'
 import { blockUser } from '../../api/moderation'
 import {
   abandonTask,
   acceptTask,
+  cancelTask,
   confirmTask,
   createReview,
   createTask,
@@ -110,6 +111,15 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     )
   })
 
+  const canCancelTask = computed(() => {
+    if (!selectedTask.value || !options.me.value) return false
+    return (
+      (selectedTask.value.status === 'in_progress' ||
+        selectedTask.value.status === 'under_review') &&
+      selectedTask.value.publisher_id === options.me.value.id
+    )
+  })
+
   const myReviewTargetRole = computed<'worker' | 'publisher' | null>(() => {
     if (!options.me.value || !selectedTask.value) return null
     if (selectedTask.value.publisher_id === options.me.value.id) return 'worker'
@@ -142,6 +152,11 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
   const canDeleteTask = computed(() => {
     if (!isPublisher.value || !selectedTask.value) return false
     return selectedTask.value.status === 'open' || selectedTask.value.status === 'canceled'
+  })
+
+  const canRepublish = computed(() => {
+    if (!isPublisher.value || !selectedTask.value) return false
+    return selectedTask.value.status === 'canceled'
   })
 
   const canEditTask = computed(() => {
@@ -231,6 +246,10 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
           }),
         options.requestCaptcha,
       )
+      if (republishSourceId.value) {
+        await deleteTask(republishSourceId.value).catch(() => {})
+        republishSourceId.value = null
+      }
       options.showToast('委托发布成功', 'success')
       newTask.value = createTaskEditorForm()
       showPostModal.value = false
@@ -276,7 +295,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     const yes = await appConfirm({
       title: '确认放弃接取',
       message:
-        '放弃后任务将重新开放，24小时内累计放弃3次将无法继续接取任务。是否确认放弃？',
+        '放弃后任务将重新开放，24小时内累计放弃5次将无法继续接取任务。是否确认放弃？',
       confirmText: '放弃接取',
       type: 'danger',
     })
@@ -289,6 +308,52 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     } catch (error) {
       options.showToast(extractError(error, '放弃失败'), 'error')
     }
+  }
+
+  async function handleCancelTask() {
+    if (!selectedTask.value) return
+    const yes = await appConfirm({
+      title: '确认取消任务',
+      message:
+        '取消后任务将结束并通知接单者。24小时内累计取消5次将暂时无法发布新任务。是否确认取消？',
+      confirmText: '取消任务',
+      type: 'danger',
+    })
+    if (!yes) return
+    try {
+      selectedTask.value = await cancelTask(selectedTask.value.id)
+      options.showToast('任务已取消', 'success')
+      await Promise.all([refreshTaskBoardData(), refreshTaskMeta()])
+      options.pollNotificationCount()
+    } catch (error) {
+      options.showToast(extractError(error, '取消失败'), 'error')
+    }
+  }
+
+  const republishSourceId = ref<number | null>(null)
+
+  watch(showPostModal, (open) => {
+    if (!open) republishSourceId.value = null
+  })
+
+  function handleRepublishTask() {
+    if (!selectedTask.value) return
+    const task = selectedTask.value
+    republishSourceId.value = task.id
+    newTask.value = {
+      title: task.title,
+      description: task.description,
+      deadline: '',
+      location: task.location || '',
+      price: task.price,
+      category_id: task.category_id,
+      contact_visibility: task.contact_visibility,
+      contact_info: task.contact_info || '',
+      required_gender: task.required_gender,
+      icon: task.icon || 'Hexagon',
+    }
+    closeDrawer()
+    showPostModal.value = true
   }
 
   async function submitMessage() {
@@ -430,12 +495,14 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     genderMismatch,
     canConfirm,
     canAbandon,
+    canCancelTask,
     myReviewTargetRole,
     hasAlreadyReviewed,
     bothSidesReviewed,
     waitingForOtherReview,
     canReview,
     canDeleteTask,
+    canRepublish,
     canEditTask,
     deleteBlockedByAssignee,
     canReport,
@@ -448,6 +515,8 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     handleAcceptTask,
     handleConfirmTask,
     handleAbandonTask,
+    handleCancelTask,
+    handleRepublishTask,
     submitMessage,
     submitReview,
     handleDeleteTask,

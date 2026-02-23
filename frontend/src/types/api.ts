@@ -181,6 +181,8 @@ export interface AdminUserItem {
   accepted_task_count: number
   completed_task_count: number
   report_received_count: number
+  publish_count_24h: number
+  accept_count_24h: number
   last_active: string | null
   created_at: string
 }
@@ -233,7 +235,7 @@ export interface Report {
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'punishment' | 'admin_notice' | 'admin_task_notice'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'task_canceled' | 'punishment' | 'admin_notice' | 'admin_task_notice'
 export type DismissType = 'read' | 'action' | 'source' | 'persistent'
 
 export interface AppNotification {
@@ -468,6 +470,10 @@ export interface AdminUserProfile {
   publisher_rating_count: number
   worker_rating_avg: number
   worker_rating_count: number
+  abandon_count_24h: number
+  cancel_count_24h: number
+  publish_count_24h: number
+  accept_count_24h: number
   radar: AdminUserRadarMetrics
   recent_tasks: AdminUserTaskBrief[]
   recent_reports: AdminUserReportBrief[]

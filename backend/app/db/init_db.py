@@ -122,6 +122,32 @@ def run_startup_migrations() -> None:
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_abandon_logs_task_id ON task_abandon_logs (task_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_abandon_logs_abandoned_at ON task_abandon_logs (abandoned_at)'))
 
+        if 'task_cancel_logs' not in tables:
+            conn.execute(text('''
+                CREATE TABLE task_cancel_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    task_id INTEGER NOT NULL,
+                    canceled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_cancel_logs_user_id ON task_cancel_logs (user_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_cancel_logs_task_id ON task_cancel_logs (task_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_cancel_logs_canceled_at ON task_cancel_logs (canceled_at)'))
+
+        if 'task_publish_logs' not in tables:
+            conn.execute(text('''
+                CREATE TABLE task_publish_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    task_id INTEGER NOT NULL,
+                    published_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_user_id ON task_publish_logs (user_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_task_id ON task_publish_logs (task_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_published_at ON task_publish_logs (published_at)'))
+
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)

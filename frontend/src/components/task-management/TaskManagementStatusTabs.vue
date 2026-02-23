@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { CheckCircle2, ClipboardList, Clock } from 'lucide-vue-next'
+import { Ban, CheckCircle2, ClipboardList, Clock } from 'lucide-vue-next'
 
 defineProps<{
   activeRole: 'assignee' | 'publisher'
-  modelValue: 'pending' | 'progress' | 'completed'
+  modelValue: 'pending' | 'progress' | 'completed' | 'canceled'
   publisherPending: number
+  canceledCount: number
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: 'pending' | 'progress' | 'completed'): void
+  (e: 'update:modelValue', value: 'pending' | 'progress' | 'completed' | 'canceled'): void
 }>()
 </script>
 
@@ -33,6 +34,17 @@ const emit = defineEmits<{
     <button :class="{ 'tm-tab--active': modelValue === 'completed' }" @click="emit('update:modelValue', 'completed')">
       <div class="tm-tab__icon"><CheckCircle2 :size="16" /></div>
       已完成
+    </button>
+
+    <button
+      v-if="activeRole === 'publisher'"
+      class="tm-tab--canceled-wrap"
+      :class="{ 'tm-tab--active': modelValue === 'canceled' }"
+      @click="emit('update:modelValue', 'canceled')"
+    >
+      <div class="tm-tab__icon"><Ban :size="16" /></div>
+      已取消
+      <span v-if="canceledCount" class="tm-tab-badge tm-tab-badge--muted">{{ canceledCount > 99 ? '99+' : canceledCount }}</span>
     </button>
   </div>
 </template>
@@ -101,6 +113,10 @@ const emit = defineEmits<{
   border: 2px solid #f8fafc;
   pointer-events: none;
   z-index: 1;
+}
+
+.tm-tab-badge--muted {
+  background: #94a3b8;
 }
 
 .tm-tabs button:hover {

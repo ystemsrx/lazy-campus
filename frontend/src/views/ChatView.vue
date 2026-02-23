@@ -185,13 +185,21 @@ const {
 loadAttachmentsHook = loadAllAttachments
 resetAttachmentsHook = resetAttachments
 
+const isTaskEnded = computed(() => {
+  if (!activeConversation.value) return false
+  return activeConversation.value.task_is_deleted || activeConversation.value.task_status === 'canceled'
+})
+
 const isBlocked = computed(() => {
   if (!activeConversation.value) return false
+  if (isTaskEnded.value) return true
   return activeConversation.value.blocked_by_me || activeConversation.value.blocked_by_them
 })
 
 const blockReason = computed(() => {
   if (!activeConversation.value) return ''
+  if (activeConversation.value.task_is_deleted) return '该任务已被删除'
+  if (activeConversation.value.task_status === 'canceled') return '该任务已被取消'
   if (activeConversation.value.blocked_by_me && activeConversation.value.blocked_by_them) return '双方已相互拉黑'
   if (activeConversation.value.blocked_by_me) return '您已拉黑此用户'
   if (activeConversation.value.blocked_by_them) return '对方已将您拉黑'
@@ -263,6 +271,7 @@ async function handleSend() {
 function openTaskDetail() {
   if (!activeConversation.value?.task_id) return
   showTaskPreview.value = true
+  prefetchTaskDetail(activeConversation.value.task_id)
 }
 
 function openUserDetail() {

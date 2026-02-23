@@ -12,7 +12,7 @@ from app.models.enums import Gender, ReportStatus, ReportType, TaskStatus, UserR
 from app.models.chat import ChatAttachment, ChatMessage
 from app.models.moderation import AdminActionLog, Blacklist, Report
 from app.models.notification import Notification
-from app.models.task import Task, TaskAcceptLog, TaskAttachment, TaskCategory, TaskMessage, TaskReview
+from app.models.task import Task, TaskAbandonLog, TaskAcceptLog, TaskAttachment, TaskCancelLog, TaskCategory, TaskMessage, TaskPublishLog, TaskReview
 from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.moderation import (
     AdminActionLogItem,
@@ -292,6 +292,29 @@ def _serialize_task_item(
     )
 
 
+def _adjust_log_count(db: Session, user_id: int, model, user_col, ts_col, ts_field: str, target: int) -> None:
+    """Adjust log entries in the 24h window to match the target count."""
+    window_start = datetime.utcnow() - timedelta(hours=24)
+    current = db.query(func.count(model.id)).filter(user_col == user_id, ts_col >= window_start).scalar() or 0
+    if target == current:
+        return
+    if target < current:
+        ids_to_delete = (
+            db.query(model.id)
+            .filter(user_col == user_id, ts_col >= window_start)
+            .order_by(ts_col.asc())
+            .limit(current - target)
+            .all()
+        )
+        if ids_to_delete:
+            db.query(model).filter(model.id.in_([r[0] for r in ids_to_delete])).delete(synchronize_session=False)
+    elif target > current:
+        for _ in range(target - current):
+            entry = model(user_id=user_id, task_id=0)
+            setattr(entry, ts_field, datetime.utcnow())
+            db.add(entry)
+
+
 def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut:
     worker = db.query(WorkerProfile).filter(WorkerProfile.user_id == user.id).first()
 
@@ -412,6 +435,28 @@ def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut
     worker_skill_ids = [t.id for t in (worker.skill_tags or [])] if worker else []
     worker_skill_names = [t.name for t in (worker.skill_tags or [])] if worker else []
 
+    window_start = datetime.utcnow() - timedelta(hours=24)
+    abandon_count_24h = (
+        db.query(func.count(TaskAbandonLog.id))
+        .filter(TaskAbandonLog.user_id == user.id, TaskAbandonLog.abandoned_at >= window_start)
+        .scalar() or 0
+    )
+    cancel_count_24h = (
+        db.query(func.count(TaskCancelLog.id))
+        .filter(TaskCancelLog.user_id == user.id, TaskCancelLog.canceled_at >= window_start)
+        .scalar() or 0
+    )
+    publish_count_24h = (
+        db.query(func.count(TaskPublishLog.id))
+        .filter(TaskPublishLog.user_id == user.id, TaskPublishLog.published_at >= window_start)
+        .scalar() or 0
+    )
+    accept_count_24h = (
+        db.query(func.count(TaskAcceptLog.id))
+        .filter(TaskAcceptLog.user_id == user.id, TaskAcceptLog.accepted_at >= window_start)
+        .scalar() or 0
+    )
+
     return AdminUserProfileOut(
         id=user.id,
         account=user.account,
@@ -456,6 +501,10 @@ def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut
         publisher_rating_count=user.publisher_rating_count or 0,
         worker_rating_avg=round(user.worker_rating_avg or 0, 2),
         worker_rating_count=user.worker_rating_count or 0,
+        abandon_count_24h=abandon_count_24h,
+        cancel_count_24h=cancel_count_24h,
+        publish_count_24h=publish_count_24h,
+        accept_count_24h=accept_count_24h,
         radar=radar,
         recent_tasks=recent_tasks,
         recent_reports=recent_reports,
@@ -1175,6 +1224,8 @@ def admin_list_users(
     completed_pub_map = {}
     completed_accept_map = {}
     report_received_map = {}
+    publish_24h_map = {}
+    accept_24h_map = {}
     if user_ids:
         published_map = dict(
             db.query(Task.publisher_id, func.count(Task.id))
@@ -1204,6 +1255,19 @@ def admin_list_users(
             db.query(Report.reported_user_id, func.count(Report.id))
             .filter(Report.reported_user_id.in_(user_ids), Report.type == ReportType.REPORT)
             .group_by(Report.reported_user_id)
+            .all()
+        )
+        window_start_24h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
+        publish_24h_map = dict(
+            db.query(TaskPublishLog.user_id, func.count(TaskPublishLog.id))
+            .filter(TaskPublishLog.user_id.in_(user_ids), TaskPublishLog.published_at >= window_start_24h)
+            .group_by(TaskPublishLog.user_id)
+            .all()
+        )
+        accept_24h_map = dict(
+            db.query(TaskAcceptLog.user_id, func.count(TaskAcceptLog.id))
+            .filter(TaskAcceptLog.user_id.in_(user_ids), TaskAcceptLog.accepted_at >= window_start_24h)
+            .group_by(TaskAcceptLog.user_id)
             .all()
         )
 
@@ -1242,6 +1306,8 @@ def admin_list_users(
                     accepted_task_count=accepted_map.get(u.id, 0),
                     completed_task_count=completed_pub_map.get(u.id, 0) + completed_accept_map.get(u.id, 0),
                     report_received_count=report_received_map.get(u.id, 0),
+                    publish_count_24h=publish_24h_map.get(u.id, 0),
+                    accept_count_24h=accept_24h_map.get(u.id, 0),
                     last_active=u.last_active,
                     created_at=u.created_at,
                 )
@@ -1305,6 +1371,31 @@ def admin_update_user_profile(
         user.ban_count = data.get('ban_count') or 0
     if 'blocked_by_count' in data:
         user.blocked_by_count = data.get('blocked_by_count') or 0
+
+    if 'abandon_count_24h' in data:
+        _adjust_log_count(
+            db, user.id, TaskAbandonLog, TaskAbandonLog.user_id,
+            TaskAbandonLog.abandoned_at, 'abandoned_at',
+            int(data.get('abandon_count_24h') or 0),
+        )
+    if 'cancel_count_24h' in data:
+        _adjust_log_count(
+            db, user.id, TaskCancelLog, TaskCancelLog.user_id,
+            TaskCancelLog.canceled_at, 'canceled_at',
+            int(data.get('cancel_count_24h') or 0),
+        )
+    if 'accept_count_24h' in data:
+        _adjust_log_count(
+            db, user.id, TaskAcceptLog, TaskAcceptLog.user_id,
+            TaskAcceptLog.accepted_at, 'accepted_at',
+            int(data.get('accept_count_24h') or 0),
+        )
+    if 'publish_count_24h' in data:
+        _adjust_log_count(
+            db, user.id, TaskPublishLog, TaskPublishLog.user_id,
+            TaskPublishLog.published_at, 'published_at',
+            int(data.get('publish_count_24h') or 0),
+        )
 
     if not (user.is_banned or user.ban_publish or user.ban_accept or user.ban_contact):
         user.ban_until = None

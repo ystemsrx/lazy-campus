@@ -38,6 +38,7 @@ const {
   publisherTotal,
   assigneeProgress,
   publisherPending,
+  canceledCount,
   currentTasks,
   displayedTasks,
   hasMore,
@@ -53,6 +54,8 @@ const {
   genderMismatch,
   canConfirm,
   canAbandon,
+  canCancelTask,
+  canRepublish,
   canEditTask,
   canDeleteTask,
   deleteBlockedByAssignee,
@@ -72,6 +75,8 @@ const {
   handleAcceptTask,
   handleConfirmTask,
   handleAbandonTask,
+  handleCancelTask,
+  handleRepublishTask,
   submitMessage,
   submitReview,
   handleDeleteTask,
@@ -133,6 +138,7 @@ const {
             :assignee-progress="assigneeProgress"
             :publisher-total="publisherTotal"
             :publisher-pending="publisherPending"
+            :canceled-count="canceledCount"
             :current-tasks="currentTasks"
             :displayed-tasks="displayedTasks"
             :task-groups="taskGroups"
@@ -192,6 +198,8 @@ const {
       :gender-mismatch="genderMismatch"
       :can-confirm="canConfirm"
       :can-abandon="canAbandon"
+      :can-cancel-task="canCancelTask"
+      :can-republish="canRepublish"
       :can-edit-task="canEditTask"
       :can-delete-task="canDeleteTask"
       :delete-blocked-by-assignee="deleteBlockedByAssignee"
@@ -216,6 +224,8 @@ const {
       @accept-task="handleAcceptTask"
       @confirm-task="handleConfirmTask"
       @abandon-task="handleAbandonTask"
+      @cancel-task="handleCancelTask"
+      @republish-task="handleRepublishTask"
       @edit-task="openEditModal"
       @delete-task="handleDeleteTask"
       @update:chat-content="chatContent = $event"
