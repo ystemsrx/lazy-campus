@@ -287,8 +287,9 @@ function onConfirm() {
 
 @media (hover: hover) {
   .arv-type-chip:not(.arv-type-chip--active):hover {
-    border-color: var(--c-accent);
-    color: var(--c-accent);
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    color: #475569;
   }
 }
 
@@ -296,7 +297,7 @@ function onConfirm() {
   border-color: var(--c-accent);
   background: var(--c-accent-light);
   color: var(--c-accent);
-  cursor: default;
+  cursor: pointer;
 }
 
 .arv-type-chip--login {
@@ -332,8 +333,9 @@ function onConfirm() {
 
 @media (hover: hover) {
   .arv-dur-btn:not(.arv-dur-btn--active):not(.arv-dur-btn--permanent):hover {
-    border-color: var(--c-accent);
-    color: var(--c-accent);
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    color: #475569;
   }
 }
 
@@ -341,14 +343,14 @@ function onConfirm() {
   border-color: var(--c-accent);
   background: var(--c-accent);
   color: #fff;
-  cursor: default;
+  cursor: pointer;
 }
 
 .arv-dur-btn--permanent {
   border-color: var(--c-danger);
   background: var(--c-danger);
   color: #fff;
-  cursor: default;
+  cursor: pointer;
 }
 
 .arv-dur-preview {
