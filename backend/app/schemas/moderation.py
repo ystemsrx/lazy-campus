@@ -260,10 +260,16 @@ class AdminTaskOperateRequest(BaseModel):
 class AdminChatConversationItem(BaseModel):
     user_a_id: int
     user_a_display_name: str
+    user_a_avatar_url: str | None = None
+    user_a_gender: str | None = None
     user_b_id: int
     user_b_display_name: str
+    user_b_avatar_url: str | None = None
+    user_b_gender: str | None = None
     task_id: int | None
     task_title: str | None
+    task_price: float | None = None
+    task_status: str | None = None
     message_count: int
     last_message: str | None
     last_message_time: datetime | None
@@ -280,6 +286,8 @@ class AdminChatMessageOut(BaseModel):
     id: int
     sender_id: int
     sender_display_name: str
+    sender_avatar_url: str | None = None
+    sender_gender: str | None = None
     receiver_id: int
     receiver_display_name: str
     task_id: int | None
@@ -292,10 +300,16 @@ class AdminChatMessageOut(BaseModel):
 class AdminTaskChatConversationItem(BaseModel):
     task_id: int
     task_title: str
+    task_price: float | None = None
+    task_status: str | None = None
     publisher_id: int
     publisher_display_name: str
+    publisher_avatar_url: str | None = None
+    publisher_gender: str | None = None
     session_assignee_id: int | None
     session_assignee_display_name: str | None
+    session_assignee_avatar_url: str | None = None
+    session_assignee_gender: str | None = None
     message_count: int
     last_message: str | None
     last_message_time: datetime | None
@@ -313,9 +327,20 @@ class AdminTaskChatMessageOut(BaseModel):
     task_id: int
     sender_id: int
     sender_display_name: str
+    sender_avatar_url: str | None = None
+    sender_gender: str | None = None
     session_assignee_id: int | None
     content: str
     created_at: datetime
+
+
+class AdminChatAttachmentOut(BaseModel):
+    id: int
+    message_id: int | None
+    file_name: str
+    file_url: str
+    file_size: int
+    mime_type: str
 
 
 class AdminPushNotificationRequest(BaseModel):

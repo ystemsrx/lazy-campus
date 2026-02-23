@@ -18,6 +18,7 @@ from app.schemas.moderation import (
     AdminActionLogItem,
     AdminActionLogListResponse,
     AdminBlacklistItem,
+    AdminChatAttachmentOut,
     AdminChatConversationItem,
     AdminChatConversationListResponse,
     AdminChatMessageOut,
@@ -1798,6 +1799,8 @@ def admin_list_chat_conversations(
     if task_id is not None:
         if task_id == 0:
             grouped = grouped.filter(ChatMessage.task_id.is_(None))
+        elif task_id == -1:
+            grouped = grouped.filter(ChatMessage.task_id.isnot(None))
         else:
             grouped = grouped.filter(ChatMessage.task_id == task_id)
     if user_id is not None:
@@ -1839,10 +1842,16 @@ def admin_list_chat_conversations(
         items.append(AdminChatConversationItem(
             user_a_id=r.user_a_id,
             user_a_display_name=display_name(u1) if u1 else f'用户#{r.user_a_id}',
+            user_a_avatar_url=u1.avatar_url if u1 else None,
+            user_a_gender=u1.gender.value if u1 and u1.gender else None,
             user_b_id=r.user_b_id,
             user_b_display_name=display_name(u2) if u2 else f'用户#{r.user_b_id}',
+            user_b_avatar_url=u2.avatar_url if u2 else None,
+            user_b_gender=u2.gender.value if u2 and u2.gender else None,
             task_id=r.task_id,
             task_title=task_obj.title if task_obj else None,
+            task_price=task_obj.price if task_obj else None,
+            task_status=task_obj.status.value if task_obj and task_obj.status else None,
             message_count=int(r.message_count or 0),
             last_message=last_msg.content if last_msg else None,
             last_message_time=last_msg.created_at if last_msg else r.last_message_time,
@@ -1888,6 +1897,8 @@ def admin_list_chat_messages(
             id=m.id,
             sender_id=m.sender_id,
             sender_display_name=display_name(users[m.sender_id]) if m.sender_id in users else f'用户#{m.sender_id}',
+            sender_avatar_url=users[m.sender_id].avatar_url if m.sender_id in users else None,
+            sender_gender=users[m.sender_id].gender.value if m.sender_id in users and users[m.sender_id].gender else None,
             receiver_id=m.receiver_id,
             receiver_display_name=display_name(users[m.receiver_id]) if m.receiver_id in users else f'用户#{m.receiver_id}',
             task_id=m.task_id,
@@ -1964,10 +1975,16 @@ def admin_list_task_chat_conversations(
         items.append(AdminTaskChatConversationItem(
             task_id=task_obj.id,
             task_title=task_obj.title,
+            task_price=task_obj.price,
+            task_status=task_obj.status.value if task_obj.status else None,
             publisher_id=task_obj.publisher_id,
             publisher_display_name=display_name(publisher) if publisher else f'用户#{task_obj.publisher_id}',
+            publisher_avatar_url=publisher.avatar_url if publisher else None,
+            publisher_gender=publisher.gender.value if publisher and publisher.gender else None,
             session_assignee_id=row.session_assignee_id,
             session_assignee_display_name=display_name(session_assignee) if session_assignee else None,
+            session_assignee_avatar_url=session_assignee.avatar_url if session_assignee else None,
+            session_assignee_gender=session_assignee.gender.value if session_assignee and session_assignee.gender else None,
             message_count=int(row.message_count or 0),
             last_message=last_msg.content if last_msg else None,
             last_message_time=last_msg.created_at if last_msg else row.last_message_time,
@@ -2009,11 +2026,48 @@ def admin_list_task_chat_messages(
             task_id=m.task_id,
             sender_id=m.sender_id,
             sender_display_name=display_name(users[m.sender_id]) if m.sender_id in users else f'用户#{m.sender_id}',
+            sender_avatar_url=users[m.sender_id].avatar_url if m.sender_id in users else None,
+            sender_gender=users[m.sender_id].gender.value if m.sender_id in users and users[m.sender_id].gender else None,
             session_assignee_id=m.session_assignee_id,
             content=m.content,
             created_at=m.created_at,
         )
         for m in rows
+    ]
+
+
+@router.get('/admin/chats/attachments', response_model=list[AdminChatAttachmentOut])
+def admin_list_chat_attachments(
+    user_a_id: int,
+    user_b_id: int,
+    task_id: int | None = Query(default=None),
+    _admin: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[AdminChatAttachmentOut]:
+    lo, hi = (min(user_a_id, user_b_id), max(user_a_id, user_b_id))
+    task_filter = ChatAttachment.task_id == task_id if task_id is not None else ChatAttachment.task_id.is_(None)
+    rows = (
+        db.query(ChatAttachment)
+        .filter(
+            or_(
+                and_(ChatAttachment.uploader_id == lo, ChatAttachment.peer_id == hi),
+                and_(ChatAttachment.uploader_id == hi, ChatAttachment.peer_id == lo),
+            ),
+            task_filter,
+        )
+        .order_by(ChatAttachment.created_at)
+        .all()
+    )
+    return [
+        AdminChatAttachmentOut(
+            id=a.id,
+            message_id=a.message_id,
+            file_name=a.file_name,
+            file_url=a.file_url,
+            file_size=a.file_size,
+            mime_type=a.mime_type,
+        )
+        for a in rows
     ]
 
 

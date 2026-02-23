@@ -566,10 +566,6 @@ function bLabel(s: string) {
   font-family: var(--font-sans);
 }
 
-.rpt-filter-btn:hover {
-  background: #f8fafc;
-}
-
 .rpt-filter-btn--active {
   background: rgba(59, 130, 246, 0.06);
   color: var(--c-accent);

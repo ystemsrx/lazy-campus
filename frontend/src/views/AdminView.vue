@@ -209,9 +209,9 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <div class="av-content" :class="{ 'av-content--full': activeTab === 'reports' }">
+      <div class="av-content" :class="{ 'av-content--full': activeTab === 'reports' || activeTab === 'chats' }">
         <div class="av-content__inner">
-          <div v-if="activeTab !== 'reports'" class="av-page-head">
+          <div v-if="activeTab !== 'reports' && activeTab !== 'chats'" class="av-page-head">
             <div>
               <h1 class="av-page-title">{{ pageTitle }}</h1>
               <p class="av-page-subtitle">今天是 {{ greeting }}，祝您工作顺利。</p>
@@ -384,11 +384,25 @@ onUnmounted(() => {
 
 .av-content--full {
   padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .av-content--full > .av-content__inner {
   max-width: none;
   margin: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.av-content--full > .av-content__inner > .av-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 1024px) {
@@ -409,6 +423,11 @@ onUnmounted(() => {
 
   .av-content {
     padding: 16px 14px 20px;
+  }
+
+  /* 移动端全宽页面（聊天/举报）恢复可滚动，让内容正常撑开 */
+  .av-content--full {
+    overflow-y: auto;
   }
 
   .av-page-head {

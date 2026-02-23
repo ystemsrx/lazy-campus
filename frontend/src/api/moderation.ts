@@ -2,6 +2,7 @@ import api from './client'
 import type {
   AdminActionLogListResponse,
   AdminBlacklistItem,
+  AdminChatAttachment,
   AdminChatConversationListResponse,
   AdminChatMessage,
   AdminDashboardData,
@@ -264,6 +265,15 @@ export async function fetchAdminTaskChatMessages(params: {
   limit?: number
 }) {
   const { data } = await api.get<AdminTaskChatMessage[]>('/moderation/admin/task-chats/messages', { params })
+  return data
+}
+
+export async function fetchAdminChatAttachments(params: {
+  user_a_id: number
+  user_b_id: number
+  task_id?: number | null
+}) {
+  const { data } = await api.get<AdminChatAttachment[]>('/moderation/admin/chats/attachments', { params })
   return data
 }
 

@@ -11,8 +11,20 @@ const props = defineProps<{
 }>()
 
 const renderedHtml = computed(() => renderRichText(props.content))
+
+function onContainerClick(event: MouseEvent) {
+  const btn = (event.target as HTMLElement).closest('.code-copy-btn') as HTMLElement | null
+  if (!btn) return
+  const pre = btn.closest('pre')
+  if (!pre) return
+  const code = pre.querySelector('code')?.innerText ?? ''
+  navigator.clipboard.writeText(code).then(() => {
+    btn.classList.add('copied')
+    setTimeout(() => btn.classList.remove('copied'), 1500)
+  })
+}
 </script>
 
 <template>
-  <div class="rich-text" v-html="renderedHtml"></div>
+  <div class="rich-text" v-html="renderedHtml" @click="onContainerClick"></div>
 </template>

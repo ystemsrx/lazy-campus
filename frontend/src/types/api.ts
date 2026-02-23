@@ -331,10 +331,16 @@ export interface AdminTaskListResponse {
 export interface AdminChatConversationItem {
   user_a_id: number
   user_a_display_name: string
+  user_a_avatar_url: string | null
+  user_a_gender: 'male' | 'female' | null
   user_b_id: number
   user_b_display_name: string
+  user_b_avatar_url: string | null
+  user_b_gender: 'male' | 'female' | null
   task_id: number | null
   task_title: string | null
+  task_price: number | null
+  task_status: string | null
   message_count: number
   last_message: string | null
   last_message_time: string | null
@@ -351,6 +357,8 @@ export interface AdminChatMessage {
   id: number
   sender_id: number
   sender_display_name: string
+  sender_avatar_url: string | null
+  sender_gender: 'male' | 'female' | null
   receiver_id: number
   receiver_display_name: string
   task_id: number | null
@@ -363,10 +371,16 @@ export interface AdminChatMessage {
 export interface AdminTaskChatConversationItem {
   task_id: number
   task_title: string
+  task_price: number | null
+  task_status: string | null
   publisher_id: number
   publisher_display_name: string
+  publisher_avatar_url: string | null
+  publisher_gender: 'male' | 'female' | null
   session_assignee_id: number | null
   session_assignee_display_name: string | null
+  session_assignee_avatar_url: string | null
+  session_assignee_gender: 'male' | 'female' | null
   message_count: number
   last_message: string | null
   last_message_time: string | null
@@ -384,9 +398,20 @@ export interface AdminTaskChatMessage {
   task_id: number
   sender_id: number
   sender_display_name: string
+  sender_avatar_url: string | null
+  sender_gender: 'male' | 'female' | null
   session_assignee_id: number | null
   content: string
   created_at: string
+}
+
+export interface AdminChatAttachment {
+  id: number
+  message_id: number | null
+  file_name: string
+  file_url: string
+  file_size: number
+  mime_type: string
 }
 
 export interface AdminPushNotificationResult {
