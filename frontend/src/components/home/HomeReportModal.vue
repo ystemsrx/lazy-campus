@@ -47,6 +47,13 @@ const isSubmitting = ref(false)
 const isSuccess = ref(false)
 const lightboxSrc = ref<string | null>(null)
 
+// ── Bottom sheet drag ──
+const modalRef = ref<HTMLElement | null>(null)
+let sheetDragStartY = 0
+let sheetDragStartH = 0
+let sheetCanExpand = false
+let savedScrollY = 0
+
 watch(
   () => props.modelValue,
   (open) => {
@@ -59,12 +66,87 @@ watch(
       isSubmitting.value = false
       isSuccess.value = false
       lightboxSrc.value = null
+      savedScrollY = window.scrollY
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${savedScrollY}px`
+      document.body.style.width = '100%'
+    } else {
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.width = ''
+      window.scrollTo(0, savedScrollY)
     }
   },
 )
 
 function close() {
   emit('update:modelValue', false)
+}
+
+function onSheetTouchStart(e: TouchEvent) {
+  const el = modalRef.value
+  if (!el) return
+  sheetDragStartY = e.touches[0].clientY
+  sheetDragStartH = el.getBoundingClientRect().height
+
+  const body = el.querySelector('.hrm-body') as HTMLElement | null
+  sheetCanExpand = body ? body.scrollHeight > body.clientHeight + 2 : false
+
+  el.style.transition = 'none'
+  document.addEventListener('touchmove', onSheetTouchMove, { passive: false })
+  document.addEventListener('touchend', onSheetTouchEnd)
+}
+
+function onSheetTouchMove(e: TouchEvent) {
+  const el = modalRef.value
+  if (!el) return
+  e.preventDefault()
+  const deltaY = e.touches[0].clientY - sheetDragStartY
+  const vh = window.innerHeight
+
+  if (deltaY < 0) {
+    const absDelta = Math.abs(deltaY)
+    if (sheetCanExpand) {
+      const expansion = Math.round(Math.pow(absDelta, 0.75))
+      const cap = vh * 0.06
+      el.style.maxHeight = `${sheetDragStartH + Math.min(expansion, cap)}px`
+      el.style.transform = ''
+    } else {
+      el.style.transform = `translateY(${-Math.round(Math.pow(absDelta, 0.6))}px)`
+    }
+  } else {
+    el.style.maxHeight = ''
+    el.style.transform = `translateY(${deltaY}px)`
+  }
+}
+
+function onSheetTouchEnd() {
+  document.removeEventListener('touchmove', onSheetTouchMove)
+  document.removeEventListener('touchend', onSheetTouchEnd)
+
+  const el = modalRef.value
+  if (!el) return
+
+  const match = el.style.transform.match(/translateY\(([^)]+)px\)/)
+  const currentTranslateY = match ? parseFloat(match[1]) : 0
+  const vh = window.innerHeight
+
+  if (currentTranslateY > 120) {
+    el.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+    el.style.transform = `translateY(${vh}px)`
+    setTimeout(() => close(), 350)
+    return
+  }
+
+  el.style.transition =
+    'max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+  el.style.maxHeight = `${sheetDragStartH}px`
+  el.style.transform = 'translateY(0px)'
+  setTimeout(() => {
+    el.style.transition = ''
+    el.style.transform = ''
+    el.style.maxHeight = ''
+  }, 350)
 }
 
 function triggerFileInput() {
@@ -159,7 +241,7 @@ async function submit() {
   <Teleport to="body">
     <Transition name="hrm-overlay">
       <div v-if="modelValue" class="hrm-overlay" @click.self="close">
-        <div class="hrm-modal" role="dialog" aria-modal="true">
+        <div ref="modalRef" class="hrm-modal" role="dialog" aria-modal="true">
 
           <!-- Success State -->
           <div v-if="isSuccess" class="hrm-success">
@@ -175,6 +257,11 @@ async function submit() {
 
           <!-- Form State -->
           <template v-else>
+            <!-- Mobile drag handle -->
+            <div class="hrm-sheet-handle" @touchstart.passive="onSheetTouchStart">
+              <div class="hrm-sheet-handle__bar"></div>
+            </div>
+
             <!-- Header -->
             <div class="hrm-header">
               <h2 class="hrm-header__title">
@@ -743,6 +830,21 @@ async function submit() {
   object-fit: contain;
 }
 
+/* ── Sheet handle (mobile drag bar) ── */
+.hrm-sheet-handle {
+  display: none;
+  justify-content: center;
+  padding: 10px 0 4px;
+  flex-shrink: 0;
+}
+
+.hrm-sheet-handle__bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-border);
+}
+
 /* ── Mobile ── */
 @media (max-width: 600px) {
   .hrm-overlay {
@@ -754,6 +856,14 @@ async function submit() {
     max-width: 100%;
     border-radius: 20px 20px 0 0;
     max-height: 92dvh;
+  }
+
+  .hrm-sheet-handle {
+    display: flex;
+  }
+
+  .hrm-close-btn {
+    display: none;
   }
 
   .hrm-overlay-enter-from .hrm-modal {

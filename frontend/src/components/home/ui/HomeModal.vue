@@ -109,27 +109,43 @@ function onOverlayClick() {
   overflow-y: auto;
 }
 
+/* ── Backdrop ── */
 .modal-enter-active {
-  transition: all var(--dur-normal) var(--ease);
+  transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-leave-active {
-  transition: all var(--dur-fast) var(--ease);
+  transition: opacity 220ms cubic-bezier(0.4, 0, 1, 1);
 }
 
-.modal-enter-from {
-  opacity: 0;
-}
-
+.modal-enter-from,
 .modal-leave-to {
   opacity: 0;
 }
 
+/* ── Card: independent spring enter ── */
+.modal-enter-active .hv-modal {
+  transition:
+    opacity 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
 .modal-enter-from .hv-modal {
-  transform: scale(0.95) translateY(10px);
+  opacity: 0;
+  transform: scale(0.88) translateY(32px);
+}
+
+/* ── Card: snappy ease-in exit ── */
+.modal-leave-active .hv-modal {
+  transition:
+    opacity 200ms cubic-bezier(0.4, 0, 1, 1),
+    transform 200ms cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
 }
 
 .modal-leave-to .hv-modal {
-  transform: scale(0.97) translateY(5px);
+  opacity: 0;
+  transform: scale(0.94) translateY(12px);
 }
 </style>
