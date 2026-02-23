@@ -58,7 +58,7 @@ const adminLightboxSrc = ref<string | null>(null)
             </a>
             <span v-else class="av-report-type">{{ report.type === 'appeal' ? '账号申诉' : '账号举报' }}</span>
             <button
-              v-if="!report.task_id && report.type === 'report'"
+              v-if="report.type === 'report'"
               class="btn btn-ghost btn-xs av-chat-history-btn"
               @click="vm.openChatHistory(report.id)"
             >
@@ -185,28 +185,28 @@ const adminLightboxSrc = ref<string | null>(null)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   gap: 16px;
 }
 
 .av-report-subtabs {
   display: flex;
   gap: 4px;
-  background: var(--c-bg-secondary, #f1f5f9);
-  border-radius: var(--radius-md);
-  padding: 3px;
+  background: #f1f5f9;
+  border-radius: var(--radius-lg);
+  padding: 4px;
 }
 
 .av-report-subtab {
-  padding: 7px 18px;
+  padding: 8px 20px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--c-text-muted);
+  color: #94a3b8;
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+  transition: all 200ms var(--ease);
   font-family: var(--font-sans);
   display: flex;
   align-items: center;
@@ -226,15 +226,22 @@ const adminLightboxSrc = ref<string | null>(null)
 .av-report-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 700px;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.av-report-card {
+  border-radius: var(--radius-2xl) !important;
+  border: 1px solid rgba(226, 232, 240, 0.6) !important;
+  box-shadow: var(--shadow-card) !important;
+  padding: 24px !important;
 }
 
 .av-report-card__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .av-report-card__header-left {
@@ -245,18 +252,18 @@ const adminLightboxSrc = ref<string | null>(null)
 
 .av-chat-history-btn {
   font-size: 12px;
-  color: var(--c-text-muted);
+  color: #94a3b8;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition: color 200ms var(--ease), background 200ms var(--ease);
 }
 
 .av-chat-history-btn:hover {
   color: var(--c-accent);
-  background: var(--c-bg-secondary);
+  background: rgba(59, 130, 246, 0.06);
 }
 
 .av-task-link {
@@ -266,11 +273,11 @@ const adminLightboxSrc = ref<string | null>(null)
   display: flex;
   align-items: center;
   gap: 5px;
-  transition: color var(--dur-fast) var(--ease);
+  transition: color 200ms var(--ease);
 }
 
 .av-task-link:hover {
-  color: #4338ca;
+  color: #2563eb;
   text-decoration: underline;
 }
 
@@ -280,13 +287,13 @@ const adminLightboxSrc = ref<string | null>(null)
 
 .av-report-type {
   font-weight: 600;
-  color: var(--c-text-muted);
+  color: #94a3b8;
 }
 
 .av-report-card__body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .av-report-table {
@@ -294,23 +301,26 @@ const adminLightboxSrc = ref<string | null>(null)
   border-collapse: collapse;
   font-size: var(--text-sm);
   margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .av-report-table th,
 .av-report-table td {
-  padding: 6px 10px;
+  padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
 }
 
 .av-report-table th {
-  color: var(--c-text-muted);
+  color: #94a3b8;
   font-weight: 500;
-  background: var(--c-bg-secondary);
+  background: #f8fafc;
+  font-size: 12px;
 }
 
 .av-report-table td:first-child {
-  color: var(--c-text-muted);
+  color: #94a3b8;
   white-space: nowrap;
 }
 
@@ -318,38 +328,56 @@ const adminLightboxSrc = ref<string | null>(null)
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 3px;
 }
 
 .av-report-card__label {
-  color: var(--c-text-muted);
+  color: #94a3b8;
   min-width: 80px;
   flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .av-report-card__text {
   color: var(--c-text-secondary);
+  font-size: 13px;
+  background: #f8fafc;
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  line-height: 1.6;
+  width: 100%;
 }
 
 .av-report-card__actions {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--c-border-light);
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(241, 245, 249, 0.8);
+}
+
+.av-report-card__actions .btn {
+  border-radius: var(--radius-lg);
+  padding: 10px 20px;
 }
 
 .av-empty {
   text-align: center;
-  color: var(--c-text-muted);
-  padding: 48px 20px;
+  color: #94a3b8;
+  padding: 60px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .av-empty__icon {
-  font-size: 36px;
+  font-size: 40px;
   display: block;
-  margin-bottom: 12px;
-  color: var(--c-border);
+  margin-bottom: 8px;
+  color: #cbd5e1;
 }
 
 .av-report-imgs {
@@ -363,10 +391,10 @@ const adminLightboxSrc = ref<string | null>(null)
   width: 80px;
   height: 80px;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(226, 232, 240, 0.6);
   cursor: zoom-in;
-  transition: opacity var(--dur-fast) var(--ease);
+  transition: opacity 200ms var(--ease);
 }
 
 .av-report-img:hover {
@@ -377,19 +405,20 @@ const adminLightboxSrc = ref<string | null>(null)
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.88);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   cursor: zoom-out;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .av-lightbox__img {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
   object-fit: contain;
 }

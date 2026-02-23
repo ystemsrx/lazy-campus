@@ -88,50 +88,63 @@ const vm = proxyRefs(props.model)
 
 .av-users-total {
   font-size: var(--text-sm);
-  color: var(--c-text-muted);
+  color: #94a3b8;
   font-weight: 500;
 }
 
 .av-add-btn {
   margin-left: auto;
+  border-radius: var(--radius-md);
 }
 
 .av-category-hint {
-  color: var(--c-text-muted);
+  color: #94a3b8;
   font-size: var(--text-sm);
-  margin: -8px 0 16px;
+  margin: -8px 0 20px;
 }
 
 .av-users-loading {
   display: flex;
   justify-content: center;
-  padding: 40px 0;
+  padding: 48px 0;
 }
 
 .av-empty {
   text-align: center;
-  color: var(--c-text-muted);
-  padding: 48px 20px;
+  color: #94a3b8;
+  padding: 60px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .av-empty__icon {
-  font-size: 36px;
+  font-size: 40px;
   display: block;
-  margin-bottom: 12px;
-  color: var(--c-border);
+  margin-bottom: 8px;
+  color: #cbd5e1;
 }
 
 .av-category-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 700px;
+  gap: 12px;
+  max-width: 720px;
 }
 
 .av-category-card {
   display: flex;
   align-items: center;
   gap: 16px;
+  border-radius: var(--radius-2xl) !important;
+  border: 1px solid rgba(226, 232, 240, 0.6) !important;
+  box-shadow: var(--shadow-card) !important;
+  transition: box-shadow 200ms var(--ease);
+}
+
+.av-category-card:hover {
+  box-shadow: var(--shadow-card-hover) !important;
 }
 
 .av-category-card__main {
@@ -147,7 +160,7 @@ const vm = proxyRefs(props.model)
 .av-category-card__desc {
   margin: 0 0 6px;
   font-size: var(--text-sm);
-  color: var(--c-text-muted);
+  color: #94a3b8;
 }
 
 .av-category-card__stats {
@@ -159,7 +172,7 @@ const vm = proxyRefs(props.model)
 
 .av-category-card__order {
   font-size: var(--text-xs);
-  color: var(--c-text-muted);
+  color: #94a3b8;
 }
 
 .av-category-card__actions {
@@ -175,20 +188,20 @@ const vm = proxyRefs(props.model)
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   font-size: 14px;
-  transition: all var(--dur-fast) var(--ease);
-  color: var(--c-text-muted);
+  transition: all 200ms var(--ease);
+  color: #94a3b8;
 }
 
 .av-action-btn:hover {
   color: var(--c-accent);
-  background: var(--c-accent-light);
+  background: rgba(59, 130, 246, 0.06);
 }
 
 .av-action-btn--danger:hover {
-  color: var(--c-danger);
-  background: var(--c-danger-light);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
 }
 </style>

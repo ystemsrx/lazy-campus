@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
 import type { DirectChatHistory } from '../../composables/admin/useAdminReports'
 import { formatShort } from '../../utils/time'
 
-defineProps<{
+const props = defineProps<{
   show: boolean
   loading: boolean
   chatHistory: DirectChatHistory | null
@@ -11,6 +12,20 @@ defineProps<{
 defineEmits<{
   close: []
 }>()
+
+const chatListRef = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.chatHistory,
+  async (val) => {
+    if (val?.messages.length) {
+      await nextTick()
+      if (chatListRef.value) {
+        chatListRef.value.scrollTop = chatListRef.value.scrollHeight
+      }
+    }
+  },
+)
 </script>
 
 <template>
@@ -49,7 +64,7 @@ defineEmits<{
                 <i class="fa-regular fa-comment-dots"></i>
                 聊天记录 ({{ chatHistory.messages.length }})
               </h4>
-              <div v-if="chatHistory.messages.length" class="av-snap-chat">
+              <div v-if="chatHistory.messages.length" ref="chatListRef" class="av-snap-chat">
                 <div
                   v-for="(msg, idx) in chatHistory.messages"
                   :key="idx"
@@ -91,19 +106,20 @@ defineEmits<{
   z-index: 2000;
   display: flex;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .av-snapshot-drawer {
   width: 520px;
   max-width: 100vw;
   height: 100vh;
-  background: #fff;
-  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.12);
+  background: #f8fafc;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
-  animation: av-slide-in 0.25s var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+  animation: av-slide-in 0.3s var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 @keyframes av-slide-in {
@@ -116,14 +132,18 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--c-border);
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .av-snapshot-drawer__header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .av-snapshot-drawer__loading {
@@ -144,10 +164,12 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--c-bg-secondary, #f8fafc);
-  border-radius: var(--radius-md);
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--radius-xl);
   padding: 14px 16px;
   margin-bottom: 20px;
+  box-shadow: var(--shadow-card);
 }
 
 .av-chat-party {
@@ -210,9 +232,11 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  background: var(--c-bg-secondary, #f8fafc);
-  border-radius: var(--radius-md);
+  padding: 14px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
 }
 
 .av-snap-msg__head {

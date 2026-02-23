@@ -45,16 +45,19 @@ html {
   --text-3xl: 28px;
 
   --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
   --radius-full: 9999px;
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.07);
-  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.10);
-  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.14);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 8px 30px rgb(0 0 0 / 0.02);
+  --shadow-card-hover: 0 8px 30px rgb(0 0 0 / 0.06);
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 150ms;
@@ -101,10 +104,10 @@ h4 { font-size: var(--text-lg); }
 .form-select,
 .form-textarea {
   width: 100%;
-  padding: 9px 13px;
+  padding: 10px 14px;
   border: 1.5px solid var(--c-border);
   border-radius: var(--radius-md);
-  background: var(--c-surface);
+  background: var(--c-bg);
   color: var(--c-text);
   font-size: var(--text-base);
   transition: border-color var(--dur-fast) var(--ease),
@@ -168,7 +171,7 @@ h4 { font-size: var(--text-lg); }
   font-size: var(--text-base);
   font-weight: 500;
   white-space: nowrap;
-  transition: all var(--dur-fast) var(--ease);
+  transition: all 200ms var(--ease);
   -webkit-user-select: none;
   user-select: none;
 }
@@ -198,9 +201,10 @@ h4 { font-size: var(--text-lg); }
 
 .card {
   background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--radius-2xl);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
 }
 
 .card-hover {
@@ -222,12 +226,13 @@ h4 { font-size: var(--text-lg); }
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: 0.01em;
+  gap: 4px;
 }
 .badge-default { background: var(--c-border-light); color: var(--c-text-secondary); }
 .badge-blue { background: var(--c-accent-soft); color: #1d4ed8; }

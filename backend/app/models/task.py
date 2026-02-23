@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -32,9 +32,15 @@ class Task(Base):
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.OPEN)
+    is_pinned: Mapped[bool] = mapped_column(default=False)
+    is_urgent: Mapped[bool] = mapped_column(default=False)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     publisher_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True, index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey('task_categories.id'), nullable=True, index=True)
+
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

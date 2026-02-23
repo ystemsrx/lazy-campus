@@ -59,6 +59,9 @@ class TaskOut(BaseModel):
     location: str | None
     price: float
     status: TaskStatus
+    is_pinned: bool = False
+    is_urgent: bool = False
+    admin_note: str | None = None
     category_id: int | None
     publisher_id: int
     assignee_id: int | None

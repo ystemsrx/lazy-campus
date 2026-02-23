@@ -30,6 +30,17 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN required_gender VARCHAR(10) DEFAULT NULL'))
             if 'icon' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN icon VARCHAR(50) DEFAULT NULL'))
+            if 'is_pinned' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN is_pinned BOOLEAN DEFAULT 0'))
+            if 'is_urgent' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN is_urgent BOOLEAN DEFAULT 0'))
+            if 'admin_note' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN admin_note TEXT DEFAULT NULL'))
+            if 'is_deleted' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0'))
+                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_tasks_is_deleted ON tasks (is_deleted)'))
+            if 'deleted_at' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN deleted_at DATETIME DEFAULT NULL'))
 
         if 'reports' in tables:
             report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}

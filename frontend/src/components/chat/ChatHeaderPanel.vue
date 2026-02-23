@@ -77,8 +77,12 @@ const emit = defineEmits<{
       <div class="banner-content">
         <div
           v-if="conversation.task_id"
-          class="task-snapshot task-snapshot--clickable"
-          @click="emit('openTaskDetail')"
+          class="task-snapshot"
+          :class="{
+            'task-snapshot--clickable': !conversation.task_is_deleted,
+            'task-snapshot--deleted': conversation.task_is_deleted,
+          }"
+          @click="!conversation.task_is_deleted && emit('openTaskDetail')"
         >
           <div class="snapshot-icon-wrap" :style="{ background: getTaskIcon(conversation.task_icon).bg }">
             <component
@@ -87,11 +91,13 @@ const emit = defineEmits<{
               :style="{ color: getTaskIcon(conversation.task_icon).color }"
             />
           </div>
-          <span class="snapshot-badge">快照</span>
+          <span v-if="conversation.task_is_deleted" class="snapshot-badge snapshot-badge--deleted">已删除</span>
+          <span v-else class="snapshot-badge">快照</span>
           <span class="snapshot-title">{{ conversation.task_title || '未知任务' }}</span>
           <div class="snapshot-right">
             <span class="snapshot-price">¥{{ conversation.task_price ?? '—' }}</span>
-            <span class="snapshot-status" :class="snapshotStatusClass(conversation.task_status)">
+            <span v-if="conversation.task_is_deleted" class="snapshot-status status-deleted">已删除</span>
+            <span v-else class="snapshot-status" :class="snapshotStatusClass(conversation.task_status)">
               {{ snapshotStatusLabel(conversation.task_status) }}
             </span>
           </div>
@@ -298,6 +304,12 @@ const emit = defineEmits<{
   display: flex;
 }
 
+.task-snapshot--deleted {
+  opacity: 0.7;
+  border-color: var(--c-border);
+  cursor: default;
+}
+
 .snapshot-badge {
   font-size: 10px;
   font-weight: 600;
@@ -307,6 +319,12 @@ const emit = defineEmits<{
   border-radius: 4px;
   border: 1px solid var(--c-accent-soft);
   flex-shrink: 0;
+}
+
+.snapshot-badge--deleted {
+  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .snapshot-title {
@@ -357,6 +375,10 @@ const emit = defineEmits<{
 
 .status-canceled {
   color: var(--c-text-muted);
+}
+
+.status-deleted {
+  color: #ef4444;
 }
 
 .marketplace-badge {

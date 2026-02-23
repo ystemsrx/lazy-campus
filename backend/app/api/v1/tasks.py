@@ -96,6 +96,9 @@ def _task_to_out(
         location=task.location,
         price=task.price,
         status=task.status,
+        is_pinned=bool(task.is_pinned),
+        is_urgent=bool(task.is_urgent),
+        admin_note=task.admin_note,
         category_id=task.category_id,
         publisher_id=task.publisher_id,
         assignee_id=task.assignee_id,
@@ -162,6 +165,7 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
         .join(User, Task.publisher_id == User.id)
         .filter(
             User.is_banned.is_(False),
+            Task.is_deleted.is_(False),
             Task.status == TaskStatus.OPEN,
             or_(Task.deadline.is_(None), Task.deadline > now),
         )
@@ -265,7 +269,7 @@ def list_tasks(
     user: User | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
-    query = db.query(Task, User).join(User, Task.publisher_id == User.id).filter(User.is_banned.is_(False), User.ban_publish.is_(False))
+    query = db.query(Task, User).join(User, Task.publisher_id == User.id).filter(User.is_banned.is_(False), User.ban_publish.is_(False), Task.is_deleted.is_(False))
 
     if keyword:
         like = f'%{keyword}%'
@@ -283,17 +287,25 @@ def list_tasks(
         query = query.filter(Task.price <= max_price)
 
     if sort == 'newest':
-        query = query.order_by(desc(Task.created_at))
+        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.created_at))
         rows = query.limit(200).all()
     elif sort == 'deadline_asc':
         query = query.order_by(
+            desc(Task.is_pinned),
+            desc(Task.is_urgent),
             case((Task.deadline.is_(None), 1), else_=0),
             asc(Task.deadline),
             desc(Task.created_at),
         )
         rows = query.limit(200).all()
     elif sort == 'publisher_rating':
-        query = query.order_by(desc(User.publisher_rating_avg), desc(User.publisher_rating_count), desc(Task.created_at))
+        query = query.order_by(
+            desc(Task.is_pinned),
+            desc(Task.is_urgent),
+            desc(User.publisher_rating_avg),
+            desc(User.publisher_rating_count),
+            desc(Task.created_at),
+        )
         rows = query.limit(200).all()
     elif sort == 'publisher_completed':
         rows = query.all()
@@ -306,13 +318,20 @@ def list_tasks(
                 .group_by(Task.publisher_id)
                 .all()
             )
-        rows.sort(key=lambda r: (-completed_map.get(r[1].id, 0), -r[0].created_at.timestamp()))
+        rows.sort(
+            key=lambda r: (
+                -int(bool(r[0].is_pinned)),
+                -int(bool(r[0].is_urgent)),
+                -completed_map.get(r[1].id, 0),
+                -r[0].created_at.timestamp(),
+            ),
+        )
         rows = rows[:200]
     elif sort == 'price_asc':
-        query = query.order_by(asc(Task.price), desc(Task.created_at))
+        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), asc(Task.price), desc(Task.created_at))
         rows = query.limit(200).all()
     elif sort == 'price_desc':
-        query = query.order_by(desc(Task.price), desc(Task.created_at))
+        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.price), desc(Task.created_at))
         rows = query.limit(200).all()
     else:
         rows = query.all()
@@ -331,7 +350,14 @@ def list_tasks(
         def _rank_key(r):
             task, pub = r
             mismatch = 1 if (task.required_gender and task.required_gender != user_gender) else 0
-            return (mismatch, -_task_ranking_score(task, pub, now, mu, cmap.get(pub.id, 0)))
+            pin_rank = 0 if task.is_pinned else 1
+            urgent_rank = 0 if task.is_urgent else 1
+            return (
+                mismatch,
+                pin_rank,
+                urgent_rank,
+                -_task_ranking_score(task, pub, now, mu, cmap.get(pub.id, 0)),
+            )
         rows.sort(key=_rank_key)
         rows = rows[:200]
 
@@ -422,7 +448,7 @@ def create_task(
 @router.get('/{task_id}', response_model=TaskOut)
 def get_task(task_id: int, user: User | None = Depends(optional_user), db: Session = Depends(get_db)) -> TaskOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     publisher = db.get(User, task.publisher_id)
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
@@ -439,7 +465,7 @@ def update_task(
     db: Session = Depends(get_db),
 ) -> TaskOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='Only publisher can update task')
@@ -518,7 +544,7 @@ def accept_task(
     if user.ban_accept:
         raise HTTPException(status_code=403, detail='你的账号已被禁止接取任务')
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.publisher_id == user.id:
         raise HTTPException(status_code=400, detail='Cannot accept your own task')
@@ -564,7 +590,7 @@ def accept_task(
 @router.post('/{task_id}/confirm-complete', response_model=TaskOut)
 def confirm_complete(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='Only publisher can confirm completion')
@@ -595,7 +621,7 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
 def abandon_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
     """接单者放弃接取任务：任务回到 OPEN 状态，保留聊天记录，通知发布者，记录放弃日志"""
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.assignee_id != user.id:
         raise HTTPException(status_code=403, detail='只有接单者才能放弃接取')
@@ -629,7 +655,7 @@ def abandon_task(task_id: int, user: User = Depends(require_completed_user), db:
 @router.post('/{task_id}/cancel', response_model=TaskOut)
 def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Not allowed')
@@ -651,7 +677,7 @@ def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: 
 @router.delete('/{task_id}')
 def delete_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> dict:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='Only publisher can delete task')
@@ -660,9 +686,9 @@ def delete_task(task_id: int, user: User = Depends(require_completed_user), db: 
     if task.status not in (TaskStatus.OPEN, TaskStatus.CANCELED):
         raise HTTPException(status_code=400, detail='当前任务状态不允许删除')
 
-    db.query(TaskMessage).filter(TaskMessage.task_id == task_id).delete()
-    db.query(TaskAttachment).filter(TaskAttachment.task_id == task_id).delete()
-    db.delete(task)
+    task.is_deleted = True
+    task.deleted_at = datetime.utcnow()
+    db.add(task)
     db.commit()
     return {'message': 'deleted'}
 
@@ -670,7 +696,7 @@ def delete_task(task_id: int, user: User = Depends(require_completed_user), db: 
 @router.get('/{task_id}/messages', response_model=list[TaskMessageOut])
 def list_messages(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[TaskMessageOut]:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can read messages')
@@ -741,7 +767,7 @@ def send_message(
     db: Session = Depends(get_db),
 ) -> TaskMessageOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can chat')
@@ -806,7 +832,7 @@ def list_attachments(
     db: Session = Depends(get_db),
 ) -> list[TaskAttachmentOut]:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can access attachments')
@@ -821,7 +847,7 @@ def create_attachment(
     db: Session = Depends(get_db),
 ) -> TaskAttachmentOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can upload attachments')
@@ -850,7 +876,7 @@ def list_reviews(
         return reviews
 
     task = db.get(Task, task_id)
-    if not task or not _is_participant(task, user.id):
+    if not task or task.is_deleted or not _is_participant(task, user.id):
         return reviews
 
     roles_reviewed = {r.target_role for r in reviews}
@@ -869,7 +895,7 @@ def create_review(
     db: Session = Depends(get_db),
 ) -> TaskReviewOut:
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.is_deleted:
         raise HTTPException(status_code=404, detail='Task not found')
     if task.status != TaskStatus.COMPLETED:
         raise HTTPException(status_code=400, detail='Task is not completed')
@@ -914,7 +940,7 @@ def create_review(
 
 @router.get('/me/published', response_model=list[TaskOut])
 def list_my_published(user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[TaskOut]:
-    rows = db.query(Task).filter(Task.publisher_id == user.id).order_by(desc(Task.created_at)).limit(200).all()
+    rows = db.query(Task).filter(Task.publisher_id == user.id, Task.is_deleted.is_(False)).order_by(desc(Task.created_at)).limit(200).all()
     assignee_ids = {r.assignee_id for r in rows if r.assignee_id}
     assignees = {u.id: u for u in db.query(User).filter(User.id.in_(assignee_ids)).all()} if assignee_ids else {}
     pub_total = len(rows)
@@ -924,7 +950,7 @@ def list_my_published(user: User = Depends(require_completed_user), db: Session 
 
 @router.get('/me/accepted', response_model=list[TaskOut])
 def list_my_accepted(user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[TaskOut]:
-    rows = db.query(Task).filter(Task.assignee_id == user.id).order_by(desc(Task.created_at)).limit(200).all()
+    rows = db.query(Task).filter(Task.assignee_id == user.id, Task.is_deleted.is_(False)).order_by(desc(Task.created_at)).limit(200).all()
     publisher_ids = {r.publisher_id for r in rows}
     publishers = {u.id: u for u in db.query(User).filter(User.id.in_(publisher_ids)).all()} if publisher_ids else {}
     pub_completed_map: dict[int, int] = {}

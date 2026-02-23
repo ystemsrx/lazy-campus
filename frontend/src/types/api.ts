@@ -94,6 +94,9 @@ export interface Task {
   location: string | null
   price: number
   status: TaskStatus
+  is_pinned: boolean
+  is_urgent: boolean
+  admin_note: string | null
   category_id: number | null
   publisher_id: number
   assignee_id: number | null
@@ -154,9 +157,12 @@ export interface AdminUserItem {
   account: string
   name: string
   nickname: string | null
+  email: string | null
+  gender: 'male' | 'female' | null
   display_name: string
   avatar_url: string | null
   role: UserRole
+  is_active: boolean
   is_banned: boolean
   ban_reason: string | null
   ban_count: number
@@ -164,6 +170,18 @@ export interface AdminUserItem {
   ban_publish: boolean
   ban_accept: boolean
   ban_contact: boolean
+  blocked_by_count: number
+  worker_enabled: boolean
+  worker_skill_count: number
+  publisher_rating_avg: number
+  publisher_rating_count: number
+  worker_rating_avg: number
+  worker_rating_count: number
+  published_task_count: number
+  accepted_task_count: number
+  completed_task_count: number
+  report_received_count: number
+  last_active: string | null
   created_at: string
 }
 
@@ -214,7 +232,7 @@ export interface Report {
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'punishment'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'punishment' | 'admin_notice' | 'admin_task_notice'
 export type DismissType = 'read' | 'action' | 'source' | 'persistent'
 
 export interface AppNotification {
@@ -236,4 +254,246 @@ export interface BlacklistItem {
   blocked_avatar_url: string | null
   reason: string | null
   created_at: string
+}
+
+export interface AdminTrendPoint {
+  date: string
+  new_users: number
+  new_tasks: number
+  new_reports: number
+  new_messages: number
+}
+
+export interface AdminRiskUser {
+  user_id: number
+  display_name: string
+  ban_count: number
+  blocked_by_count: number
+  report_received_count: number
+}
+
+export interface AdminDashboardData {
+  total_users: number
+  active_users_24h: number
+  new_users_7d: number
+  active_workers: number
+  total_tasks: number
+  open_tasks: number
+  in_progress_tasks: number
+  under_review_tasks: number
+  completed_tasks: number
+  canceled_tasks: number
+  overdue_open_tasks: number
+  pinned_tasks: number
+  urgent_tasks: number
+  avg_task_price: number
+  pending_reports: number
+  approved_reports_7d: number
+  rejected_reports_7d: number
+  chat_messages_24h: number
+  completion_rate: number
+  registration_enabled: boolean
+  trends: AdminTrendPoint[]
+  top_risk_users: AdminRiskUser[]
+}
+
+export interface AdminTaskItem {
+  id: number
+  title: string
+  status: TaskStatus
+  price: number
+  category_id: number | null
+  category_name: string | null
+  publisher_id: number
+  publisher_display_name: string
+  assignee_id: number | null
+  assignee_display_name: string | null
+  is_pinned: boolean
+  is_urgent: boolean
+  is_deleted: boolean
+  admin_note: string | null
+  deadline: string | null
+  created_at: string
+  updated_at: string
+  report_count: number
+}
+
+export interface AdminTaskListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AdminTaskItem[]
+}
+
+export interface AdminChatConversationItem {
+  user_a_id: number
+  user_a_display_name: string
+  user_b_id: number
+  user_b_display_name: string
+  task_id: number | null
+  task_title: string | null
+  message_count: number
+  last_message: string | null
+  last_message_time: string | null
+}
+
+export interface AdminChatConversationListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AdminChatConversationItem[]
+}
+
+export interface AdminChatMessage {
+  id: number
+  sender_id: number
+  sender_display_name: string
+  receiver_id: number
+  receiver_display_name: string
+  task_id: number | null
+  content: string
+  is_read: boolean
+  blocked: boolean
+  created_at: string
+}
+
+export interface AdminTaskChatConversationItem {
+  task_id: number
+  task_title: string
+  publisher_id: number
+  publisher_display_name: string
+  session_assignee_id: number | null
+  session_assignee_display_name: string | null
+  message_count: number
+  last_message: string | null
+  last_message_time: string | null
+}
+
+export interface AdminTaskChatConversationListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AdminTaskChatConversationItem[]
+}
+
+export interface AdminTaskChatMessage {
+  id: number
+  task_id: number
+  sender_id: number
+  sender_display_name: string
+  session_assignee_id: number | null
+  content: string
+  created_at: string
+}
+
+export interface AdminPushNotificationResult {
+  sent_count: number
+  target_user_ids: number[]
+}
+
+export interface AdminMiniUser {
+  id: number
+  account: string
+  display_name: string
+  avatar_url: string | null
+}
+
+export interface AdminUserTaskBrief {
+  id: number
+  title: string
+  status: TaskStatus
+  price: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminUserReportBrief {
+  id: number
+  type: 'report' | 'appeal'
+  status: 'pending' | 'approved' | 'rejected'
+  reason: string
+  created_at: string
+}
+
+export interface AdminUserRadarMetrics {
+  reliability: number
+  activity: number
+  cooperation: number
+  safety: number
+  growth: number
+}
+
+export interface AdminUserProfile {
+  id: number
+  account: string
+  name: string
+  nickname: string | null
+  email: string | null
+  gender: 'male' | 'female' | null
+  display_name: string
+  avatar_url: string | null
+  role: UserRole
+  is_active: boolean
+  is_banned: boolean
+  ban_reason: string | null
+  ban_count: number
+  ban_until: string | null
+  ban_publish: boolean
+  ban_accept: boolean
+  ban_contact: boolean
+  blocked_by_count: number
+  last_active: string | null
+  created_at: string
+  worker_enabled: boolean
+  worker_bio: string | null
+  worker_min_price: number | null
+  worker_max_price: number | null
+  worker_phone: string | null
+  worker_wechat: string | null
+  worker_show_contact: boolean
+  worker_skill_ids: number[]
+  worker_skill_names: string[]
+  blocked_users: AdminMiniUser[]
+  published_task_count: number
+  accepted_task_count: number
+  completed_published_count: number
+  completed_accepted_count: number
+  report_submitted_count: number
+  report_received_count: number
+  pending_report_received_count: number
+  appeal_count: number
+  chat_message_count: number
+  publisher_rating_avg: number
+  publisher_rating_count: number
+  worker_rating_avg: number
+  worker_rating_count: number
+  radar: AdminUserRadarMetrics
+  recent_tasks: AdminUserTaskBrief[]
+  recent_reports: AdminUserReportBrief[]
+}
+
+export interface AdminBlacklistItem {
+  blocked_user_id: number
+  blocked_display_name: string
+  blocked_account: string
+  blocked_avatar_url: string | null
+  reason: string | null
+  created_at: string
+}
+
+export interface AdminActionLogItem {
+  id: number
+  admin_identifier: string
+  action: string
+  target_type: string
+  target_id: string
+  detail: string | null
+  created_at: string
+}
+
+export interface AdminActionLogListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AdminActionLogItem[]
 }

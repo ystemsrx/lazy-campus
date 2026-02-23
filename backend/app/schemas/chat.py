@@ -33,6 +33,7 @@ class ConversationOut(BaseModel):
     task_price: float | None
     task_status: str | None
     task_icon: str | None
+    task_is_deleted: bool = False
     last_message: str | None
     last_message_time: datetime | None
     unread_count: int

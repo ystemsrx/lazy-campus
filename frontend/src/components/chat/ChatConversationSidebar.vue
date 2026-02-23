@@ -103,7 +103,7 @@ function handleConversationClick(conversation: Conversation) {
                 class="contact-name"
                 :class="{ 'name-blocked': conversation.blocked_by_me || conversation.blocked_by_them }"
               >
-                {{ conversation.peer_name }}
+                {{ conversation.peer_name }}<span v-if="conversation.task_title" class="contact-task-label">（{{ conversation.task_title }}）</span>
               </span>
               <span class="contact-time">
                 {{ conversation.last_message_time ? formatChatTime(conversation.last_message_time) : '' }}
@@ -408,6 +408,19 @@ function handleConversationClick(conversation: Conversation) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.contact-task-label {
+  font-weight: 400;
+  color: var(--c-text-muted);
+  font-size: var(--text-xs);
+  display: inline-block;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .contact-item.active .contact-name {

@@ -88,8 +88,9 @@ function updateSortOrder(event: Event) {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,34 +99,44 @@ function updateSortOrder(event: Event) {
 
 .av-modal {
   background: var(--c-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
   width: min(440px, 100%);
   overflow: hidden;
+  animation: av-modal-in 0.3s var(--ease);
+}
+
+@keyframes av-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
 }
 
 .av-modal__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--c-border-light);
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(241, 245, 249, 0.8);
 }
 
 .av-modal__header h3 {
   margin: 0;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .av-modal__body {
-  padding: 20px;
+  padding: 24px;
 }
 
 .av-modal__footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--c-border-light);
+  padding: 16px 24px;
+  border-top: 1px solid rgba(241, 245, 249, 0.8);
 }
 
 .fade-enter-active,

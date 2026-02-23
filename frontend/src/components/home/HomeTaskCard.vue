@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Task } from '../../types/api'
+import { getTaskIcon } from '../../utils/taskIcons'
 
 const props = defineProps<{
   task: Task
@@ -29,14 +30,26 @@ const emit = defineEmits<{
           {{ genderLabel(task.required_gender)!.label }}
         </span>
       </div>
-      <span
-        v-if="task.deadline"
-        class="hv-task-card__deadline"
-        :class="{ 'hv-task-card__deadline--expired': isExpired(task.deadline) }"
-      >
-        <i class="fa-regular fa-clock"></i>
-        {{ isExpired(task.deadline) ? '已过期' : '截止 ' + formatShort(task.deadline) }}
-      </span>
+      <div class="hv-task-card__top-right">
+        <span
+          v-if="task.deadline"
+          class="hv-task-card__deadline"
+          :class="{ 'hv-task-card__deadline--expired': isExpired(task.deadline) }"
+        >
+          <i class="fa-regular fa-clock"></i>
+          {{ isExpired(task.deadline) ? '已过期' : '截止 ' + formatShort(task.deadline) }}
+        </span>
+        <div
+          class="hv-task-card__icon-wrap"
+          :style="{ background: getTaskIcon(task.icon).bg }"
+        >
+          <component
+            :is="getTaskIcon(task.icon).component"
+            :size="14"
+            :style="{ color: getTaskIcon(task.icon).color }"
+          />
+        </div>
+      </div>
     </div>
 
     <h4 class="hv-task-card__title">{{ task.title }}</h4>
@@ -83,6 +96,23 @@ const emit = defineEmits<{
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.hv-task-card__top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hv-task-card__icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .hv-task-card__badges {
@@ -218,9 +248,13 @@ const emit = defineEmits<{
   }
 
   .hv-task-card__top {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 3px;
+  }
+
+  .hv-task-card__top-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
   }
 
   .hv-task-card__deadline {

@@ -20,6 +20,7 @@ export interface Conversation {
   task_price: number | null
   task_status: string | null
   task_icon: string | null
+  task_is_deleted: boolean
   last_message: string | null
   last_message_time: string | null
   unread_count: number

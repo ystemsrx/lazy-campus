@@ -5,32 +5,49 @@ import {
   fetchRegistrationSetting,
   updateRegistrationSetting,
 } from '../../api/moderation'
+import type { AdminDashboardData } from '../../types/api'
 import { extractError } from '../../utils/error'
 import type { AppToastNotifier } from '../useAppToast'
 
-export interface AdminDashboardStats {
-  total_users?: number
-  active_workers?: number
-  total_tasks?: number
-  completed_tasks?: number
-  pending_reports?: number
-  completion_rate?: string
-  registration_enabled?: boolean
-  [key: string]: unknown
-}
-
 export function useAdminDashboard(showToast: AppToastNotifier) {
-  const dashboard = ref<AdminDashboardStats>({})
+  const dashboard = ref<AdminDashboardData>({
+    total_users: 0,
+    active_users_24h: 0,
+    new_users_7d: 0,
+    active_workers: 0,
+    total_tasks: 0,
+    open_tasks: 0,
+    in_progress_tasks: 0,
+    under_review_tasks: 0,
+    completed_tasks: 0,
+    canceled_tasks: 0,
+    overdue_open_tasks: 0,
+    pinned_tasks: 0,
+    urgent_tasks: 0,
+    avg_task_price: 0,
+    pending_reports: 0,
+    approved_reports_7d: 0,
+    rejected_reports_7d: 0,
+    chat_messages_24h: 0,
+    completion_rate: 0,
+    registration_enabled: true,
+    trends: [],
+    top_risk_users: [],
+  })
+  const trendDays = ref(7)
   const registrationEnabled = ref(true)
   const savingRegistration = ref(false)
 
-  async function loadDashboard() {
-    const [dashboardData, registration] = await Promise.all([
-      fetchAdminDashboard(),
-      fetchRegistrationSetting(),
-    ])
-    dashboard.value = dashboardData
-    registrationEnabled.value = registration.registration_enabled
+  async function loadDashboard(days = trendDays.value) {
+    trendDays.value = days
+    try {
+      const [dashboardData, registration] = await Promise.all([fetchAdminDashboard({ days }), fetchRegistrationSetting()])
+      dashboard.value = dashboardData
+      registrationEnabled.value = registration.registration_enabled
+    } catch (error: unknown) {
+      showToast(extractError(error, '加载运营看板失败'), 'error')
+      throw error
+    }
   }
 
   async function handleToggleRegistration() {
@@ -55,6 +72,7 @@ export function useAdminDashboard(showToast: AppToastNotifier) {
 
   return {
     dashboard,
+    trendDays,
     registrationEnabled,
     savingRegistration,
     loadDashboard,

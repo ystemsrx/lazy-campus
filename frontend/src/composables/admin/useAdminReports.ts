@@ -43,11 +43,13 @@ export interface DirectChatHistory {
 }
 
 export interface TaskSnapshot {
+  id: number
   title: string
   status: string
   price: number
   location: string | null
   description: string
+  is_deleted: boolean
   publisher_display_name: string
   assignee_display_name: string | null
   deadline: string | null

@@ -1,5 +1,20 @@
 import api from './client'
-import type { AdminUserListResponse, BanContext, BlacklistItem, Report } from '../types/api'
+import type {
+  AdminActionLogListResponse,
+  AdminBlacklistItem,
+  AdminChatConversationListResponse,
+  AdminChatMessage,
+  AdminDashboardData,
+  AdminPushNotificationResult,
+  AdminTaskChatConversationListResponse,
+  AdminTaskChatMessage,
+  AdminTaskListResponse,
+  AdminUserListResponse,
+  AdminUserProfile,
+  BanContext,
+  BlacklistItem,
+  Report,
+} from '../types/api'
 
 export async function uploadReportImage(blob: Blob): Promise<string> {
   const form = new FormData()
@@ -90,8 +105,8 @@ export async function createAuthenticatedAppeal(payload: {
   return data
 }
 
-export async function fetchAdminDashboard() {
-  const { data } = await api.get('/moderation/admin/dashboard')
+export async function fetchAdminDashboard(params: { days?: number } = {}) {
+  const { data } = await api.get<AdminDashboardData>('/moderation/admin/dashboard', { params })
   return data
 }
 
@@ -133,6 +148,148 @@ export async function banUser(userId: number, payload: {
 
 export async function fetchAdminUsers(params: { q?: string; page?: number; page_size?: number } = {}) {
   const { data } = await api.get<AdminUserListResponse>('/moderation/admin/users', { params })
+  return data
+}
+
+export async function fetchAdminUserProfile(userId: number) {
+  const { data } = await api.get<AdminUserProfile>(`/moderation/admin/users/${userId}/profile`)
+  return data
+}
+
+export async function updateAdminUserProfile(userId: number, payload: {
+  name?: string | null
+  nickname?: string | null
+  email?: string | null
+  gender?: 'male' | 'female' | null
+  role?: 'user' | 'admin'
+  is_active?: boolean
+  is_banned?: boolean
+  ban_publish?: boolean
+  ban_accept?: boolean
+  ban_contact?: boolean
+  ban_reason?: string | null
+  ban_until?: string | null
+  ban_count?: number
+  blocked_by_count?: number
+  worker_enabled?: boolean
+  worker_bio?: string | null
+  worker_min_price?: number | null
+  worker_max_price?: number | null
+  worker_phone?: string | null
+  worker_wechat?: string | null
+  worker_show_contact?: boolean
+  worker_skill_tag_ids?: number[]
+}) {
+  const { data } = await api.put<AdminUserProfile>(`/moderation/admin/users/${userId}/profile`, payload)
+  return data
+}
+
+export async function fetchAdminUserBlacklist(userId: number) {
+  const { data } = await api.get<AdminBlacklistItem[]>(`/moderation/admin/users/${userId}/blacklist`)
+  return data
+}
+
+export async function addAdminUserBlacklist(userId: number, payload: { blocked_user_id: number; reason?: string }) {
+  const { data } = await api.post<AdminBlacklistItem[]>(`/moderation/admin/users/${userId}/blacklist`, payload)
+  return data
+}
+
+export async function removeAdminUserBlacklist(userId: number, blockedUserId: number) {
+  const { data } = await api.delete<AdminBlacklistItem[]>(`/moderation/admin/users/${userId}/blacklist/${blockedUserId}`)
+  return data
+}
+
+export async function fetchAdminTasks(params: {
+  q?: string
+  status?: string
+  publisher_id?: number
+  assignee_id?: number
+  flag?: 'pinned' | 'urgent' | 'flagged'
+  deleted?: boolean
+  page?: number
+  page_size?: number
+} = {}) {
+  const { data } = await api.get<AdminTaskListResponse>('/moderation/admin/tasks', { params })
+  return data
+}
+
+export async function operateAdminTask(taskId: number, payload: {
+  delete?: boolean
+  set_pinned?: boolean
+  set_urgent?: boolean
+  admin_note?: string | null
+}) {
+  const { data } = await api.post<{ message: string; deleted: boolean; item?: unknown }>(`/moderation/admin/tasks/${taskId}/operate`, payload)
+  return data
+}
+
+export async function fetchAdminChatConversations(params: {
+  q?: string
+  task_id?: number
+  user_id?: number
+  page?: number
+  page_size?: number
+} = {}) {
+  const { data } = await api.get<AdminChatConversationListResponse>('/moderation/admin/chats', { params })
+  return data
+}
+
+export async function fetchAdminChatMessages(params: {
+  user_a_id: number
+  user_b_id: number
+  task_id?: number | null
+  before_id?: number
+  limit?: number
+}) {
+  const { data } = await api.get<AdminChatMessage[]>('/moderation/admin/chats/messages', { params })
+  return data
+}
+
+export async function fetchAdminTaskChatConversations(params: {
+  q?: string
+  task_id?: number
+  page?: number
+  page_size?: number
+} = {}) {
+  const { data } = await api.get<AdminTaskChatConversationListResponse>('/moderation/admin/task-chats', { params })
+  return data
+}
+
+export async function fetchAdminTaskChatMessages(params: {
+  task_id: number
+  session_assignee_id?: number | null
+  null_session?: boolean
+  before_id?: number
+  limit?: number
+}) {
+  const { data } = await api.get<AdminTaskChatMessage[]>('/moderation/admin/task-chats/messages', { params })
+  return data
+}
+
+export async function pushAdminNotification(payload: {
+  title: string
+  description?: string
+  user_ids?: number[]
+  include_all?: boolean
+  include_banned?: boolean
+  include_recent_active?: boolean
+  dismiss_type?: 'read' | 'action' | 'source' | 'persistent'
+  type?: string
+  related_task_id?: number | null
+  related_report_id?: number | null
+  related_user_id?: number | null
+}) {
+  const { data } = await api.post<AdminPushNotificationResult>('/moderation/admin/notifications/push', payload)
+  return data
+}
+
+export async function fetchAdminActionLogs(params: {
+  q?: string
+  action?: string
+  page?: number
+  page_size?: number
+} = {}) {
+  const { data } = await api.get<AdminActionLogListResponse>('/moderation/admin/action-logs', { params })
   return data
 }
 

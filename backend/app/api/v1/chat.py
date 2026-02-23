@@ -140,6 +140,7 @@ def list_conversations(
                 task_price=task.price if task else None,
                 task_status=task.status.value if task else None,
                 task_icon=task.icon if task else None,
+                task_is_deleted=bool(task.is_deleted) if task else False,
                 last_message=last_msg.content[:100] if last_msg else None,
                 last_message_time=last_msg.created_at if last_msg else None,
                 unread_count=int(row.unread or 0),

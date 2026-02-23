@@ -188,8 +188,9 @@ function onConfirm() {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,11 +199,11 @@ function onConfirm() {
 
 .arv-modal {
   background: var(--c-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
   width: min(520px, 100%);
   overflow: hidden;
-  animation: arv-slide-up 0.25s ease;
+  animation: arv-slide-up 0.3s var(--ease);
 }
 
 @keyframes arv-slide-up {
@@ -220,13 +221,14 @@ function onConfirm() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--c-border-light);
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(241, 245, 249, 0.8);
 }
 
 .arv-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .arv-body {
@@ -268,16 +270,16 @@ function onConfirm() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  border: 1.5px solid rgba(226, 232, 240, 0.8);
+  border-radius: var(--radius-lg);
   background: var(--c-surface);
   color: var(--c-text-secondary);
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 200ms var(--ease);
   user-select: none;
 }
 
@@ -314,16 +316,16 @@ function onConfirm() {
 }
 
 .arv-dur-btn {
-  padding: 6px 14px;
-  border: 1.5px solid var(--c-border);
-  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  border: 1.5px solid rgba(226, 232, 240, 0.8);
+  border-radius: var(--radius-md);
   background: var(--c-surface);
   color: var(--c-text-secondary);
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 200ms var(--ease);
 }
 
 @media (hover: hover) {
@@ -364,8 +366,8 @@ function onConfirm() {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--c-border-light);
+  padding: 16px 24px;
+  border-top: 1px solid rgba(241, 245, 249, 0.8);
 }
 
 .fade-enter-active,

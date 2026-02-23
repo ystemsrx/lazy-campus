@@ -98,6 +98,8 @@ const iconMap: Record<NotificationType, any> = {
   task_completed: CheckCircle,
   task_abandoned: LogOut,
   punishment: Ban,
+  admin_notice: Bell,
+  admin_task_notice: AlertTriangle,
 }
 
 function getIcon(type: string) {
