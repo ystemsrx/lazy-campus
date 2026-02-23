@@ -16,6 +16,7 @@ import {
 import { fetchUserReviews } from '../../api/users'
 import type { Task, TaskMessage, TaskReview, UserMe, UserReview } from '../../types/api'
 import type { AppToastNotifier } from '../useAppToast'
+import { CaptchaCancelledError, type CaptchaScene, withCaptchaRetry } from '../../utils/captcha'
 import { extractError } from '../../utils/error'
 import { localToUTC, utcToLocal } from '../../utils/time'
 import { createReviewForm, createTaskEditorForm } from './model'
@@ -30,6 +31,7 @@ interface UseHomeTaskDrawerOptions {
   loadMyTasks: () => Promise<void>
   loadCategories: () => Promise<void>
   loadWorkers: () => Promise<void>
+  requestCaptcha: (scene: CaptchaScene) => Promise<string | null>
 }
 
 export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
@@ -209,39 +211,50 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
 
   async function submitCreateTask() {
     try {
-      await createTask({
-        title: newTask.value.title,
-        description: newTask.value.description,
-        deadline: newTask.value.deadline ? localToUTC(newTask.value.deadline) : null,
-        location: newTask.value.location || null,
-        price: Number(newTask.value.price),
-        category_id: newTask.value.category_id,
-        contact_visibility: newTask.value.contact_visibility,
-        contact_info:
-          newTask.value.contact_visibility === 'after_accept'
-            ? newTask.value.contact_info || null
-            : null,
-        required_gender: newTask.value.required_gender,
-        icon: newTask.value.icon,
-      })
+      await withCaptchaRetry(
+        (captchaToken) =>
+          createTask({
+            title: newTask.value.title,
+            description: newTask.value.description,
+            deadline: newTask.value.deadline ? localToUTC(newTask.value.deadline) : null,
+            location: newTask.value.location || null,
+            price: Number(newTask.value.price),
+            category_id: newTask.value.category_id,
+            contact_visibility: newTask.value.contact_visibility,
+            contact_info:
+              newTask.value.contact_visibility === 'after_accept'
+                ? newTask.value.contact_info || null
+                : null,
+            required_gender: newTask.value.required_gender,
+            icon: newTask.value.icon,
+            captcha_token: captchaToken ?? null,
+          }),
+        options.requestCaptcha,
+      )
       options.showToast('委托发布成功', 'success')
       newTask.value = createTaskEditorForm()
       showPostModal.value = false
       await refreshTaskBoardData()
       options.pollNotificationCount()
     } catch (error) {
+      if (error instanceof CaptchaCancelledError) return
       options.showToast(extractError(error, '发布失败'), 'error')
     }
   }
 
   async function handleAcceptTask() {
     if (!selectedTask.value) return
+    const taskId = selectedTask.value.id
     try {
-      selectedTask.value = await acceptTask(selectedTask.value.id)
+      selectedTask.value = await withCaptchaRetry(
+        (captchaToken) => acceptTask(taskId, captchaToken),
+        options.requestCaptcha,
+      )
       options.showToast('已接取该委托', 'success')
       await Promise.all([refreshTaskBoardData(), refreshTaskMeta()])
       options.pollNotificationCount()
     } catch (error) {
+      if (error instanceof CaptchaCancelledError) return
       options.showToast(extractError(error, '接取失败'), 'error')
     }
   }

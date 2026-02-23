@@ -22,9 +22,11 @@ from app.schemas.user import (
     UserPublic,
     UserReviewOut,
     WorkerContactRevealOut,
+    WorkerContactRevealRequest,
     WorkerProfileOut,
     WorkerProfileUpsert,
 )
+from app.services.captcha_service import require_captcha_or_raise
 from app.utils.user_display import display_name
 
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'avatars'
@@ -373,6 +375,7 @@ def get_worker_detail(
 @router.post('/workers/{user_id}/contact-view', response_model=WorkerContactRevealOut)
 def view_worker_contact(
     user_id: int,
+    payload: WorkerContactRevealRequest,
     viewer: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> WorkerContactRevealOut:
@@ -386,6 +389,14 @@ def view_worker_contact(
         raise HTTPException(status_code=404, detail='Worker not found')
     if viewer.id == user_id:
         raise HTTPException(status_code=400, detail='不能查看自己的联系方式')
+
+    require_captcha_or_raise(
+        db=db,
+        user_id=viewer.id,
+        scene='view_worker_contact',
+        token=payload.captcha_token.strip(),
+        message='查看联系方式前请先完成滑块验证',
+    )
 
     profile, _ = row
     show = profile.show_contact if profile.show_contact is not None else True

@@ -5,6 +5,7 @@ import { blockUser } from '../../api/moderation'
 import { fetchUserReviews, fetchWorkerDetail, revealWorkerContact } from '../../api/users'
 import type { UserReview, WorkerContactReveal, WorkerProfile } from '../../types/api'
 import type { AppToastNotifier } from '../useAppToast'
+import type { CaptchaScene } from '../../utils/captcha'
 import { extractError } from '../../utils/error'
 
 interface UseHomeWorkerDrawerOptions {
@@ -13,6 +14,7 @@ interface UseHomeWorkerDrawerOptions {
   showToast: AppToastNotifier
   loadTasks: () => Promise<void>
   loadWorkers: () => Promise<void>
+  requestCaptcha: (scene: CaptchaScene) => Promise<string | null>
 }
 
 export function useHomeWorkerDrawer(options: UseHomeWorkerDrawerOptions) {
@@ -66,7 +68,10 @@ export function useHomeWorkerDrawer(options: UseHomeWorkerDrawerOptions) {
 
     workerContactLoading.value = true
     try {
-      const reveal = await revealWorkerContact(selectedWorker.value.user_id)
+      const captchaToken = await options.requestCaptcha('view_worker_contact')
+      if (!captchaToken) return
+
+      const reveal = await revealWorkerContact(selectedWorker.value.user_id, captchaToken)
       workerContactReveal.value = reveal
       if (!reveal.phone && !reveal.wechat) {
         options.showToast('该接单者暂未填写手机号或微信号', 'info')

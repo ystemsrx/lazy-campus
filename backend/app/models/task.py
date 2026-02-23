@@ -73,6 +73,16 @@ class TaskAbandonLog(Base):
     abandoned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class TaskAcceptLog(Base):
+    """记录接单行为，用于按日统计并触发验证码"""
+    __tablename__ = 'task_accept_logs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class TaskReview(Base):
     __tablename__ = 'task_reviews'
 

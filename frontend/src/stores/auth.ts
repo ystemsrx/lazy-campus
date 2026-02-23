@@ -13,23 +13,29 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => Boolean(token.value))
 
-  async function login(account: string, password: string) {
-    const res = await apiLogin({ account, password })
+  async function _applyLoginResponse(res: Awaited<ReturnType<typeof apiLogin>>) {
     token.value = res.token.access_token
     role.value = res.role
     profileCompleted.value = res.profile_completed
     displayName.value = res.display_name
-
     localStorage.setItem('access_token', res.token.access_token)
     localStorage.setItem('role', res.role)
     localStorage.setItem('profile_completed', String(res.profile_completed))
     localStorage.setItem('display_name', res.display_name)
-
     if (res.role === 'user') {
       await fetchMe()
     }
-
     return res
+  }
+
+  async function login(account: string, password: string) {
+    const res = await apiLogin({ account, password })
+    return _applyLoginResponse(res)
+  }
+
+  async function loginWithCaptcha(account: string, password: string, captchaToken: string, sessionId: string) {
+    const res = await apiLogin({ account, password, captcha_token: captchaToken, session_id: sessionId })
+    return _applyLoginResponse(res)
   }
 
   async function fetchMe() {
@@ -83,6 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     profileCompleted,
     login,
+    loginWithCaptcha,
     fetchMe,
     completeProfile,
     refresh,

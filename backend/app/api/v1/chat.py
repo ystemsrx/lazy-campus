@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -22,6 +22,13 @@ from app.schemas.chat import (
     ConversationOut,
 )
 from app.utils.user_display import display_name
+from app.services.captcha_service import (
+    captcha_required,
+    clear_gate_required,
+    consume_captcha_token,
+    is_gate_required,
+    set_gate_required,
+)
 
 router = APIRouter(prefix='/chat', tags=['chat'])
 
@@ -29,6 +36,9 @@ UPLOADS_ROOT = Path(__file__).resolve().parents[3] / 'uploads'
 CHAT_UPLOADS_ROOT = UPLOADS_ROOT / 'chat'
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_ATTACHMENTS_PER_CONVERSATION = 5
+CHAT_CAPTCHA_SCENE = 'chat_send'
+CHAT_CAPTCHA_WINDOW_SECONDS = 60
+CHAT_CAPTCHA_THRESHOLD = 8
 
 
 def _conversation_key(user_id: int, peer_id: int) -> tuple[int, int]:
@@ -43,6 +53,16 @@ def _is_blocked(db: Session, user_id: int, peer_id: int) -> tuple[bool, bool]:
         Blacklist.user_id == peer_id, Blacklist.blocked_user_id == user_id
     ).first() is not None
     return blocked_by_me, blocked_by_them
+
+
+def _sent_message_count_in_window(db: Session, sender_id: int, seconds: int) -> int:
+    window_start = datetime.utcnow() - timedelta(seconds=seconds)
+    return (
+        db.query(func.count(ChatMessage.id))
+        .filter(ChatMessage.sender_id == sender_id, ChatMessage.created_at >= window_start)
+        .scalar()
+        or 0
+    )
 
 
 @router.get('/conversations', response_model=list[ConversationOut])
@@ -207,6 +227,26 @@ def send_message(
     if blocked_by_me or blocked_by_them:
         raise HTTPException(status_code=403, detail='已拉黑，无法发送消息')
 
+    if is_gate_required(db, uid, CHAT_CAPTCHA_SCENE):
+        valid = consume_captcha_token(
+            db=db,
+            user_id=uid,
+            scene=CHAT_CAPTCHA_SCENE,
+            token=body.captcha_token.strip() if body.captcha_token else None,
+        )
+        if not valid:
+            captcha_required(
+                scene=CHAT_CAPTCHA_SCENE,
+                message='发送频率过高，请先完成滑块验证后继续聊天',
+            )
+        clear_gate_required(db, uid, CHAT_CAPTCHA_SCENE)
+    elif _sent_message_count_in_window(db, uid, CHAT_CAPTCHA_WINDOW_SECONDS) >= CHAT_CAPTCHA_THRESHOLD:
+        set_gate_required(db, uid, CHAT_CAPTCHA_SCENE)
+        captcha_required(
+            scene=CHAT_CAPTCHA_SCENE,
+            message='发送频率过高，请先完成滑块验证后继续聊天',
+        )
+
     if task_id:
         task = db.get(Task, task_id)
         if not task:
@@ -225,9 +265,9 @@ def send_message(
 
     task_obj = db.get(Task, task_id) if task_id else None
     if task_obj:
-        desc = f'在「{task_obj.title}」中发来了新消息'
+        desc = f'在「{task_obj.title}」中有新消息'
     else:
-        desc = '发来了一条新消息'
+        desc = '有新消息'
 
     existing_notif = db.query(Notification).filter(
         Notification.user_id == peer_id,

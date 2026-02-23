@@ -9,6 +9,7 @@ import HomeReportModal from '../components/home/HomeReportModal.vue'
 import HomeTaskDetailDrawer from '../components/home/HomeTaskDetailDrawer.vue'
 import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import AppToast from '../components/AppToast.vue'
+import { appSlideCaptcha } from '../components/AppSlideCaptcha.vue'
 import { useAppToast } from '../composables/useAppToast'
 import HomeWorkerDetailDrawer from '../components/home/HomeWorkerDetailDrawer.vue'
 import HomeWorkersSection from '../components/home/HomeWorkersSection.vue'
@@ -125,6 +126,7 @@ const {
   loadMyTasks,
   loadCategories,
   loadWorkers,
+  requestCaptcha: appSlideCaptcha,
 })
 
 const {
@@ -142,6 +144,7 @@ const {
   showToast,
   loadTasks,
   loadWorkers,
+  requestCaptcha: appSlideCaptcha,
 })
 
 function findTaskById(taskId: number): Task | undefined {

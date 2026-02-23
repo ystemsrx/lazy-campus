@@ -30,8 +30,10 @@ export async function fetchWorkerDetail(userId: number) {
   return data
 }
 
-export async function revealWorkerContact(userId: number) {
-  const { data } = await api.post<WorkerContactReveal>(`/users/workers/${userId}/contact-view`)
+export async function revealWorkerContact(userId: number, captchaToken: string) {
+  const { data } = await api.post<WorkerContactReveal>(`/users/workers/${userId}/contact-view`, {
+    captcha_token: captchaToken,
+  })
   return data
 }
 

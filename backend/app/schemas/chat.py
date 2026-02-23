@@ -18,6 +18,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatMessageSend(BaseModel):
     content: str
+    captcha_token: str | None = None
 
 
 class ConversationOut(BaseModel):

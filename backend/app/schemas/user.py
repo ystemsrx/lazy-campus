@@ -106,3 +106,7 @@ class WorkerContactRevealOut(BaseModel):
     phone: str | None
     wechat: str | None
     viewed_at: datetime
+
+
+class WorkerContactRevealRequest(BaseModel):
+    captcha_token: str = Field(min_length=8, max_length=64)

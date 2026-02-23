@@ -36,6 +36,7 @@ export function extractError(error: any, fallback = '操作失败'): string {
   }
 
   if (typeof detail === 'object' && detail.code === 'USER_BANNED') return '账号已被封禁'
+  if (typeof detail === 'object' && typeof detail.message === 'string') return detail.message
 
   return fallback
 }

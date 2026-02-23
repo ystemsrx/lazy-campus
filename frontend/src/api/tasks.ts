@@ -27,13 +27,16 @@ export async function createTask(payload: {
   contact_info: string | null
   required_gender: 'male' | 'female' | null
   icon?: string | null
+  captcha_token?: string | null
 }) {
   const { data } = await api.post<Task>('/tasks', payload)
   return data
 }
 
-export async function acceptTask(taskId: number) {
-  const { data } = await api.post<Task>(`/tasks/${taskId}/accept`)
+export async function acceptTask(taskId: number, captchaToken?: string) {
+  const params: Record<string, string> = {}
+  if (captchaToken) params.captcha_token = captchaToken
+  const { data } = await api.post<Task>(`/tasks/${taskId}/accept`, null, { params })
   return data
 }
 

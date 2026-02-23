@@ -10,7 +10,15 @@ from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
 from app.models.notification import Notification
-from app.models.task import Task, TaskAbandonLog, TaskAttachment, TaskCategory, TaskMessage, TaskReview
+from app.models.task import (
+    Task,
+    TaskAbandonLog,
+    TaskAcceptLog,
+    TaskAttachment,
+    TaskCategory,
+    TaskMessage,
+    TaskReview,
+)
 from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.task import (
     TaskAttachmentCreate,
@@ -25,6 +33,7 @@ from app.schemas.task import (
     TaskReviewOut,
     TaskUpdate,
 )
+from app.services.captcha_service import require_captcha_or_raise
 from app.utils.user_display import display_name
 
 router = APIRouter(prefix='/tasks', tags=['tasks'])
@@ -378,6 +387,15 @@ def create_task(
     if payload.deadline and payload.deadline <= datetime.utcnow():
         raise HTTPException(status_code=422, detail='截止时间不能早于当前时间')
 
+    if _published_count_today(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
+        require_captcha_or_raise(
+            db=db,
+            user_id=user.id,
+            scene='task_publish',
+            token=payload.captcha_token.strip() if payload.captcha_token else None,
+            message='今日发布任务已超过 5 条，请先完成滑块验证',
+        )
+
     task = Task(
         title=payload.title,
         description=payload.description,
@@ -448,6 +466,34 @@ def update_task(
 
 _ABANDON_WINDOW_H = 24
 _ABANDON_LIMIT = 3
+_DAILY_CAPTCHA_FREE_LIMIT = 5
+
+
+def _utc_today_range() -> tuple[datetime, datetime]:
+    now = datetime.utcnow()
+    start = datetime(now.year, now.month, now.day)
+    end = start + timedelta(days=1)
+    return start, end
+
+
+def _published_count_today(db: Session, user_id: int) -> int:
+    day_start, day_end = _utc_today_range()
+    return (
+        db.query(func.count(Task.id))
+        .filter(Task.publisher_id == user_id, Task.created_at >= day_start, Task.created_at < day_end)
+        .scalar()
+        or 0
+    )
+
+
+def _accepted_count_today(db: Session, user_id: int) -> int:
+    day_start, day_end = _utc_today_range()
+    return (
+        db.query(func.count(TaskAcceptLog.id))
+        .filter(TaskAcceptLog.user_id == user_id, TaskAcceptLog.accepted_at >= day_start, TaskAcceptLog.accepted_at < day_end)
+        .scalar()
+        or 0
+    )
 
 
 def _abandon_count_in_window(db: Session, user_id: int) -> int:
@@ -461,7 +507,12 @@ def _abandon_count_in_window(db: Session, user_id: int) -> int:
 
 
 @router.post('/{task_id}/accept', response_model=TaskOut)
-def accept_task(task_id: int, user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> TaskOut:
+def accept_task(
+    task_id: int,
+    captcha_token: str | None = Query(default=None),
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> TaskOut:
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
@@ -475,10 +526,19 @@ def accept_task(task_id: int, user: User = Depends(require_completed_user), db: 
         raise HTTPException(status_code=400, detail='您的性别不满足该任务要求')
     if _abandon_count_in_window(db, user.id) >= _ABANDON_LIMIT:
         raise HTTPException(status_code=429, detail='您在24小时内取消接取次数已达上限，暂时无法接取新任务')
+    if _accepted_count_today(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
+        require_captcha_or_raise(
+            db=db,
+            user_id=user.id,
+            scene='task_accept',
+            token=captcha_token.strip() if captcha_token else None,
+            message='今日接取任务已超过 5 条，请先完成滑块验证',
+        )
 
     task.assignee_id = user.id
     task.status = TaskStatus.IN_PROGRESS
     db.add(task)
+    db.add(TaskAcceptLog(user_id=user.id, task_id=task.id))
     db.add(Notification(
         user_id=task.publisher_id,
         type='task_accepted',
@@ -706,7 +766,7 @@ def send_message(
         ).first()
         if existing_notif:
             existing_notif.title = display_name(user)
-            existing_notif.description = f'在「{task.title}」中发来了新消息'
+            existing_notif.description = f'在「{task.title}」中有新消息'
             existing_notif.is_read = False
             existing_notif.updated_at = datetime.utcnow()
             existing_notif.related_user_id = user.id
@@ -716,7 +776,7 @@ def send_message(
                 user_id=other_id,
                 type='chat_message',
                 title=display_name(user),
-                description=f'在「{task.title}」中发来了新消息',
+                description=f'在「{task.title}」中有新消息',
                 related_task_id=task_id,
                 related_user_id=user.id,
                 dismiss_type='source',

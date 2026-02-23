@@ -33,6 +33,7 @@ class TaskCreate(BaseModel):
     contact_info: str | None = None
     required_gender: Gender | None = None
     icon: str | None = None
+    captcha_token: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 class TaskUpdate(BaseModel):

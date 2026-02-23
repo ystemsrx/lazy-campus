@@ -5,12 +5,16 @@ export type ContactVisibility = 'after_accept' | 'internal_only'
 export interface LoginPayload {
   account: string
   password: string
+  captcha_token?: string
+  session_id?: string
 }
 
 export interface RegisterPayload {
   account: string
   password: string
   name: string
+  captcha_token: string
+  session_id: string
 }
 
 export interface LoginResponse {

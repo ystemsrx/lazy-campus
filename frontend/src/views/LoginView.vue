@@ -1,117 +1,185 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 
-import AppToast from '../components/AppToast.vue'
-import LoginAppealModal from '../components/login/LoginAppealModal.vue'
-import LoginForm from '../components/login/LoginForm.vue'
-import RegisterForm from '../components/login/RegisterForm.vue'
-import AuthSubmitButton from '../components/login/AuthSubmitButton.vue'
-import { useAppToast } from '../composables/useAppToast'
-import { fetchRegistrationStatus, register } from '../api/auth'
-import { useAuthStore } from '../stores/auth'
-import { extractError } from '../utils/error'
+import AppToast from "../components/AppToast.vue";
+import LoginAppealModal from "../components/login/LoginAppealModal.vue";
+import LoginForm from "../components/login/LoginForm.vue";
+import RegisterForm from "../components/login/RegisterForm.vue";
+import AuthSubmitButton from "../components/login/AuthSubmitButton.vue";
+import { appAnonSlideCaptcha } from "../components/AppSlideCaptcha.vue";
+import { useAppToast } from "../composables/useAppToast";
+import { fetchRegistrationStatus, register } from "../api/auth";
+import { useAuthStore } from "../stores/auth";
+import { extractError } from "../utils/error";
 
-const router = useRouter()
-const auth = useAuthStore()
+const router = useRouter();
+const auth = useAuthStore();
 
-const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
+const appTitle = import.meta.env.VITE_APP_TITLE || "校园任务平台";
 
-const isLogin = ref(true)
-const showPassword = ref(false)
+const isLogin = ref(true);
+const showPassword = ref(false);
 
-const account = ref('')
-const password = ref('')
-const regName = ref('')
-const regAccount = ref('')
-const regPassword = ref('')
-const confirmPassword = ref('')
-const showRegPassword = ref(false)
+const account = ref("");
+const password = ref("");
+const regName = ref("");
+const regAccount = ref("");
+const regPassword = ref("");
+const confirmPassword = ref("");
+const showRegPassword = ref(false);
 
-const { toast, showToast, clearToast } = useAppToast(3000)
-const loading = ref(false)
+const { toast, showToast, clearToast } = useAppToast(3000);
+const loading = ref(false);
 
-const registrationEnabled = ref(false)
-const registrationLoaded = ref(false)
+const registrationEnabled = ref(false);
+const registrationLoaded = ref(false);
 
-const showAppeal = ref(false)
-const appealInitialBanUntil = ref<string | null>(null)
+const showAppeal = ref(false);
+const appealInitialBanUntil = ref<string | null>(null);
+
+/** 每次页面加载生成一个 session_id，用于匿名验证码流程 */
+function newSessionId(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+const sessionId = ref(newSessionId());
 
 function toggleForm() {
-  isLogin.value = !isLogin.value
-  showPassword.value = false
-  showRegPassword.value = false
-  clearToast()
+  isLogin.value = !isLogin.value;
+  showPassword.value = false;
+  showRegPassword.value = false;
+  clearToast();
 }
 
 async function submitLogin() {
-  clearToast()
-  loading.value = true
+  clearToast();
+  loading.value = true;
   try {
-    const res = await auth.login(account.value, password.value)
-    if (res.role === 'admin') {
-      await router.push('/admin')
-      return
+    const res = await auth.login(account.value, password.value);
+    if (res.role === "admin") {
+      await router.push("/admin");
+      return;
     }
-    await router.push(res.profile_completed ? '/' : '/complete-profile')
+    await router.push(res.profile_completed ? "/" : "/complete-profile");
   } catch (error: any) {
-    const detail = error?.response?.data?.detail
-    if (detail && typeof detail === 'object' && detail.code === 'USER_BANNED') {
-      appealInitialBanUntil.value = detail.ban_until || null
-      showAppeal.value = true
-    } else {
-      showToast(extractError(error, '登录失败，请稍后重试'), 'error')
+    const detail = error?.response?.data?.detail;
+    if (detail && typeof detail === "object" && detail.code === "USER_BANNED") {
+      appealInitialBanUntil.value = detail.ban_until || null;
+      showAppeal.value = true;
+      return;
     }
+
+    // 后端要求验证码（密码错误次数过多）
+    if (
+      detail &&
+      typeof detail === "object" &&
+      detail.code === "CAPTCHA_REQUIRED"
+    ) {
+      const token = await appAnonSlideCaptcha("login", sessionId.value);
+      if (!token) {
+        // 用户取消了验证码
+        showToast("请先完成验证", "error");
+        return;
+      }
+      // 带验证码 token 重试一次
+      try {
+        const res2 = await auth.loginWithCaptcha(
+          account.value,
+          password.value,
+          token,
+          sessionId.value,
+        );
+        // 消耗后更换 session_id，避免复用
+        sessionId.value = newSessionId();
+        if (res2.role === "admin") {
+          await router.push("/admin");
+          return;
+        }
+        await router.push(res2.profile_completed ? "/" : "/complete-profile");
+      } catch (err2: any) {
+        sessionId.value = newSessionId();
+        const detail2 = err2?.response?.data?.detail;
+        if (
+          detail2 &&
+          typeof detail2 === "object" &&
+          detail2.code === "USER_BANNED"
+        ) {
+          appealInitialBanUntil.value = detail2.ban_until || null;
+          showAppeal.value = true;
+        } else {
+          showToast(extractError(err2, "登录失败，请稍后重试"), "error");
+        }
+      }
+      return;
+    }
+
+    showToast(extractError(error, "登录失败，请稍后重试"), "error");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function submitRegister() {
-  clearToast()
+  clearToast();
 
-  if (!registrationEnabled.value) return
+  if (!registrationEnabled.value) return;
 
   if (regPassword.value.length < 6) {
-    showToast('密码至少 6 位', 'error')
-    return
+    showToast("密码至少 6 位", "error");
+    return;
   }
   if (regPassword.value !== confirmPassword.value) {
-    showToast('两次输入的密码不一致', 'error')
-    return
+    showToast("两次输入的密码不一致", "error");
+    return;
   }
 
-  loading.value = true
+  // 注册时强制要求验证码
+  const captchaToken = await appAnonSlideCaptcha("register", sessionId.value);
+  if (!captchaToken) {
+    showToast("请先完成验证", "error");
+    return;
+  }
+
+  loading.value = true;
   try {
-    const registerAccount = regAccount.value
-    const registerPassword = regPassword.value
-    await register({ account: registerAccount, password: registerPassword, name: regName.value })
-    const res = await auth.login(registerAccount, registerPassword)
-    if (res.role === 'admin') {
-      await router.push('/admin')
-      return
+    const registerAccount = regAccount.value;
+    const registerPassword = regPassword.value;
+    await register({
+      account: registerAccount,
+      password: registerPassword,
+      name: regName.value,
+      captcha_token: captchaToken,
+      session_id: sessionId.value,
+    });
+    // 注册成功后更换 session_id
+    sessionId.value = newSessionId();
+    const res = await auth.login(registerAccount, registerPassword);
+    if (res.role === "admin") {
+      await router.push("/admin");
+      return;
     }
-    await router.push(res.profile_completed ? '/' : '/complete-profile')
+    await router.push(res.profile_completed ? "/" : "/complete-profile");
   } catch (error: any) {
-    showToast(extractError(error, '注册失败，请稍后重试'), 'error')
-    loadRegistrationStatus()
+    sessionId.value = newSessionId();
+    showToast(extractError(error, "注册失败，请稍后重试"), "error");
+    loadRegistrationStatus();
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function loadRegistrationStatus() {
   try {
-    const status = await fetchRegistrationStatus()
-    registrationEnabled.value = status.registration_enabled
+    const status = await fetchRegistrationStatus();
+    registrationEnabled.value = status.registration_enabled;
   } catch {
-    registrationEnabled.value = false
+    registrationEnabled.value = false;
   } finally {
-    registrationLoaded.value = true
+    registrationLoaded.value = true;
   }
 }
 
-onMounted(loadRegistrationStatus)
+onMounted(loadRegistrationStatus);
 </script>
 
 <template>
@@ -131,17 +199,23 @@ onMounted(loadRegistrationStatus)
             class="av-toggle"
             @click="toggleForm"
           >
-            {{ isLogin ? '注册账号' : '直接登录' }}
+            {{ isLogin ? "注册账号" : "直接登录" }}
           </button>
         </div>
       </div>
 
       <div class="av-title-wrap">
-        <div class="av-title-row" :class="isLogin ? 'av-title-row--active' : 'av-title-row--up'">
+        <div
+          class="av-title-row"
+          :class="isLogin ? 'av-title-row--active' : 'av-title-row--up'"
+        >
           <h1 class="av-title">登录</h1>
           <AppToast :toast="isLogin ? toast : null" inline />
         </div>
-        <div class="av-title-row" :class="!isLogin ? 'av-title-row--active' : 'av-title-row--down'">
+        <div
+          class="av-title-row"
+          :class="!isLogin ? 'av-title-row--active' : 'av-title-row--down'"
+        >
           <h1 class="av-title">创建账号</h1>
           <AppToast :toast="!isLogin ? toast : null" inline />
         </div>
@@ -149,7 +223,9 @@ onMounted(loadRegistrationStatus)
 
       <div
         class="av-form-container"
-        :class="isLogin ? 'av-form-container--login' : 'av-form-container--register'"
+        :class="
+          isLogin ? 'av-form-container--login' : 'av-form-container--register'
+        "
       >
         <LoginForm
           :active="isLogin"
@@ -181,7 +257,9 @@ onMounted(loadRegistrationStatus)
       <div class="av-footer">
         <div class="av-footer__text">
           <span class="av-footer__hint">请安全浏览！</span>
-          <button class="av-browse-link" @click="router.push('/')">随便看看 →</button>
+          <button class="av-browse-link" @click="router.push('/')">
+            随便看看 →
+          </button>
         </div>
         <AuthSubmitButton
           :loading="loading"
@@ -237,7 +315,11 @@ onMounted(loadRegistrationStatus)
   right: -5%;
   width: 60vw;
   height: 60vw;
-  background: linear-gradient(to top left, rgba(240, 144, 80, 0.4), transparent);
+  background: linear-gradient(
+    to top left,
+    rgba(240, 144, 80, 0.4),
+    transparent
+  );
   filter: blur(120px);
 }
 .av-bg__orb--tr {

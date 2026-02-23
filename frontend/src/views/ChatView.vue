@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { MessageSquare, Star, User as UserIcon, X } from 'lucide-vue-next'
 
 import AppToast from '../components/AppToast.vue'
+import { appSlideCaptcha } from '../components/AppSlideCaptcha.vue'
 import ChatAttachmentModal from '../components/chat/ChatAttachmentModal.vue'
 import ChatConversationSidebar from '../components/chat/ChatConversationSidebar.vue'
 import ChatHeaderPanel from '../components/chat/ChatHeaderPanel.vue'
@@ -28,6 +29,8 @@ import { useAuthStore } from '../stores/auth'
 import { useNotificationStore } from '../stores/notifications'
 import type { Task, UserReview, WorkerProfile } from '../types/api'
 import type { Conversation } from '../types/chat'
+import { CaptchaCancelledError, withCaptchaRetry } from '../utils/captcha'
+import { extractError } from '../utils/error'
 import { formatFull, formatLastSeen, isExpired } from '../utils/time'
 import { getTaskIcon } from '../utils/taskIcons'
 
@@ -225,13 +228,22 @@ function handleSearchQueryUpdate(value: string) {
 async function handleSend() {
   if (!inputText.value.trim() || !activeConversation.value || isBlocked.value || sending.value) return
 
+  const content = inputText.value.trim()
+  const peerId = activeConversation.value.peer_id
+  const taskId = activeConversation.value.task_id
+
   sending.value = true
 
   try {
-    const message = await sendMessage(
-      activeConversation.value.peer_id,
-      inputText.value.trim(),
-      activeConversation.value.task_id,
+    const message = await withCaptchaRetry(
+      (captchaToken) =>
+        sendMessage(
+          peerId,
+          content,
+          taskId,
+          captchaToken,
+        ),
+      appSlideCaptcha,
     )
 
     messages.value.push(message)
@@ -240,11 +252,12 @@ async function handleSend() {
     await nextTick()
     scrollToBottom()
     loadConversations()
-  } catch {
-    // ignore
+  } catch (error) {
+    if (error instanceof CaptchaCancelledError) return
+    showToast(extractError(error, '发送失败'), 'error')
+  } finally {
+    sending.value = false
   }
-
-  sending.value = false
 }
 
 function openTaskDetail() {

@@ -21,10 +21,19 @@ export async function fetchMessageSnapshot(peerId: number, taskId?: number | nul
   return data
 }
 
-export async function sendMessage(peerId: number, content: string, taskId?: number | null) {
+export async function sendMessage(
+  peerId: number,
+  content: string,
+  taskId?: number | null,
+  captchaToken?: string,
+) {
   const params: Record<string, string | number> = { peer_id: peerId }
   if (taskId != null) params.task_id = taskId
-  const { data } = await api.post<ChatMessage>('/chat/messages', { content }, { params })
+  const { data } = await api.post<ChatMessage>(
+    '/chat/messages',
+    { content, captcha_token: captchaToken ?? null },
+    { params },
+  )
   return data
 }
 
