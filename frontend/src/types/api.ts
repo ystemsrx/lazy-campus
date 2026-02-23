@@ -44,6 +44,9 @@ export interface UserMe {
   avatar_url: string | null
   is_banned: boolean
   ban_until: string | null
+  ban_publish: boolean
+  ban_accept: boolean
+  ban_contact: boolean
   role: UserRole
   created_at: string
 }
@@ -158,6 +161,9 @@ export interface AdminUserItem {
   ban_reason: string | null
   ban_count: number
   ban_until: string | null
+  ban_publish: boolean
+  ban_accept: boolean
+  ban_contact: boolean
   created_at: string
 }
 
@@ -193,17 +199,23 @@ export interface Report {
   reported_user_nickname: string | null
   reported_user_account: string | null
   reported_user_ban_count: number | null
+  reporter_avatar_url: string | null
+  reporter_gender: 'male' | 'female' | null
+  reported_user_avatar_url: string | null
+  reported_user_gender: 'male' | 'female' | null
   reason: string
   evidence: string
   images: string[]
   status: 'pending' | 'approved' | 'rejected'
   admin_id: number | null
   admin_notes: string | null
+  ban_penalty: string | null
+  is_admin_ban: boolean
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned'
-export type DismissType = 'read' | 'action' | 'source'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'punishment'
+export type DismissType = 'read' | 'action' | 'source' | 'persistent'
 
 export interface AppNotification {
   id: number

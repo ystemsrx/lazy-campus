@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertTriangle,
+  Ban,
   Bell,
   Check,
   CheckCircle,
@@ -75,6 +76,8 @@ function handleClick(n: AppNotification) {
     router.push({ path: '/chat', query })
   } else if (n.type === 'report_reviewed') {
     router.push('/reports')
+  } else if (n.type === 'punishment') {
+    router.push('/reports?tab=received')
   } else if (n.related_task_id) {
     router.push({ path: '/', query: { task: String(n.related_task_id) } })
   }
@@ -94,6 +97,7 @@ const iconMap: Record<NotificationType, any> = {
   report_reviewed: ShieldCheck,
   task_completed: CheckCircle,
   task_abandoned: LogOut,
+  punishment: Ban,
 }
 
 function getIcon(type: string) {
@@ -172,8 +176,11 @@ onUnmounted(() => {
                   :class="{ 'notif-item__desc--unread': !n.is_read }"
                 >{{ n.description }}</p>
               </div>
+              <span v-if="n.dismiss_type === 'persistent'" class="notif-item__persistent-tag">
+                <i class="fa-solid fa-thumbtack"></i>
+              </span>
               <button
-                v-if="n.dismiss_type === 'read' && n.id > 0"
+                v-else-if="n.dismiss_type === 'read' && n.id > 0"
                 class="notif-item__close"
                 @click="dismissNotification($event, n)"
               >
@@ -423,6 +430,21 @@ onUnmounted(() => {
 .notif-icon--task_abandoned {
   background: #fff7ed;
   color: #f97316;
+}
+
+.notif-icon--punishment {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.notif-item__persistent-tag {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #ef4444;
+  font-size: 11px;
+  opacity: 0.6;
 }
 
 .notif-item__body {

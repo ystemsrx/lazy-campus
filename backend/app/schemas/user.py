@@ -32,6 +32,9 @@ class UserMe(BaseModel):
     avatar_url: str | None
     is_banned: bool
     ban_until: datetime | None
+    ban_publish: bool = False
+    ban_accept: bool = False
+    ban_contact: bool = False
     role: str
     created_at: datetime
 

@@ -10,6 +10,7 @@ class ChatMessageOut(BaseModel):
     task_id: int | None
     content: str
     is_read: bool
+    blocked: bool = False
     created_at: datetime
 
     class Config:
@@ -37,6 +38,7 @@ class ConversationOut(BaseModel):
     unread_count: int
     blocked_by_me: bool
     blocked_by_them: bool
+    peer_ban_contact: bool = False
 
 
 class ChatAttachmentOut(BaseModel):

@@ -90,7 +90,6 @@ export function useAdminReports(showToast: AppToastNotifier) {
 
   const showReviewModal = ref(false)
   const reviewTarget = ref<Report | null>(null)
-  const reviewBanReason = ref('')
   const reviewSubmitting = ref(false)
 
   const showSnapshot = ref(false)
@@ -119,15 +118,20 @@ export function useAdminReports(showToast: AppToastNotifier) {
   async function doReview(
     report: Report,
     status: 'approved' | 'rejected',
-    adminNotes?: string,
+    opts?: { admin_notes?: string; ban_types?: string[]; ban_days?: number | null },
   ) {
     const isReport = report.type === 'report'
     try {
-      await reviewReport(report.id, { status, admin_notes: adminNotes })
+      await reviewReport(report.id, {
+        status,
+        admin_notes: opts?.admin_notes,
+        ban_types: opts?.ban_types,
+        ban_days: opts?.ban_days,
+      })
       if (isReport) {
-        showToast(status === 'approved' ? '已通过，被举报用户已自动封禁' : '已驳回', 'success')
+        showToast(status === 'approved' ? '已通过，已对被举报用户执行处罚' : '已驳回', 'success')
       } else {
-        showToast(status === 'approved' ? '申诉通过，用户已解封' : '申诉已驳回', 'success')
+        showToast(status === 'approved' ? '申诉通过，用户限制已解除' : '申诉已驳回', 'success')
       }
       await loadReports()
     } catch (error: unknown) {
@@ -140,7 +144,6 @@ export function useAdminReports(showToast: AppToastNotifier) {
 
     if (isReport && status === 'approved') {
       reviewTarget.value = report
-      reviewBanReason.value = ''
       showReviewModal.value = true
       return
     }
@@ -153,7 +156,7 @@ export function useAdminReports(showToast: AppToastNotifier) {
         '该用户'
       const yes = await appConfirm({
         title: '确认通过申诉',
-        message: `通过后「${name}」将被解除封禁，确定通过？`,
+        message: `通过后「${name}」的所有封禁与功能限制将被解除，确定通过？`,
         confirmText: '确认通过',
         type: 'info',
       })
@@ -165,17 +168,17 @@ export function useAdminReports(showToast: AppToastNotifier) {
     await doReview(report, status)
   }
 
-  async function confirmReportReview() {
+  async function confirmReportReview(payload: { ban_types: string[]; ban_days: number | null; admin_notes: string }) {
     if (!reviewTarget.value) {
       return
     }
     reviewSubmitting.value = true
     try {
-      await doReview(
-        reviewTarget.value,
-        'approved',
-        reviewBanReason.value || undefined,
-      )
+      await doReview(reviewTarget.value, 'approved', {
+        admin_notes: payload.admin_notes || undefined,
+        ban_types: payload.ban_types,
+        ban_days: payload.ban_days,
+      })
       showReviewModal.value = false
     } finally {
       reviewSubmitting.value = false
@@ -235,7 +238,6 @@ export function useAdminReports(showToast: AppToastNotifier) {
     handleReview,
     showReviewModal,
     reviewTarget,
-    reviewBanReason,
     reviewSubmitting,
     confirmReportReview,
     closeReviewModal,

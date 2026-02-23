@@ -20,6 +20,9 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE users ADD COLUMN ban_until DATETIME DEFAULT NULL'))
             if 'last_active' not in user_cols:
                 conn.execute(text('ALTER TABLE users ADD COLUMN last_active DATETIME DEFAULT NULL'))
+            for col in ('ban_publish', 'ban_accept', 'ban_contact'):
+                if col not in user_cols:
+                    conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT 0'))
 
         if 'tasks' in tables:
             task_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))}
@@ -32,6 +35,10 @@ def run_startup_migrations() -> None:
             report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}
             if 'images' not in report_cols:
                 conn.execute(text('ALTER TABLE reports ADD COLUMN images TEXT DEFAULT NULL'))
+            if 'ban_penalty' not in report_cols:
+                conn.execute(text('ALTER TABLE reports ADD COLUMN ban_penalty TEXT DEFAULT NULL'))
+            if 'is_admin_ban' not in report_cols:
+                conn.execute(text('ALTER TABLE reports ADD COLUMN is_admin_ban BOOLEAN DEFAULT 0'))
 
         if 'worker_profiles' in tables:
             worker_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(worker_profiles)"))}
@@ -65,6 +72,10 @@ def run_startup_migrations() -> None:
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_task ON chat_messages (task_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_is_read ON chat_messages (is_read)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_chat_messages_created ON chat_messages (created_at)'))
+        else:
+            cm_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(chat_messages)"))}
+            if 'blocked' not in cm_cols:
+                conn.execute(text('ALTER TABLE chat_messages ADD COLUMN blocked BOOLEAN DEFAULT 0'))
 
         if 'chat_attachments' not in tables:
             conn.execute(text('''

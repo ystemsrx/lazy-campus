@@ -46,6 +46,11 @@ export async function fetchBanContext(payload: { account: string; password: stri
   return data
 }
 
+export async function fetchMyBanContext() {
+  const { data } = await api.get<BanContext>('/moderation/me/ban-context')
+  return data
+}
+
 export async function blockUser(payload: { blocked_user_id: number; reason?: string }) {
   const { data } = await api.post('/moderation/blacklist', payload)
   return data
@@ -71,6 +76,20 @@ export async function fetchMyReports() {
   return data
 }
 
+export async function fetchReceivedReports() {
+  const { data } = await api.get<Report[]>('/moderation/me/received-reports')
+  return data
+}
+
+export async function createAuthenticatedAppeal(payload: {
+  reason: string
+  evidence: string
+  images?: string[]
+}) {
+  const { data } = await api.post<Report>('/moderation/me/appeal', payload)
+  return data
+}
+
 export async function fetchAdminDashboard() {
   const { data } = await api.get('/moderation/admin/dashboard')
   return data
@@ -81,7 +100,12 @@ export async function fetchAdminReports(params: { type?: string; status?: string
   return data
 }
 
-export async function reviewReport(reportId: number, payload: { status: 'pending' | 'approved' | 'rejected'; admin_notes?: string }) {
+export async function reviewReport(reportId: number, payload: {
+  status: 'pending' | 'approved' | 'rejected'
+  admin_notes?: string
+  ban_types?: string[]
+  ban_days?: number | null
+}) {
   const { data } = await api.post<Report>(`/moderation/admin/reports/${reportId}/review`, payload)
   return data
 }
@@ -96,7 +120,13 @@ export async function fetchReportChatHistory(reportId: number) {
   return data
 }
 
-export async function banUser(userId: number, payload: { banned: boolean; reason?: string; innocent?: boolean }) {
+export async function banUser(userId: number, payload: {
+  banned: boolean
+  reason?: string
+  innocent?: boolean
+  ban_types?: string[]
+  ban_days?: number | null
+}) {
   const { data } = await api.post(`/moderation/admin/users/${userId}/ban`, payload)
   return data
 }

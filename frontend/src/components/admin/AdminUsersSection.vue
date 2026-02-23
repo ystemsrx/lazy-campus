@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, proxyRefs } from 'vue'
+import { onMounted, onUnmounted, proxyRefs, ref } from 'vue'
 
+import type { AdminUserItem } from '../../types/api'
 import type { AdminUsersModel } from '../../composables/admin/useAdminUsers'
 import { formatShort } from '../../utils/time'
-import AdminBanModal from './AdminBanModal.vue'
+import AdminReviewModal from './AdminReviewModal.vue'
 
 const props = defineProps<{
   model: AdminUsersModel
@@ -11,12 +12,35 @@ const props = defineProps<{
 
 const vm = proxyRefs(props.model)
 
+const banDetailOpenId = ref<number | null>(null)
+
+function toggleBanDetail(userId: number) {
+  banDetailOpenId.value = banDetailOpenId.value === userId ? null : userId
+}
+
+function banLabels(user: AdminUserItem): string[] {
+  const labels: string[] = []
+  if (user.is_banned) labels.push('禁止登录')
+  if (user.ban_publish) labels.push('禁止发布')
+  if (user.ban_accept) labels.push('禁止接单')
+  if (user.ban_contact) labels.push('禁止联系')
+  return labels
+}
+
+function onClickOutside(e: MouseEvent) {
+  vm.onClickOutsideUnban(e)
+  const target = e.target as HTMLElement
+  if (!target.closest('.av-ban-detail-wrap')) {
+    banDetailOpenId.value = null
+  }
+}
+
 onMounted(() => {
-  document.addEventListener('mousedown', vm.onClickOutsideUnban)
+  document.addEventListener('mousedown', onClickOutside)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('mousedown', vm.onClickOutsideUnban)
+  document.removeEventListener('mousedown', onClickOutside)
 })
 </script>
 
@@ -71,51 +95,81 @@ onUnmounted(() => {
             </span>
           </span>
           <span class="av-user-col av-user-col--status">
-            <span v-if="user.is_banned" class="badge badge-red" :title="user.ban_reason || ''">已封禁</span>
+            <template v-if="banLabels(user).length > 0">
+              <!-- 单项封禁：直接显示具体标签+时间 -->
+              <div v-if="banLabels(user).length === 1" class="av-ban-single">
+                <span class="badge badge-red">{{ banLabels(user)[0] }}</span>
+                <span v-if="user.ban_until" class="av-ban-single__until">至 {{ formatShort(user.ban_until) }}</span>
+                <span v-else class="av-ban-single__until">永久</span>
+              </div>
+              <!-- 多项封禁：显示"异常"+浮窗 -->
+              <div v-else class="av-ban-detail-wrap">
+                <span
+                  class="badge badge-red av-ban-abnormal"
+                  @click.stop="toggleBanDetail(user.id)"
+                >
+                  异常
+                </span>
+                <Transition name="av-dropdown">
+                  <div v-if="banDetailOpenId === user.id" class="av-ban-popover">
+                    <div class="av-ban-popover__title">封禁详情</div>
+                    <div class="av-ban-popover__tags">
+                      <span v-for="label in banLabels(user)" :key="label" class="av-ban-popover__tag">
+                        {{ label }}
+                      </span>
+                    </div>
+                    <div v-if="user.ban_until" class="av-ban-popover__until">
+                      至 {{ formatShort(user.ban_until) }}
+                    </div>
+                    <div v-else class="av-ban-popover__until">永久</div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
             <span v-else class="badge badge-green">正常</span>
-            <span v-if="user.is_banned && user.ban_until" class="av-ban-until">至 {{ formatShort(user.ban_until) }}</span>
           </span>
           <span class="av-user-col av-user-col--bancount" :class="{ 'av-bancount--warn': user.ban_count > 0 }">
             {{ user.ban_count }}
           </span>
-          <span class="av-user-col av-user-col--action">
+          <span class="av-user-col av-user-col--action av-action-group">
             <button
-              v-if="!user.is_banned"
               class="av-action-btn av-action-btn--ban"
-              title="封禁该用户"
+              title="封禁 / 修改封禁"
               @click="vm.openBanModal(user)"
             >
               <i class="fa-solid fa-ban"></i>
             </button>
-            <div v-else class="av-unban-wrap">
-              <button
-                class="av-action-btn av-action-btn--unban"
-                title="解封该用户"
-                @click="vm.toggleUnbanMenu(user.id)"
-              >
-                <i class="fa-solid fa-lock-open"></i>
-              </button>
-              <Transition name="av-dropdown">
-                <div v-if="vm.unbanOpenId === user.id" class="av-unban-menu">
-                  <button
-                    class="av-unban-menu__item"
-                    :disabled="vm.unbanSubmitting"
-                    @click="vm.confirmUnban(user, false)"
-                  >
-                    <i class="fa-solid fa-gavel av-unban-icon--liable"></i>
-                    有责解封
-                  </button>
-                  <button
-                    class="av-unban-menu__item"
-                    :disabled="vm.unbanSubmitting"
-                    @click="vm.confirmUnban(user, true)"
-                  >
-                    <i class="fa-solid fa-shield-halved av-unban-icon--innocent"></i>
-                    无责解封
-                  </button>
-                </div>
-              </Transition>
-            </div>
+            <template v-if="user.is_banned || user.ban_publish || user.ban_accept || user.ban_contact">
+              <div class="av-unban-wrap">
+                <button
+                  class="av-action-btn av-action-btn--unban"
+                  title="解封该用户"
+                  @click="vm.toggleUnbanMenu(user.id)"
+                >
+                  <i class="fa-solid fa-lock-open"></i>
+                </button>
+                <Transition name="av-unban-drop">
+                  <div v-if="vm.unbanOpenId === user.id" class="av-unban-menu">
+                    <button
+                      class="av-unban-menu__item"
+                      :disabled="vm.unbanSubmitting"
+                      @click="vm.confirmUnban(user, false)"
+                    >
+                      <i class="fa-solid fa-gavel av-unban-icon--liable"></i>
+                      有责解封
+                    </button>
+                    <button
+                      class="av-unban-menu__item"
+                      :disabled="vm.unbanSubmitting"
+                      @click="vm.confirmUnban(user, true)"
+                    >
+                      <i class="fa-solid fa-shield-halved av-unban-icon--innocent"></i>
+                      无责解封
+                    </button>
+                  </div>
+                </Transition>
+              </div>
+            </template>
           </span>
         </div>
       </div>
@@ -151,12 +205,14 @@ onUnmounted(() => {
     </template>
   </section>
 
-  <AdminBanModal
+  <AdminReviewModal
     :show="vm.showBanModal"
-    :user="vm.banTargetUser"
-    :reason="vm.banReasonInput"
     :submitting="vm.banSubmitting"
-    @update:reason="vm.banReasonInput = $event"
+    :title="vm.banTargetUser && (vm.banTargetUser.is_banned || vm.banTargetUser.ban_publish || vm.banTargetUser.ban_accept || vm.banTargetUser.ban_contact) ? '修改封禁' : '封禁用户'"
+    :target-name="vm.banTargetUser ? `${vm.banTargetUser.display_name}（${vm.banTargetUser.account}）` : ''"
+    :ban-count="vm.banTargetUser?.ban_count ?? 0"
+    :preselected-types="vm.banPreselectedTypes"
+    confirm-label="确认封禁"
     @close="vm.closeBanModal"
     @confirm="vm.confirmBan"
   />
@@ -227,7 +283,7 @@ onUnmounted(() => {
 
 .av-user-row {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 80px 80px 52px 64px;
+  grid-template-columns: 1.2fr 1fr 1fr 80px minmax(100px, 1.2fr) 52px 80px;
   align-items: center;
   padding: 0 16px;
   min-height: 46px;
@@ -272,6 +328,15 @@ onUnmounted(() => {
   padding: 4px 0;
 }
 
+.av-user-col--status {
+  white-space: normal;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+  overflow: visible;
+}
+
 .av-user-col--action {
   display: flex;
   justify-content: center;
@@ -289,12 +354,86 @@ onUnmounted(() => {
   color: var(--c-danger) !important;
 }
 
-.av-ban-until {
-  display: block;
-  font-size: 11px;
-  color: var(--c-danger);
-  margin-top: 2px;
+.av-ban-single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.av-ban-single__until {
+  font-size: 10px;
+  color: var(--c-text-muted);
   white-space: nowrap;
+}
+
+.av-ban-abnormal {
+  cursor: pointer;
+  user-select: none;
+}
+
+.av-ban-detail-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.av-ban-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  min-width: 160px;
+  background: var(--c-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  padding: 10px 14px;
+  transform-origin: top center;
+}
+
+.av-ban-popover__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: left;
+}
+
+.av-ban-popover__tags {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  justify-items: center;
+}
+
+.av-ban-popover__tag {
+  display: inline-block;
+  width: 100%;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--c-danger-light);
+  color: var(--c-danger);
+  white-space: nowrap;
+}
+
+.av-ban-popover__until {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.av-action-group {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  align-items: center;
 }
 
 .av-action-btn {
@@ -404,10 +543,33 @@ onUnmounted(() => {
 
 .av-dropdown-enter-from {
   opacity: 0;
-  transform: translateX(50%) scaleY(0.88) translateY(-4px);
+  transform: translateX(-50%) scaleY(0.88) translateY(-4px);
 }
 
 .av-dropdown-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scaleY(0.94) translateY(-2px);
+}
+
+/* 解封菜单专用动画（right: 50% + translateX(50%) 定位） */
+.av-unban-drop-enter-active {
+  transition:
+    opacity var(--dur-normal) var(--ease),
+    transform var(--dur-normal) var(--ease);
+}
+
+.av-unban-drop-leave-active {
+  transition:
+    opacity 150ms var(--ease),
+    transform 150ms var(--ease);
+}
+
+.av-unban-drop-enter-from {
+  opacity: 0;
+  transform: translateX(50%) scaleY(0.88) translateY(-4px);
+}
+
+.av-unban-drop-leave-to {
   opacity: 0;
   transform: translateX(50%) scaleY(0.94) translateY(-2px);
 }
@@ -468,7 +630,7 @@ onUnmounted(() => {
   }
 
   .av-user-row {
-    grid-template-columns: 1fr 60px 44px 48px;
+    grid-template-columns: 1fr minmax(70px, auto) 44px 64px;
   }
 
   .av-user-col--name,

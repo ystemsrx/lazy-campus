@@ -5,6 +5,7 @@ export interface ChatMessage {
   task_id: number | null
   content: string
   is_read: boolean
+  blocked: boolean
   created_at: string
 }
 
@@ -24,6 +25,7 @@ export interface Conversation {
   unread_count: number
   blocked_by_me: boolean
   blocked_by_them: boolean
+  peer_ban_contact: boolean
 }
 
 export interface ChatAttachment {

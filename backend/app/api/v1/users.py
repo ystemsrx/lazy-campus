@@ -123,6 +123,9 @@ def get_me(user: User = Depends(require_user)) -> UserMe:
         avatar_url=user.avatar_url,
         is_banned=user.is_banned,
         ban_until=user.ban_until,
+        ban_publish=user.ban_publish,
+        ban_accept=user.ban_accept,
+        ban_contact=user.ban_contact,
         role=user.role.value,
         created_at=user.created_at,
     )
@@ -215,7 +218,7 @@ def list_workers(
     query = (
         db.query(WorkerProfile, User)
         .join(User, User.id == WorkerProfile.user_id)
-        .filter(and_(WorkerProfile.enabled.is_(True), User.is_banned.is_(False)))
+        .filter(and_(WorkerProfile.enabled.is_(True), User.is_banned.is_(False), User.ban_accept.is_(False)))
     )
     if skill_tag_id is not None:
         query = query.filter(
@@ -397,6 +400,9 @@ def view_worker_contact(
         token=payload.captcha_token.strip(),
         message='查看联系方式前请先完成滑块验证',
     )
+
+    if viewer.ban_contact:
+        raise HTTPException(status_code=403, detail='你的账号已被禁止查看联系方式')
 
     profile, _ = row
     show = profile.show_contact if profile.show_contact is not None else True

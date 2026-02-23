@@ -49,15 +49,24 @@ def get_current_auth(
     user = db.get(User, int(user_id))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='User inactive or not found')
-    if user.is_banned:
-        if user.ban_until and datetime.now(timezone.utc) >= user.ban_until.replace(tzinfo=timezone.utc):
-            user.is_banned = False
-            user.ban_reason = None
-            user.ban_until = None
-            db.add(user)
-            db.commit()
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User banned')
+    has_any_ban = user.is_banned or user.ban_publish or user.ban_accept or user.ban_contact
+    if has_any_ban and user.ban_until and datetime.now(timezone.utc) >= user.ban_until.replace(tzinfo=timezone.utc):
+        user.is_banned = False
+        user.ban_publish = False
+        user.ban_accept = False
+        user.ban_contact = False
+        user.ban_reason = None
+        user.ban_until = None
+        from app.models.notification import Notification
+        db.query(Notification).filter(
+            Notification.user_id == user.id,
+            Notification.type == 'punishment',
+            Notification.dismiss_type == 'persistent',
+        ).delete()
+        db.add(user)
+        db.commit()
+    elif user.is_banned:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='User banned')
 
     now = datetime.now(timezone.utc)
     if not user.last_active or (now - user.last_active.replace(tzinfo=timezone.utc)).total_seconds() > 15:

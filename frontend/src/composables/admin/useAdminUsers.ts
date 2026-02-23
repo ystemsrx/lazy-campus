@@ -16,7 +16,6 @@ export function useAdminUsers(showToast: AppToastNotifier) {
 
   const showBanModal = ref(false)
   const banTargetUser = ref<AdminUserItem | null>(null)
-  const banReasonInput = ref('')
   const banSubmitting = ref(false)
 
   const unbanOpenId = ref<number | null>(null)
@@ -61,9 +60,19 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     userPage.value = page
   }
 
+  const banPreselectedTypes = computed<string[]>(() => {
+    const u = banTargetUser.value
+    if (!u) return ['login']
+    const types: string[] = []
+    if (u.is_banned) types.push('login')
+    if (u.ban_publish) types.push('publish')
+    if (u.ban_accept) types.push('accept')
+    if (u.ban_contact) types.push('contact')
+    return types.length ? types : ['login']
+  })
+
   function openBanModal(user: AdminUserItem) {
     banTargetUser.value = user
-    banReasonInput.value = ''
     showBanModal.value = true
   }
 
@@ -71,19 +80,25 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     showBanModal.value = false
   }
 
-  async function confirmBan() {
+  async function confirmBan(payload: { ban_types: string[]; ban_days: number | null; admin_notes: string }) {
     if (!banTargetUser.value) {
       return
     }
     banSubmitting.value = true
     try {
-      await banUser(banTargetUser.value.id, {
+      const result = await banUser(banTargetUser.value.id, {
         banned: true,
-        reason: banReasonInput.value || undefined,
+        reason: payload.admin_notes || undefined,
+        ban_types: payload.ban_types,
+        ban_days: payload.ban_days,
       })
-      banTargetUser.value.is_banned = true
-      banTargetUser.value.ban_reason = banReasonInput.value || null
-      banTargetUser.value.ban_count += 1
+      banTargetUser.value.is_banned = payload.ban_types.includes('login')
+      banTargetUser.value.ban_publish = payload.ban_types.includes('publish')
+      banTargetUser.value.ban_accept = payload.ban_types.includes('accept')
+      banTargetUser.value.ban_contact = payload.ban_types.includes('contact')
+      banTargetUser.value.ban_reason = payload.admin_notes || null
+      banTargetUser.value.ban_until = result.ban_until ?? null
+      banTargetUser.value.ban_count = result.ban_count ?? banTargetUser.value.ban_count
       showToast('用户已封禁', 'success')
       showBanModal.value = false
     } catch (error: unknown) {
@@ -103,6 +118,10 @@ export function useAdminUsers(showToast: AppToastNotifier) {
       await banUser(user.id, { banned: false, innocent })
       user.is_banned = false
       user.ban_reason = null
+      user.ban_publish = false
+      user.ban_accept = false
+      user.ban_contact = false
+      user.ban_until = null
       if (innocent && user.ban_count > 0) {
         user.ban_count -= 1
       }
@@ -140,7 +159,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     goPage,
     showBanModal,
     banTargetUser,
-    banReasonInput,
+    banPreselectedTypes,
     banSubmitting,
     openBanModal,
     closeBanModal,

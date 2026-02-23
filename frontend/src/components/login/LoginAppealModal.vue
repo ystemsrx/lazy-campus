@@ -2,21 +2,28 @@
 import { ref, watch } from 'vue'
 
 import AppToast from '../AppToast.vue'
-import { createAppeal, fetchBanContext, uploadAppealImage } from '../../api/moderation'
+import { createAppeal, createAuthenticatedAppeal, fetchBanContext, fetchMyBanContext, uploadAppealImage } from '../../api/moderation'
 import { useAppToast } from '../../composables/useAppToast'
 import type { BanRecord } from '../../types/api'
 import { extractError } from '../../utils/error'
 import { formatBanUntil, formatShort } from '../../utils/time'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
-  account: string
-  password: string
-  initialBanUntil: string | null
-}>()
+  account?: string
+  password?: string
+  initialBanUntil?: string | null
+  authenticated?: boolean
+}>(), {
+  account: '',
+  password: '',
+  initialBanUntil: null,
+  authenticated: false,
+})
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  (e: 'submitted'): void
 }>()
 
 const REASON_MAX = 20
@@ -101,10 +108,9 @@ function removeImage(id: string) {
 async function loadBanContext() {
   banContextLoading.value = true
   try {
-    const ctx = await fetchBanContext({
-      account: props.account,
-      password: props.password,
-    })
+    const ctx = props.authenticated
+      ? await fetchMyBanContext()
+      : await fetchBanContext({ account: props.account, password: props.password })
     banUntil.value = ctx.ban_until
     banCount.value = ctx.ban_count
     banRecords.value = ctx.records
@@ -127,18 +133,27 @@ async function submitAppeal() {
     const imageUrls = await Promise.all(
       appealImages.value.map((img) => uploadAppealImage(img.blob)),
     )
-    await createAppeal({
-      account: props.account,
-      password: props.password,
-      reason: appealReason.value,
-      evidence: appealEvidence.value,
-      images: imageUrls,
-    })
+    if (props.authenticated) {
+      await createAuthenticatedAppeal({
+        reason: appealReason.value,
+        evidence: appealEvidence.value,
+        images: imageUrls,
+      })
+    } else {
+      await createAppeal({
+        account: props.account,
+        password: props.password,
+        reason: appealReason.value,
+        evidence: appealEvidence.value,
+        images: imageUrls,
+      })
+    }
     showToast('申诉已提交，请等待管理员审核', 'success')
     appealReason.value = ''
     appealEvidence.value = ''
     appealImages.value.forEach((img) => URL.revokeObjectURL(img.previewUrl))
     appealImages.value = []
+    emit('submitted')
   } catch (error: any) {
     showToast(extractError(error, '提交失败'), 'error')
   } finally {
@@ -176,7 +191,7 @@ watch(
     <div v-if="modelValue" class="av-appeal-overlay" @mousedown.self="closeModal">
       <div class="av-appeal-card">
         <div class="av-appeal-header">
-          <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> 账号已被封禁</h3>
+          <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--c-danger);"></i> {{ authenticated ? '账号功能受限' : '账号已被封禁' }}</h3>
           <button class="av-appeal-close" @click="closeModal"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="av-appeal-card__inner">

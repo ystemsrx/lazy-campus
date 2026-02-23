@@ -95,7 +95,7 @@ def mark_as_read(
     notification = db.get(Notification, notification_id)
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=404, detail='Notification not found')
-    if notification.dismiss_type != 'read':
+    if notification.dismiss_type not in ('read',):
         raise HTTPException(status_code=400, detail='This notification cannot be dismissed by reading')
     db.delete(notification)
     db.commit()
@@ -139,6 +139,8 @@ def delete_notification(
     notification = db.get(Notification, notification_id)
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=404, detail='Notification not found')
+    if notification.dismiss_type == 'persistent':
+        raise HTTPException(status_code=400, detail='此通知在处罚解除前不可删除')
     db.delete(notification)
     db.commit()
     return {'message': 'ok'}

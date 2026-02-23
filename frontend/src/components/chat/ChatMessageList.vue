@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, CheckCheck, MessageSquare } from 'lucide-vue-next'
+import { AlertCircle, Check, CheckCheck, MessageSquare } from 'lucide-vue-next'
 
 import HomeAvatar from '../home/ui/HomeAvatar.vue'
 import ChatRichTextRenderer from './ChatRichTextRenderer.vue'
@@ -148,13 +148,22 @@ defineExpose({
           <div class="msg-own-wrap">
             <div class="msg-meta-own">
               <span class="msg-time">{{ formatChatTime(msg.created_at) }}</span>
-              <CheckCheck v-if="msg.is_read" :size="14" class="status-read" />
-              <Check v-else :size="14" class="status-sent" />
+              <template v-if="!msg.blocked">
+                <CheckCheck v-if="msg.is_read" :size="14" class="status-read" />
+                <Check v-else :size="14" class="status-sent" />
+              </template>
               <span class="msg-sender-me">我</span>
             </div>
 
-            <div v-if="!isAttachmentOnly(msg)" class="msg-bubble-own bubble-own">
-              <ChatRichTextRenderer :content="msg.content" />
+            <div v-if="!isAttachmentOnly(msg)" class="msg-bubble-row-own">
+              <AlertCircle
+                v-if="msg.blocked"
+                :size="18"
+                class="msg-ban-warn-icon"
+              />
+              <div class="msg-bubble-own bubble-own" :class="{ 'bubble-blocked': msg.blocked }">
+                <ChatRichTextRenderer :content="msg.content" />
+              </div>
             </div>
 
             <div v-if="getMessageAttachments(attachments, msg.id).length" class="msg-attachments own-attachments">
@@ -181,6 +190,10 @@ defineExpose({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-if="msg.blocked" class="msg-ban-notice">
+            对方因违反平台规定，联系功能暂被关闭
           </div>
         </template>
       </div>
@@ -294,7 +307,8 @@ defineExpose({
 
 .msg-own {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .msg-own-wrap {
@@ -686,6 +700,31 @@ defineExpose({
 
 .att-deleted-link:hover {
   opacity: 0.75;
+}
+
+.msg-bubble-row-own {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bubble-blocked {
+  opacity: 0.6;
+}
+
+.msg-ban-warn-icon {
+  color: var(--c-danger, #ef4444);
+  flex-shrink: 0;
+}
+
+.msg-ban-notice {
+  width: 100%;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: var(--text-xs);
+  padding: 6px 0 0;
+  user-select: none;
 }
 
 @media (max-width: 768px) {

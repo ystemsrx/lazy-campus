@@ -293,6 +293,11 @@
   color: #64748b;
 }
 
+.mr-badge--active-penalty {
+  background: #fff1f2;
+  color: #e11d48;
+}
+
 .mr-badge--report {
   background: var(--c-border-light);
   color: var(--c-text-secondary);

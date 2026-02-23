@@ -17,6 +17,7 @@ from app.schemas.moderation import (
     AdminUserItem,
     AdminUserListResponse,
     AppealCreate,
+    AuthenticatedAppealCreate,
     BanContextOut,
     BanContextRequest,
     BanRecord,
@@ -41,6 +42,98 @@ _BAN_DAYS = [1, 3, 7]
 router = APIRouter(prefix='/moderation', tags=['moderation'])
 
 
+_BAN_TYPE_LABELS = {
+    'publish': '禁止发布',
+    'accept': '禁止接单',
+    'contact': '禁止联系',
+    'login': '封禁登录',
+}
+
+_BAN_TYPE_FIELDS = {'publish': 'ban_publish', 'accept': 'ban_accept', 'contact': 'ban_contact'}
+
+
+def _ban_types_desc(types: list[str]) -> str:
+    return '、'.join(_BAN_TYPE_LABELS.get(t, t) for t in types if t in _BAN_TYPE_LABELS)
+
+
+def _apply_bans(
+    user: User,
+    ban_types: list[str],
+    ban_days: int | None,
+    reason: str | None,
+    db: Session,
+    report: 'Report | None' = None,
+    is_modification: bool = False,
+) -> tuple[str, int]:
+    """Apply bans to user. Returns (description, actual_ban_days)."""
+    has_login = 'login' in ban_types
+    func_types = [t for t in ban_types if t in _BAN_TYPE_FIELDS]
+
+    if has_login:
+        user.is_banned = True
+    for t in func_types:
+        setattr(user, _BAN_TYPE_FIELDS[t], True)
+
+    user.ban_reason = reason or '违反社区规则。'
+    if not is_modification:
+        user.ban_count = (user.ban_count or 0) + 1
+
+    if ban_days is None:
+        actual_days = _BAN_DAYS[min((user.ban_count or 1) - 1, len(_BAN_DAYS) - 1)]
+    elif ban_days == 0:
+        actual_days = 0
+    else:
+        actual_days = ban_days
+
+    now = datetime.now(timezone.utc)
+    if actual_days > 0:
+        user.ban_until = now + timedelta(days=actual_days)
+    else:
+        user.ban_until = None
+
+    types_desc = _ban_types_desc(ban_types)
+    dur_desc = f'{actual_days} 天' if actual_days > 0 else '永久'
+    desc = f'{types_desc}，时长：{dur_desc}'
+
+    if report is not None:
+        report.ban_penalty = desc
+
+    db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.type == 'punishment',
+        Notification.dismiss_type == 'persistent',
+    ).delete()
+
+    notif_body = f'限制内容：{desc}'
+    if user.ban_reason and user.ban_reason != '违反社区规则。':
+        notif_body += f'。理由：{user.ban_reason}'
+    db.add(Notification(
+        user_id=user.id,
+        type='punishment',
+        title='账号功能受限',
+        description=notif_body,
+        dismiss_type='persistent',
+    ))
+
+    db.add(user)
+    return desc, actual_days
+
+
+def _lift_all_bans(user: User, db: Session) -> None:
+    user.is_banned = False
+    user.ban_reason = None
+    user.ban_until = None
+    user.ban_publish = False
+    user.ban_accept = False
+    user.ban_contact = False
+    db.add(user)
+    db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.type == 'punishment',
+        Notification.dismiss_type == 'persistent',
+    ).delete()
+
+
 def _enrich_reports(reports: list[Report], db: Session) -> list[ReportOut]:
     user_ids: set[int] = set()
     for r in reports:
@@ -56,12 +149,24 @@ def _enrich_reports(reports: list[Report], db: Session) -> list[ReportOut]:
             out.reporter_name = rp.name
             out.reporter_nickname = rp.nickname
             out.reporter_account = rp.account
+            out.reporter_avatar_url = rp.avatar_url
+            out.reporter_gender = rp.gender.value if rp.gender else None
         ru = users.get(r.reported_user_id) if r.reported_user_id else None
         if ru:
             out.reported_user_name = ru.name
             out.reported_user_nickname = ru.nickname
             out.reported_user_account = ru.account
             out.reported_user_ban_count = ru.ban_count or 0
+            out.reported_user_avatar_url = ru.avatar_url
+            out.reported_user_gender = ru.gender.value if ru.gender else None
+        if not out.ban_penalty and r.status == ReportStatus.APPROVED and r.type == ReportType.REPORT:
+            out.ban_penalty = '已对违规方执行处罚'
+        if r.is_admin_ban:
+            out.reporter_name = None
+            out.reporter_nickname = None
+            out.reporter_account = None
+            out.reporter_avatar_url = None
+            out.reporter_gender = None
         result.append(out)
     return result
 
@@ -133,8 +238,62 @@ def create_report(
 
 @router.get('/me/reports', response_model=list[ReportOut])
 def list_my_reports(user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[ReportOut]:
-    rows = db.query(Report).filter(Report.reporter_id == user.id).order_by(desc(Report.created_at)).all()
+    rows = db.query(Report).filter(Report.reporter_id == user.id, Report.is_admin_ban.is_(False)).order_by(desc(Report.created_at)).all()
     return _enrich_reports(rows, db)
+
+
+@router.get('/me/received-reports', response_model=list[ReportOut])
+def list_received_reports(user: User = Depends(require_completed_user), db: Session = Depends(get_db)) -> list[ReportOut]:
+    rows = (
+        db.query(Report)
+        .filter(
+            Report.reported_user_id == user.id,
+            Report.type == ReportType.REPORT,
+            Report.status == ReportStatus.APPROVED,
+        )
+        .order_by(desc(Report.created_at))
+        .all()
+    )
+    enriched = _enrich_reports(rows, db)
+    for r in enriched:
+        r.reporter_name = None
+        r.reporter_nickname = None
+        r.reporter_account = None
+        r.reporter_avatar_url = None
+        r.reporter_gender = None
+    return enriched
+
+
+@router.post('/me/appeal', response_model=ReportOut)
+def create_authenticated_appeal(
+    payload: AuthenticatedAppealCreate,
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> ReportOut:
+    has_any_ban = user.is_banned or user.ban_publish or user.ban_accept or user.ban_contact
+    if not has_any_ban:
+        raise HTTPException(status_code=400, detail='当前账号无任何限制，无需申诉')
+
+    existing = (
+        db.query(Report)
+        .filter(Report.reporter_id == user.id, Report.type == ReportType.APPEAL, Report.status == ReportStatus.PENDING)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail='已有待处理的申诉，请等待管理员审核')
+
+    report = Report(
+        type=ReportType.APPEAL,
+        reporter_id=user.id,
+        reported_user_id=user.id,
+        reason=payload.reason,
+        evidence=payload.evidence,
+        images=json.dumps(payload.images, ensure_ascii=False) if payload.images else None,
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    return _enrich_reports([report], db)[0]
 
 
 @router.post('/appeals', response_model=ReportOut)
@@ -170,19 +329,19 @@ def create_appeal(
     return _enrich_reports([report], db)[0]
 
 
-@router.post('/ban-context', response_model=BanContextOut)
-def get_ban_context(
-    payload: BanContextRequest,
+@router.get('/me/ban-context', response_model=BanContextOut)
+def get_my_ban_context(
+    user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> BanContextOut:
-    user = verify_credentials(db, payload.account, payload.password)
-    if not user:
-        raise HTTPException(status_code=401, detail='账号或密码错误')
-    if not user.is_banned:
-        raise HTTPException(status_code=400, detail='当前账号未被封禁')
+    has_any = user.is_banned or user.ban_publish or user.ban_accept or user.ban_contact
+    if not has_any:
+        raise HTTPException(status_code=400, detail='当前账号无任何限制')
+    return _build_ban_context(user, db)
 
+
+def _build_ban_context(user: User, db: Session) -> BanContextOut:
     records: list[BanRecord] = []
-
     approved_reports = (
         db.query(Report)
         .filter(
@@ -195,43 +354,33 @@ def get_ban_context(
     )
     for r in approved_reports:
         records.append(
-            BanRecord(
-                source='report',
-                reason=r.admin_notes or '违反社区规则。',
-                created_at=r.reviewed_at or r.created_at,
-            )
+            BanRecord(source='report', reason=r.admin_notes or '违反社区规则。', created_at=r.reviewed_at or r.created_at)
         )
-
     admin_bans = (
         db.query(AdminActionLog)
-        .filter(
-            AdminActionLog.action == 'ban_user',
-            AdminActionLog.target_id == str(user.id),
-        )
+        .filter(AdminActionLog.action == 'ban_user', AdminActionLog.target_id == str(user.id))
         .order_by(desc(AdminActionLog.created_at))
         .all()
     )
     for log in admin_bans:
-        records.append(
-            BanRecord(
-                source='admin',
-                reason=log.detail or '违反社区规则。',
-                created_at=log.created_at,
-            )
-        )
-
+        records.append(BanRecord(source='admin', reason=log.detail or '违反社区规则。', created_at=log.created_at))
     records.sort(key=lambda x: x.created_at, reverse=True)
-
-    # ban_count is decremented on innocent unbans, so only show
-    # the most recent ban_count records to exclude innocently reversed bans.
     ban_count = user.ban_count or 0
     records = records[:ban_count]
+    return BanContextOut(ban_until=user.ban_until, ban_count=ban_count, records=records)
 
-    return BanContextOut(
-        ban_until=user.ban_until,
-        ban_count=ban_count,
-        records=records,
-    )
+
+@router.post('/ban-context', response_model=BanContextOut)
+def get_ban_context(
+    payload: BanContextRequest,
+    db: Session = Depends(get_db),
+) -> BanContextOut:
+    user = verify_credentials(db, payload.account, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail='账号或密码错误')
+    if not user.is_banned:
+        raise HTTPException(status_code=400, detail='当前账号未被封禁')
+    return _build_ban_context(user, db)
 
 
 @router.post('/blacklist')
@@ -361,32 +510,21 @@ def admin_review_report(
             db.add(task)
 
     ban_detail = ''
+    ban_desc_for_reporter = ''
     if payload.status == ReportStatus.APPROVED:
         if report.type == ReportType.REPORT and report.reported_user_id:
             reported_user = db.get(User, report.reported_user_id)
             if reported_user:
-                days = _BAN_DAYS[min(reported_user.ban_count or 0, len(_BAN_DAYS) - 1)]
-                reported_user.is_banned = True
-                reported_user.ban_reason = payload.admin_notes or '违反社区规则。'
-                now = datetime.now(timezone.utc)
-                existing_until = reported_user.ban_until
-                if existing_until and existing_until.replace(tzinfo=timezone.utc) > now:
-                    base = existing_until.replace(tzinfo=timezone.utc)
-                else:
-                    base = now
-                reported_user.ban_until = base + timedelta(days=days)
-                reported_user.ban_count = (reported_user.ban_count or 0) + 1
-                db.add(reported_user)
-                ban_detail = f', banned user {report.reported_user_id} for {days}d'
+                ban_types = payload.ban_types if payload.ban_types else ['login']
+                desc, actual_days = _apply_bans(reported_user, ban_types, payload.ban_days, payload.admin_notes, db, report=report)
+                ban_detail = f', banned user {report.reported_user_id}: {desc}'
+                ban_desc_for_reporter = desc
         elif report.type == ReportType.APPEAL:
             appealer = db.get(User, report.reporter_id)
-            if appealer and appealer.is_banned:
-                appealer.is_banned = False
-                appealer.ban_reason = None
-                appealer.ban_until = None
+            if appealer and (appealer.is_banned or appealer.ban_publish or appealer.ban_accept or appealer.ban_contact):
                 if (appealer.ban_count or 0) > 0:
                     appealer.ban_count = appealer.ban_count - 1
-                db.add(appealer)
+                _lift_all_bans(appealer, db)
                 ban_detail = f', unbanned user {report.reporter_id} (appeal approved)'
 
     db.add(report)
@@ -402,11 +540,19 @@ def admin_review_report(
 
     type_label = '举报' if report.type == ReportType.REPORT else '申诉'
     status_label = '已通过' if payload.status == ReportStatus.APPROVED else '已驳回'
+
+    if report.type == ReportType.REPORT and payload.status == ReportStatus.APPROVED and ban_desc_for_reporter:
+        reporter_desc = f'你的举报已通过，平台已对违规方执行以下处罚：{ban_desc_for_reporter}'
+    elif report.type == ReportType.APPEAL and payload.status == ReportStatus.APPROVED:
+        reporter_desc = '你的申诉已通过，相关限制已全部解除，你现在可以正常使用平台所有功能。'
+    else:
+        reporter_desc = f'你提交的{type_label}已被管理员审核，结果：{status_label}'
+
     db.add(Notification(
         user_id=report.reporter_id,
         type='report_reviewed',
         title=f'{type_label}{status_label}',
-        description=f'你提交的{type_label}已被管理员审核，结果：{status_label}',
+        description=reporter_desc,
         related_report_id=report.id,
         related_task_id=report.task_id,
         dismiss_type='read',
@@ -539,19 +685,56 @@ def admin_ban_user(
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
 
+    has_active_ban = user.is_banned or user.ban_publish or user.ban_accept or user.ban_contact
+    is_modification = has_active_ban and payload.banned
+
     if payload.banned:
-        user.is_banned = True
-        user.ban_reason = payload.reason or '违反社区规则。'
-        user.ban_until = None
-        user.ban_count = (user.ban_count or 0) + 1
-        action = 'ban_user'
-        detail = user.ban_reason
+        ban_types = payload.ban_types if payload.ban_types else ['login']
+
+        if is_modification:
+            user.is_banned = False
+            user.ban_publish = False
+            user.ban_accept = False
+            user.ban_contact = False
+
+        existing_report = (
+            db.query(Report)
+            .filter(
+                Report.reported_user_id == user_id,
+                Report.is_admin_ban.is_(True),
+                Report.status == ReportStatus.APPROVED,
+            )
+            .order_by(desc(Report.created_at))
+            .first()
+        ) if is_modification else None
+
+        if existing_report:
+            penalty_report = existing_report
+            penalty_report.admin_notes = payload.reason
+            penalty_report.reason = payload.reason or '管理员封禁'
+            penalty_report.reviewed_at = datetime.utcnow()
+        else:
+            penalty_report = Report(
+                type=ReportType.REPORT,
+                reporter_id=user_id,
+                reported_user_id=user_id,
+                reason=payload.reason or '管理员封禁',
+                evidence='',
+                status=ReportStatus.APPROVED,
+                admin_notes=payload.reason,
+                is_admin_ban=True,
+                reviewed_at=datetime.utcnow(),
+            )
+            db.add(penalty_report)
+            db.flush()
+
+        ban_desc, _ = _apply_bans(user, ban_types, payload.ban_days, payload.reason, db, report=penalty_report, is_modification=is_modification)
+        action = 'ban_user' if not is_modification else 'modify_ban'
+        detail = ban_desc
     else:
-        user.is_banned = False
-        user.ban_reason = None
-        user.ban_until = None
         if payload.innocent and (user.ban_count or 0) > 0:
             user.ban_count = user.ban_count - 1
+        _lift_all_bans(user, db)
         action = 'unban_user_innocent' if payload.innocent else 'unban_user'
         detail = '无责解封' if payload.innocent else '有责解封'
 
@@ -566,7 +749,11 @@ def admin_ban_user(
         )
     )
     db.commit()
-    return {'message': 'ok'}
+    return {
+        'message': 'ok',
+        'ban_until': user.ban_until.isoformat() if user.ban_until else None,
+        'ban_count': user.ban_count or 0,
+    }
 
 
 @router.get('/admin/users', response_model=AdminUserListResponse)
@@ -606,6 +793,9 @@ def admin_list_users(
                 ban_reason=u.ban_reason,
                 ban_count=u.ban_count or 0,
                 ban_until=u.ban_until,
+                ban_publish=u.ban_publish or False,
+                ban_accept=u.ban_accept or False,
+                ban_contact=u.ban_contact or False,
                 created_at=u.created_at,
             )
             for u in items

@@ -82,12 +82,15 @@ def list_conversations(
             func.max(ChatMessage.created_at).label('last_time'),
             func.sum(
                 case(
-                    (and_(ChatMessage.receiver_id == uid, ChatMessage.is_read == False), 1),  # noqa: E712
+                    (and_(ChatMessage.receiver_id == uid, ChatMessage.is_read == False, ChatMessage.blocked == False), 1),  # noqa: E712
                     else_=0,
                 )
             ).label('unread'),
         )
-        .filter(or_(ChatMessage.sender_id == uid, ChatMessage.receiver_id == uid))
+        .filter(
+            or_(ChatMessage.sender_id == uid, ChatMessage.receiver_id == uid),
+            or_(ChatMessage.blocked.is_(False), ChatMessage.sender_id == uid),
+        )
         .group_by(peer_id_expr, ChatMessage.task_id)
         .subquery()
     )
@@ -119,6 +122,7 @@ def list_conversations(
                     and_(ChatMessage.sender_id == row.peer_id, ChatMessage.receiver_id == uid),
                 ),
                 ChatMessage.task_id == row.task_id if row.task_id else ChatMessage.task_id.is_(None),
+                or_(ChatMessage.blocked.is_(False), ChatMessage.sender_id == uid),
             )
             .order_by(ChatMessage.created_at.desc())
             .first()
@@ -141,6 +145,7 @@ def list_conversations(
                 unread_count=int(row.unread or 0),
                 blocked_by_me=row.peer_id in blocked_by_me_ids,
                 blocked_by_them=row.peer_id in blocked_me_ids,
+                peer_ban_contact=bool(peer.ban_contact),
             )
         )
 
@@ -169,6 +174,10 @@ def get_messages(
             and_(ChatMessage.sender_id == peer_id, ChatMessage.receiver_id == uid),
         ),
         task_filter,
+        or_(
+            ChatMessage.blocked.is_(False),
+            ChatMessage.sender_id == uid,
+        ),
     )
 
     if before:
@@ -198,6 +207,10 @@ def get_message_snapshot(
                 and_(ChatMessage.sender_id == peer_id, ChatMessage.receiver_id == uid),
             ),
             task_filter,
+            or_(
+                ChatMessage.blocked.is_(False),
+                ChatMessage.sender_id == uid,
+            ),
         )
         .order_by(ChatMessage.created_at.desc())
         .limit(10)
@@ -218,10 +231,14 @@ def send_message(
     uid = user.id
     if uid == peer_id:
         raise HTTPException(status_code=400, detail='不能给自己发消息')
+    if user.ban_contact:
+        raise HTTPException(status_code=403, detail='你的账号已被禁止联系他人')
 
     peer = db.get(User, peer_id)
     if not peer:
         raise HTTPException(status_code=404, detail='用户不存在')
+
+    peer_banned = bool(peer.ban_contact)
 
     blocked_by_me, blocked_by_them = _is_blocked(db, uid, peer_id)
     if blocked_by_me or blocked_by_them:
@@ -260,38 +277,37 @@ def send_message(
         receiver_id=peer_id,
         task_id=task_id,
         content=body.content.strip(),
+        blocked=peer_banned,
     )
     db.add(msg)
 
-    task_obj = db.get(Task, task_id) if task_id else None
-    if task_obj:
-        desc = f'在「{task_obj.title}」中有新消息'
-    else:
-        desc = '有新消息'
+    if not peer_banned:
+        task_obj = db.get(Task, task_id) if task_id else None
+        desc = f'在「{task_obj.title}」中有新消息' if task_obj else '有新消息'
 
-    existing_notif = db.query(Notification).filter(
-        Notification.user_id == peer_id,
-        Notification.type == 'chat_message',
-        Notification.related_user_id == uid,
-        Notification.related_task_id == task_id if task_id else Notification.related_task_id.is_(None),
-    ).first()
+        existing_notif = db.query(Notification).filter(
+            Notification.user_id == peer_id,
+            Notification.type == 'chat_message',
+            Notification.related_user_id == uid,
+            Notification.related_task_id == task_id if task_id else Notification.related_task_id.is_(None),
+        ).first()
 
-    if existing_notif:
-        existing_notif.title = display_name(user)
-        existing_notif.description = desc
-        existing_notif.is_read = False
-        existing_notif.updated_at = datetime.now(timezone.utc)
-        db.add(existing_notif)
-    else:
-        db.add(Notification(
-            user_id=peer_id,
-            type='chat_message',
-            title=display_name(user),
-            description=desc,
-            related_task_id=task_id,
-            related_user_id=uid,
-            dismiss_type='source',
-        ))
+        if existing_notif:
+            existing_notif.title = display_name(user)
+            existing_notif.description = desc
+            existing_notif.is_read = False
+            existing_notif.updated_at = datetime.now(timezone.utc)
+            db.add(existing_notif)
+        else:
+            db.add(Notification(
+                user_id=peer_id,
+                type='chat_message',
+                title=display_name(user),
+                description=desc,
+                related_task_id=task_id,
+                related_user_id=uid,
+                dismiss_type='source',
+            ))
 
     db.commit()
     db.refresh(msg)
@@ -397,6 +413,8 @@ async def upload_attachment(
     db: Session = Depends(get_db),
 ) -> ChatAttachmentOut:
     uid = user.id
+    if user.ban_contact:
+        raise HTTPException(status_code=403, detail='你的账号已被禁止联系他人')
 
     blocked_by_me, blocked_by_them = _is_blocked(db, uid, peer_id)
     if blocked_by_me or blocked_by_them:

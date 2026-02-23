@@ -265,7 +265,7 @@ def list_tasks(
     user: User | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
-    query = db.query(Task, User).join(User, Task.publisher_id == User.id).filter(User.is_banned.is_(False))
+    query = db.query(Task, User).join(User, Task.publisher_id == User.id).filter(User.is_banned.is_(False), User.ban_publish.is_(False))
 
     if keyword:
         like = f'%{keyword}%'
@@ -379,6 +379,8 @@ def create_task(
     user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> TaskOut:
+    if user.ban_publish:
+        raise HTTPException(status_code=403, detail='你的账号已被禁止发布任务')
     if payload.contact_visibility == ContactVisibility.AFTER_ACCEPT and not payload.contact_info:
         raise HTTPException(status_code=422, detail='contact_info is required when contact visibility is after_accept')
     if payload.contact_visibility == ContactVisibility.INTERNAL_ONLY and payload.contact_info:
@@ -513,6 +515,8 @@ def accept_task(
     user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> TaskOut:
+    if user.ban_accept:
+        raise HTTPException(status_code=403, detail='你的账号已被禁止接取任务')
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')

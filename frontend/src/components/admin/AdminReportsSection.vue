@@ -147,10 +147,7 @@ const adminLightboxSrc = ref<string | null>(null)
   <AdminReviewModal
     :show="vm.showReviewModal"
     :target="vm.reviewTarget"
-    :ban-reason="vm.reviewBanReason"
     :submitting="vm.reviewSubmitting"
-    :ban-days="vm.BAN_DAYS"
-    @update:ban-reason="vm.reviewBanReason = $event"
     @close="vm.closeReviewModal"
     @confirm="vm.confirmReportReview"
   />

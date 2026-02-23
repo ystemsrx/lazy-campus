@@ -19,6 +19,8 @@ class ReportCreate(BaseModel):
 class ReportReview(BaseModel):
     status: ReportStatus
     admin_notes: str | None = None
+    ban_types: list[str] = Field(default_factory=list)
+    ban_days: int | None = None
 
 
 class ReportOut(BaseModel):
@@ -36,12 +38,18 @@ class ReportOut(BaseModel):
     reported_user_nickname: str | None = None
     reported_user_account: str | None = None
     reported_user_ban_count: int | None = None
+    reporter_avatar_url: str | None = None
+    reporter_gender: str | None = None
+    reported_user_avatar_url: str | None = None
+    reported_user_gender: str | None = None
     reason: str
     evidence: str
     images: list[str] = Field(default_factory=list)
     status: ReportStatus
     admin_id: int | None
     admin_notes: str | None
+    ban_penalty: str | None = None
+    is_admin_ban: bool = False
     created_at: datetime
 
     @field_validator('images', mode='before')
@@ -64,6 +72,12 @@ class ReportOut(BaseModel):
 class AppealCreate(BaseModel):
     account: str
     password: str
+    reason: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    images: list[str] = Field(default_factory=list)
+
+
+class AuthenticatedAppealCreate(BaseModel):
     reason: str = Field(min_length=1)
     evidence: str = Field(min_length=1)
     images: list[str] = Field(default_factory=list)
@@ -119,6 +133,8 @@ class BanUserRequest(BaseModel):
     banned: bool
     reason: str | None = None
     innocent: bool = False
+    ban_types: list[str] = Field(default_factory=list)
+    ban_days: int | None = None
 
 
 class BanContextRequest(BaseModel):
@@ -158,6 +174,9 @@ class AdminUserItem(BaseModel):
     ban_reason: str | None
     ban_count: int
     ban_until: datetime | None
+    ban_publish: bool = False
+    ban_accept: bool = False
+    ban_contact: bool = False
     created_at: datetime
 
 
