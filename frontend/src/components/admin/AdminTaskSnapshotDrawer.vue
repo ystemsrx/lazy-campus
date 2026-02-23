@@ -1,24 +1,150 @@
 <script setup lang="ts">
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import type { TaskSnapshot } from '../../composables/admin/useAdminReports'
 import { formatShort } from '../../utils/time'
 
-defineProps<{
+const props = defineProps<{
   show: boolean
   loading: boolean
   snapshot: TaskSnapshot | null
   taskStatusMap: Record<string, string>
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   close: []
 }>()
+
+const chatRef = ref<HTMLElement | null>(null)
+const sheetRef = ref<HTMLElement | null>(null)
+
+let sheetDragStartY = 0
+let sheetDragStartH = 0
+let sheetCanExpand = false
+let savedScrollY = 0
+
+function scrollChatToBottom() {
+  const el = chatRef.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function resetSheetStyles() {
+  const el = sheetRef.value
+  if (!el) return
+  el.style.maxHeight = ''
+  el.style.transform = ''
+  el.style.transition = ''
+}
+
+function onSheetTouchStart(e: TouchEvent) {
+  const el = sheetRef.value
+  if (!el) return
+  sheetDragStartY = e.touches[0].clientY
+  sheetDragStartH = el.getBoundingClientRect().height
+  const body = el.querySelector('.av-snapshot-drawer__body') as HTMLElement | null
+  sheetCanExpand = body ? body.scrollHeight > body.clientHeight + 2 : false
+  el.style.transition = 'none'
+  document.addEventListener('touchmove', onSheetTouchMove, { passive: false })
+  document.addEventListener('touchend', onSheetTouchEnd)
+}
+
+function onSheetTouchMove(e: TouchEvent) {
+  const el = sheetRef.value
+  if (!el) return
+  e.preventDefault()
+  const deltaY = e.touches[0].clientY - sheetDragStartY
+  const vh = window.innerHeight
+
+  if (deltaY < 0) {
+    const absDelta = Math.abs(deltaY)
+    if (sheetCanExpand) {
+      const expansion = Math.round(Math.pow(absDelta, 0.75))
+      const cap = vh * 0.06
+      el.style.maxHeight = `${sheetDragStartH + Math.min(expansion, cap)}px`
+      el.style.transform = ''
+    } else {
+      el.style.transform = `translateY(${-Math.round(Math.pow(absDelta, 0.6))}px)`
+    }
+  } else {
+    el.style.maxHeight = ''
+    el.style.transform = `translateY(${deltaY}px)`
+  }
+}
+
+function onSheetTouchEnd() {
+  document.removeEventListener('touchmove', onSheetTouchMove)
+  document.removeEventListener('touchend', onSheetTouchEnd)
+
+  const el = sheetRef.value
+  if (!el) return
+
+  const match = el.style.transform.match(/translateY\(([^)]+)px\)/)
+  const currentTranslateY = match ? parseFloat(match[1]) : 0
+  const vh = window.innerHeight
+
+  if (currentTranslateY > 120) {
+    el.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+    el.style.transform = `translateY(${vh}px)`
+    setTimeout(() => emit('close'), 350)
+    return
+  }
+
+  el.style.transition =
+    'max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)'
+  el.style.maxHeight = `${sheetDragStartH}px`
+  el.style.transform = 'translateY(0px)'
+  setTimeout(() => {
+    el.style.transition = ''
+    el.style.transform = ''
+    el.style.maxHeight = ''
+  }, 350)
+}
+
+watch(
+  () => props.snapshot,
+  async (snap) => {
+    if (snap && snap.messages.length) {
+      await nextTick()
+      scrollChatToBottom()
+    }
+  },
+)
+
+watch(
+  () => props.show,
+  (open) => {
+    if (open) {
+      savedScrollY = window.scrollY
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${savedScrollY}px`
+      document.body.style.width = '100%'
+      resetSheetStyles()
+    } else {
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.width = ''
+      window.scrollTo(0, savedScrollY)
+    }
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  document.removeEventListener('touchmove', onSheetTouchMove)
+  document.removeEventListener('touchend', onSheetTouchEnd)
+  document.body.style.position = ''
+  document.body.style.top = ''
+  document.body.style.width = ''
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="av-drawer">
       <div v-if="show" class="av-snapshot-overlay" @mousedown.self="$emit('close')">
-        <div class="av-snapshot-drawer">
+        <div ref="sheetRef" class="av-snapshot-drawer">
+          <div class="av-snap-sheet-handle" @touchstart.passive="onSheetTouchStart">
+            <div class="av-snap-sheet-handle__bar"></div>
+          </div>
           <div class="av-snapshot-drawer__header">
             <h3>任务快照</h3>
             <button class="btn btn-ghost btn-sm" @click="$emit('close')">
@@ -38,6 +164,7 @@ defineEmits<{
                   <i class="fa-solid fa-trash"></i> 已删除
                 </span>
                 <span
+                  v-if="!snapshot.is_deleted"
                   class="badge"
                   :class="{
                     'badge-green': snapshot.status === 'completed',
@@ -79,6 +206,7 @@ defineEmits<{
                 </span>
               </div>
               <div v-if="snapshot.messages.length" class="av-snap-chat">
+                <div ref="chatRef" class="av-snap-chat__scroll">
                 <div v-for="(msg, idx) in snapshot.messages" :key="idx" class="av-snap-msg">
                   <div class="av-snap-msg__head">
                     <span
@@ -92,6 +220,7 @@ defineEmits<{
                   </div>
                   <div class="av-snap-msg__text">{{ msg.content }}</div>
                 </div>
+                </div><!-- /av-snap-chat__scroll -->
               </div>
               <p v-else class="av-snap-empty">暂无聊天记录</p>
             </div>
@@ -131,9 +260,7 @@ defineEmits<{
   z-index: 2000;
   display: flex;
   justify-content: flex-end;
-  background: rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .av-snapshot-drawer {
@@ -144,13 +271,28 @@ defineEmits<{
   box-shadow: -8px 0 30px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
-  animation: av-slide-in 0.3s var(--ease, cubic-bezier(0.16, 1, 0.3, 1));
+  will-change: transform;
 }
 
-@keyframes av-slide-in {
-  from {
-    transform: translateX(100%);
-  }
+.av-snap-sheet-handle {
+  display: none;
+  justify-content: center;
+  padding: 10px 0 2px;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+.av-snap-sheet-handle__bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-border);
+  transition: background var(--dur-fast, 0.15s) var(--ease);
+}
+
+.av-snap-sheet-handle:active .av-snap-sheet-handle__bar {
+  background: var(--c-text-muted);
 }
 
 .av-snapshot-drawer__header {
@@ -158,11 +300,9 @@ defineEmits<{
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  border-bottom: 1px solid var(--c-border);
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--c-surface);
 }
 
 .av-snapshot-drawer__header h3 {
@@ -248,16 +388,20 @@ defineEmits<{
 }
 
 .av-snap-chat {
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.av-snap-chat__scroll {
   max-height: 360px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  background: #fff;
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-card);
 }
 
 .av-snap-msg__head {
@@ -375,15 +519,58 @@ defineEmits<{
 }
 
 .av-drawer-enter-active {
-  transition: opacity 0.25s var(--ease);
+  transition: opacity 0.3s var(--ease);
+}
+
+.av-drawer-enter-active .av-snapshot-drawer {
+  transition: transform 0.3s var(--ease);
 }
 
 .av-drawer-leave-active {
   transition: opacity 0.2s var(--ease);
 }
 
+.av-drawer-leave-active .av-snapshot-drawer {
+  transition: transform 0.2s var(--ease);
+}
+
 .av-drawer-enter-from,
 .av-drawer-leave-to {
   opacity: 0;
+}
+
+.av-drawer-enter-from .av-snapshot-drawer,
+.av-drawer-leave-to .av-snapshot-drawer {
+  transform: translateX(100%);
+}
+
+@media (max-width: 900px) {
+  .av-snapshot-overlay {
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+
+  .av-snapshot-drawer {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 80px 0 0 #f8fafc, 0 -4px 20px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+
+  .av-snapshot-drawer__header .btn-ghost {
+    display: none;
+  }
+
+  .av-snap-sheet-handle {
+    display: flex;
+  }
+
+  .av-drawer-enter-from .av-snapshot-drawer,
+  .av-drawer-leave-to .av-snapshot-drawer {
+    transform: translateY(100%);
+  }
 }
 </style>

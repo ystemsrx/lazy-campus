@@ -476,6 +476,7 @@ export interface AdminUserProfile {
 export interface AdminBlacklistItem {
   blocked_user_id: number
   blocked_display_name: string
+  blocked_name?: string
   blocked_account: string
   blocked_avatar_url: string | null
   reason: string | null

@@ -3,16 +3,19 @@ import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   addAdminUserBlacklist,
   banUser,
+  fetchAdminTasks,
   fetchAdminUserBlacklist,
   fetchAdminUserProfile,
   fetchAdminUsers,
   removeAdminUserBlacklist,
   updateAdminUserProfile,
 } from '../../api/moderation'
-import type { AdminBlacklistItem, AdminUserItem, AdminUserProfile } from '../../types/api'
+import type { AdminBlacklistItem, AdminTaskItem, AdminUserItem, AdminUserProfile } from '../../types/api'
 import { extractError } from '../../utils/error'
 import { localToUTC, utcToLocal } from '../../utils/time'
 import type { AppToastNotifier } from '../useAppToast'
+
+export type ProfileSaveStatus = 'idle' | 'saving' | 'saved'
 
 const PAGE_SIZE = 20
 
@@ -105,7 +108,20 @@ export function useAdminUsers(showToast: AppToastNotifier) {
   const blacklistLoading = ref(false)
   const blacklistSubmitting = ref(false)
   const blacklistAddUserId = ref('')
-  const blacklistAddReason = ref('')
+  const blacklistSearchQuery = ref('')
+  const blacklistSearchResults = ref<AdminUserItem[]>([])
+  const blacklistSearchLoading = ref(false)
+  const blacklistSearchOpen = ref(false)
+
+  const profileDataLoaded = ref(false)
+  const profileSaveStatus = ref<ProfileSaveStatus>('idle')
+  let profileAutosaveTimer: ReturnType<typeof setTimeout> | null = null
+  let savedResetTimer: ReturnType<typeof setTimeout> | null = null
+
+  const profileTasks = ref<AdminTaskItem[]>([])
+  const profileTasksLoading = ref(false)
+  const profileTaskTab = ref<'published' | 'accepted'>('published')
+
   const profileForm = reactive<AdminUserEditForm>({
     name: '',
     nickname: '',
@@ -256,6 +272,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
   }
 
   async function loadUserProfile(userId: number) {
+    profileDataLoaded.value = false
     profileLoading.value = true
     try {
       const [profile, bl] = await Promise.all([
@@ -265,10 +282,13 @@ export function useAdminUsers(showToast: AppToastNotifier) {
       selectedProfile.value = profile
       Object.assign(profileForm, toForm(profile))
       blacklistItems.value = bl
+      profileTaskTab.value = 'published'
+      await loadProfileTasks()
     } catch (error: unknown) {
       showToast(extractError(error, '加载用户画像失败'), 'error')
     } finally {
       profileLoading.value = false
+      profileDataLoaded.value = true
     }
   }
 
@@ -282,6 +302,147 @@ export function useAdminUsers(showToast: AppToastNotifier) {
   }
 
   async function saveUserProfile() {
+    if (profileAutosaveTimer) clearTimeout(profileAutosaveTimer)
+    await doAutosave()
+  }
+
+  let blSearchDebounce = 0
+  watch(blacklistSearchQuery, (q) => {
+    clearTimeout(blSearchDebounce)
+    if (!q.trim()) {
+      blacklistSearchResults.value = []
+      blacklistSearchOpen.value = false
+      return
+    }
+    blSearchDebounce = window.setTimeout(async () => {
+      blacklistSearchLoading.value = true
+      try {
+        const res = await fetchAdminUsers({ q: q.trim(), page: 1, page_size: 8 })
+        blacklistSearchResults.value = res.items.filter(
+          u => selectedProfile.value && u.id !== selectedProfile.value.id,
+        )
+        blacklistSearchOpen.value = true
+      } catch {
+        blacklistSearchResults.value = []
+      } finally {
+        blacklistSearchLoading.value = false
+      }
+    }, 300)
+  })
+
+  async function selectBlacklistUser(user: AdminUserItem) {
+    blacklistSearchOpen.value = false
+    blacklistSearchQuery.value = ''
+    blacklistSearchResults.value = []
+    if (!selectedProfile.value) return
+
+    const optimistic: AdminBlacklistItem = {
+      blocked_user_id: user.id,
+      blocked_display_name: user.display_name,
+      blocked_name: user.name !== user.display_name ? user.name : undefined,
+      blocked_account: user.account,
+      blocked_avatar_url: user.avatar_url,
+      reason: null,
+      created_at: new Date().toISOString(),
+    }
+    blacklistItems.value = [...blacklistItems.value, optimistic]
+
+    try {
+      blacklistItems.value = await addAdminUserBlacklist(selectedProfile.value.id, {
+        blocked_user_id: user.id,
+      })
+    } catch (error: unknown) {
+      blacklistItems.value = blacklistItems.value.filter(i => i.blocked_user_id !== user.id)
+      showToast(extractError(error, '添加黑名单失败'), 'error')
+    }
+  }
+
+  function closeBlacklistSearch() {
+    blacklistSearchOpen.value = false
+  }
+
+  async function refreshBlacklist() {
+    if (!selectedProfile.value) return
+    blacklistLoading.value = true
+    try {
+      blacklistItems.value = await fetchAdminUserBlacklist(selectedProfile.value.id)
+    } catch (error: unknown) {
+      showToast(extractError(error, '加载黑名单失败'), 'error')
+    } finally {
+      blacklistLoading.value = false
+    }
+  }
+
+  async function addBlacklistItem() {
+    if (!selectedProfile.value) return
+    const blockedId = Number(blacklistAddUserId.value.trim())
+    if (!Number.isFinite(blockedId) || blockedId <= 0) {
+      showToast('请输入正确的用户 ID', 'error')
+      return
+    }
+    const prev = [...blacklistItems.value]
+    const optimistic: AdminBlacklistItem = {
+      blocked_user_id: blockedId,
+      blocked_display_name: `用户 ${blockedId}`,
+      blocked_account: '',
+      blocked_avatar_url: null,
+      reason: null,
+      created_at: new Date().toISOString(),
+    }
+    blacklistItems.value = [...blacklistItems.value, optimistic]
+    blacklistAddUserId.value = ''
+
+    try {
+      blacklistItems.value = await addAdminUserBlacklist(selectedProfile.value.id, {
+        blocked_user_id: blockedId,
+      })
+    } catch (error: unknown) {
+      blacklistItems.value = prev
+      showToast(extractError(error, '添加黑名单失败'), 'error')
+    }
+  }
+
+  async function removeBlacklistItem(blockedUserId: number) {
+    if (!selectedProfile.value) return
+    const prev = [...blacklistItems.value]
+    blacklistItems.value = blacklistItems.value.filter(i => i.blocked_user_id !== blockedUserId)
+
+    try {
+      blacklistItems.value = await removeAdminUserBlacklist(selectedProfile.value.id, blockedUserId)
+    } catch (error: unknown) {
+      blacklistItems.value = prev
+      showToast(extractError(error, '移除黑名单失败'), 'error')
+    }
+  }
+
+  async function loadProfileTasks() {
+    if (!selectedProfile.value) return
+    profileTasksLoading.value = true
+    try {
+      const key = profileTaskTab.value === 'published' ? 'publisher_id' : 'assignee_id'
+      const res = await fetchAdminTasks({ [key]: selectedProfile.value.id, page_size: 50 })
+      profileTasks.value = res.items
+    } catch (error: unknown) {
+      showToast(extractError(error, '加载用户任务失败'), 'error')
+    } finally {
+      profileTasksLoading.value = false
+    }
+  }
+
+  watch(profileTaskTab, () => {
+    loadProfileTasks()
+  })
+
+  // 自动保存
+  function markSaved() {
+    profileSaveStatus.value = 'saved'
+    if (savedResetTimer) clearTimeout(savedResetTimer)
+    savedResetTimer = setTimeout(() => {
+      profileSaveStatus.value = 'idle'
+    }, 2000)
+  }
+
+  async function doAutosave() {
     if (!selectedProfile.value) return
     profileSaving.value = true
     try {
@@ -311,70 +472,32 @@ export function useAdminUsers(showToast: AppToastNotifier) {
       }
       const updated = await updateAdminUserProfile(selectedProfile.value.id, payload)
       selectedProfile.value = updated
-      Object.assign(profileForm, toForm(updated))
-      showToast('用户资料已更新', 'success')
+      markSaved()
       await loadUsers()
     } catch (error: unknown) {
-      showToast(extractError(error, '保存用户资料失败'), 'error')
+      profileSaveStatus.value = 'idle'
+      showToast(extractError(error, '自动保存失败'), 'error')
     } finally {
       profileSaving.value = false
     }
   }
 
-  async function refreshBlacklist() {
-    if (!selectedProfile.value) return
-    blacklistLoading.value = true
-    try {
-      blacklistItems.value = await fetchAdminUserBlacklist(selectedProfile.value.id)
-    } catch (error: unknown) {
-      showToast(extractError(error, '加载黑名单失败'), 'error')
-    } finally {
-      blacklistLoading.value = false
-    }
-  }
-
-  async function addBlacklistItem() {
-    if (!selectedProfile.value) return
-    const blockedId = Number(blacklistAddUserId.value.trim())
-    if (!Number.isFinite(blockedId) || blockedId <= 0) {
-      showToast('请输入正确的用户 ID', 'error')
-      return
-    }
-    blacklistSubmitting.value = true
-    try {
-      blacklistItems.value = await addAdminUserBlacklist(selectedProfile.value.id, {
-        blocked_user_id: blockedId,
-        reason: blacklistAddReason.value.trim() || undefined,
-      })
-      blacklistAddUserId.value = ''
-      blacklistAddReason.value = ''
-      showToast('黑名单已更新', 'success')
-      await loadUserProfile(selectedProfile.value.id)
-      await loadUsers()
-    } catch (error: unknown) {
-      showToast(extractError(error, '添加黑名单失败'), 'error')
-    } finally {
-      blacklistSubmitting.value = false
-    }
-  }
-
-  async function removeBlacklistItem(blockedUserId: number) {
-    if (!selectedProfile.value) return
-    blacklistSubmitting.value = true
-    try {
-      blacklistItems.value = await removeAdminUserBlacklist(selectedProfile.value.id, blockedUserId)
-      showToast('已移出黑名单', 'success')
-      await loadUserProfile(selectedProfile.value.id)
-      await loadUsers()
-    } catch (error: unknown) {
-      showToast(extractError(error, '移除黑名单失败'), 'error')
-    } finally {
-      blacklistSubmitting.value = false
-    }
-  }
+  watch(
+    () => ({ ...profileForm }),
+    () => {
+      if (!profileDataLoaded.value) return
+      profileSaveStatus.value = 'saving'
+      if (profileAutosaveTimer) clearTimeout(profileAutosaveTimer)
+      profileAutosaveTimer = setTimeout(doAutosave, 600)
+    },
+    { deep: true },
+  )
 
   onUnmounted(() => {
     clearTimeout(searchDebounce)
+    clearTimeout(blSearchDebounce)
+    if (profileAutosaveTimer) clearTimeout(profileAutosaveTimer)
+    if (savedResetTimer) clearTimeout(savedResetTimer)
   })
 
   return {
@@ -406,11 +529,21 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     openUserProfile,
     closeUserProfile,
     saveUserProfile,
+    profileSaveStatus,
+    profileTasks,
+    profileTasksLoading,
+    profileTaskTab,
+    loadProfileTasks,
     blacklistItems,
     blacklistLoading,
     blacklistSubmitting,
     blacklistAddUserId,
-    blacklistAddReason,
+    blacklistSearchQuery,
+    blacklistSearchResults,
+    blacklistSearchLoading,
+    blacklistSearchOpen,
+    selectBlacklistUser,
+    closeBlacklistSearch,
     refreshBlacklist,
     addBlacklistItem,
     removeBlacklistItem,

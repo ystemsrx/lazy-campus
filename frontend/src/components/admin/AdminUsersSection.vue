@@ -37,10 +37,6 @@ onUnmounted(() => {
 <template>
   <section class="av-users">
     <div class="av-users__head">
-      <div>
-        <h2>用户管理</h2>
-        <p>支持封禁管理、资料修改、黑名单代管、360画像查看</p>
-      </div>
       <span class="av-users__total">共 {{ vm.userTotal }} 人</span>
     </div>
 
@@ -170,16 +166,12 @@ onUnmounted(() => {
 .av-users__head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 12px;
 }
 
-.av-users__head h2 {
+.av-users__desc {
   margin: 0;
-}
-
-.av-users__head p {
-  margin: 4px 0 0;
   color: #94a3b8;
   font-size: 13px;
 }

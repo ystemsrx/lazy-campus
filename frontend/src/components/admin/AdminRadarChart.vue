@@ -65,7 +65,7 @@ const polygonPoints = computed(() => {
         />
       </g>
       <polygon :points="polygonPoints" class="arc-area" />
-      <polyline :points="polygonPoints" class="arc-line" />
+      <polygon :points="polygonPoints" class="arc-line" />
 
       <g>
         <circle

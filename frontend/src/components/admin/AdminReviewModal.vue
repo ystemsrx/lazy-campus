@@ -101,6 +101,7 @@ function onConfirm() {
 </script>
 
 <template>
+  <Teleport to="body">
   <Transition name="fade">
     <div v-if="show" class="arv-overlay" @click.self="$emit('close')">
       <div class="arv-modal" @click.stop>
@@ -181,6 +182,7 @@ function onConfirm() {
       </div>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
