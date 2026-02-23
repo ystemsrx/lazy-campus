@@ -209,9 +209,9 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <div class="av-content">
+      <div class="av-content" :class="{ 'av-content--full': activeTab === 'reports' }">
         <div class="av-content__inner">
-          <div class="av-page-head">
+          <div v-if="activeTab !== 'reports'" class="av-page-head">
             <div>
               <h1 class="av-page-title">{{ pageTitle }}</h1>
               <p class="av-page-subtitle">今天是 {{ greeting }}，祝您工作顺利。</p>
@@ -380,6 +380,15 @@ onUnmounted(() => {
 
 .av-main {
   width: 100%;
+}
+
+.av-content--full {
+  padding: 0;
+}
+
+.av-content--full > .av-content__inner {
+  max-width: none;
+  margin: 0;
 }
 
 @media (max-width: 1024px) {

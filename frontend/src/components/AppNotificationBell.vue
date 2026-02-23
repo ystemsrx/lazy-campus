@@ -79,7 +79,7 @@ function handleClick(n: AppNotification) {
   } else if (n.type === 'punishment') {
     router.push('/reports?tab=received')
   } else if (n.related_task_id) {
-    router.push({ path: '/', query: { task: String(n.related_task_id) } })
+    router.push({ path: '/tasks', query: { task: String(n.related_task_id) } })
   }
 }
 

@@ -336,7 +336,7 @@ onUnmounted(() => {
       :avatar-url="avatarUrl"
       :gender="avatarGender"
       @publish="router.push('/')"
-      @open-my-panel="router.push('/?panel=my')"
+      @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
       @open-chat="router.push('/chat')"

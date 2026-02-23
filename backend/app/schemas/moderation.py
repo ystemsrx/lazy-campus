@@ -29,6 +29,7 @@ class ReportOut(BaseModel):
     id: int
     type: ReportType
     task_id: int | None
+    task_title: str | None = None
     reporter_id: int
     reporter_name: str | None = None
     reporter_nickname: str | None = None

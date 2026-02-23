@@ -6,7 +6,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '../../stores/auth'
 import { appConfirm } from '../../components/AppConfirm.vue'
@@ -111,6 +111,7 @@ function toHTMLElement(el: Element | ComponentPublicInstance | null): HTMLElemen
 
 export function useTaskManagement() {
   const router = useRouter()
+  const route = useRoute()
   const auth = useAuthStore()
   const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 
@@ -602,12 +603,38 @@ export function useTaskManagement() {
     openDrawer(task)
   }
 
+  function findTaskById(taskId: number): MyTask | undefined {
+    const all: MyTask[] = [
+      ...myPublished.value.map((t) => ({ ...t, myRole: 'publisher' as const })),
+      ...myAccepted.value.map((t) => ({ ...t, myRole: 'assignee' as const })),
+    ]
+    return all.find((t) => t.id === taskId)
+  }
+
+  function consumeTaskQuery() {
+    const taskQuery = route.query.task
+    if (!taskQuery) return
+    const taskId = Number(taskQuery)
+    const task = findTaskById(taskId)
+    if (task) openDrawer(task)
+    const nextQuery = { ...route.query }
+    delete nextQuery.task
+    router.replace({ query: nextQuery })
+  }
+
   function setSentinelRef(el: Element | ComponentPublicInstance | null) {
     sentinelRef.value = toHTMLElement(el)
   }
 
+  watch(() => route.query.task, (newVal) => {
+    if (!newVal || loading.value) return
+    consumeTaskQuery()
+  })
+
   onMounted(() => {
-    bootstrap()
+    bootstrap().then(() => {
+      consumeTaskQuery()
+    })
     scrollObserver = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting && hasMore.value) loadMore()

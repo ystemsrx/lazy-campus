@@ -208,6 +208,7 @@ export interface Report {
   id: number
   type: 'report' | 'appeal'
   task_id: number | null
+  task_title: string | null
   reporter_id: number
   reporter_name: string | null
   reporter_nickname: string | null

@@ -464,14 +464,20 @@ def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut
 
 def _enrich_reports(reports: list[Report], db: Session) -> list[ReportOut]:
     user_ids: set[int] = set()
+    task_ids: set[int] = set()
     for r in reports:
         user_ids.add(r.reporter_id)
         if r.reported_user_id:
             user_ids.add(r.reported_user_id)
+        if r.task_id:
+            task_ids.add(r.task_id)
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    tasks = {t.id: t for t in db.query(Task).filter(Task.id.in_(task_ids)).all()} if task_ids else {}
     result: list[ReportOut] = []
     for r in reports:
         out = ReportOut.model_validate(r)
+        if r.task_id and r.task_id in tasks:
+            out.task_title = tasks[r.task_id].title
         rp = users.get(r.reporter_id)
         if rp:
             out.reporter_name = rp.name
@@ -915,17 +921,35 @@ def admin_task_snapshot(
         raise HTTPException(status_code=404, detail='Task not found')
 
     user_ids = {task.publisher_id}
-    if task.assignee_id:
-        user_ids.add(task.assignee_id)
+    assignee_id = task.assignee_id
+    if assignee_id:
+        user_ids.add(assignee_id)
 
-    messages = (
+    task_msgs = (
         db.query(TaskMessage)
         .filter(TaskMessage.task_id == task_id)
         .order_by(TaskMessage.created_at)
         .all()
     )
-    for m in messages:
+    for m in task_msgs:
         user_ids.add(m.sender_id)
+
+    if not assignee_id:
+        for m in reversed(task_msgs):
+            if m.session_assignee_id:
+                assignee_id = m.session_assignee_id
+                user_ids.add(assignee_id)
+                break
+
+    chat_msgs = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.task_id == task_id)
+        .order_by(ChatMessage.created_at)
+        .all()
+    )
+    for cm in chat_msgs:
+        user_ids.add(cm.sender_id)
+        user_ids.add(cm.receiver_id)
 
     reviews = (
         db.query(TaskReview)
@@ -939,6 +963,21 @@ def admin_task_snapshot(
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
     dn = lambda uid: display_name(users.get(uid)) if users.get(uid) else '未知用户'
 
+    merged_messages: list[TaskSnapshotMessage] = []
+    for m in task_msgs:
+        merged_messages.append(TaskSnapshotMessage(
+            sender_display_name=dn(m.sender_id),
+            content=m.content,
+            created_at=m.created_at,
+        ))
+    for cm in chat_msgs:
+        merged_messages.append(TaskSnapshotMessage(
+            sender_display_name=dn(cm.sender_id),
+            content=cm.content,
+            created_at=cm.created_at,
+        ))
+    merged_messages.sort(key=lambda msg: msg.created_at)
+
     return TaskSnapshotOut(
         id=task.id,
         title=task.title,
@@ -949,16 +988,9 @@ def admin_task_snapshot(
         status=task.status.value,
         is_deleted=bool(task.is_deleted),
         publisher_display_name=dn(task.publisher_id),
-        assignee_display_name=dn(task.assignee_id) if task.assignee_id else None,
+        assignee_display_name=dn(assignee_id) if assignee_id else None,
         created_at=task.created_at,
-        messages=[
-            TaskSnapshotMessage(
-                sender_display_name=dn(m.sender_id),
-                content=m.content,
-                created_at=m.created_at,
-            )
-            for m in messages
-        ],
+        messages=merged_messages,
         reviews=[
             TaskSnapshotReview(
                 reviewer_display_name=dn(r.reviewer_id),
