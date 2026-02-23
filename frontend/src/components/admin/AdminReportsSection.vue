@@ -2,6 +2,7 @@
 import { proxyRefs, ref } from 'vue'
 
 import AppDropdown from '../AppDropdown.vue'
+import AdminChatHistoryDrawer from './AdminChatHistoryDrawer.vue'
 import AdminReviewModal from './AdminReviewModal.vue'
 import AdminTaskSnapshotDrawer from './AdminTaskSnapshotDrawer.vue'
 import type { AdminReportsModel } from '../../composables/admin/useAdminReports'
@@ -46,15 +47,25 @@ const adminLightboxSrc = ref<string | null>(null)
     <div v-if="vm.reports.length" class="av-report-list">
       <div v-for="report in vm.reports" :key="report.id" class="card av-report-card">
         <div class="av-report-card__header">
-          <a
-            v-if="report.task_id"
-            class="av-task-link"
-            @click.prevent="vm.openSnapshot(report.task_id)"
-          >
-            <i class="fa-solid fa-arrow-up-right-from-square av-task-link__icon"></i>
-            任务 #{{ report.task_id }}
-          </a>
-          <span v-else class="av-report-type">{{ report.type === 'appeal' ? '账号申诉' : '账号举报' }}</span>
+          <div class="av-report-card__header-left">
+            <a
+              v-if="report.task_id"
+              class="av-task-link"
+              @click.prevent="vm.openSnapshot(report.task_id)"
+            >
+              <i class="fa-solid fa-arrow-up-right-from-square av-task-link__icon"></i>
+              任务 #{{ report.task_id }}
+            </a>
+            <span v-else class="av-report-type">{{ report.type === 'appeal' ? '账号申诉' : '账号举报' }}</span>
+            <button
+              v-if="!report.task_id && report.type === 'report'"
+              class="btn btn-ghost btn-xs av-chat-history-btn"
+              @click="vm.openChatHistory(report.id)"
+            >
+              <i class="fa-regular fa-comment-dots"></i>
+              查看聊天记录
+            </button>
+          </div>
           <span class="badge" :class="vm.reportStatusClass(report.status)">
             {{ vm.reportStatusLabel(report.status) }}
           </span>
@@ -152,6 +163,13 @@ const adminLightboxSrc = ref<string | null>(null)
     @close="vm.closeSnapshot"
   />
 
+  <AdminChatHistoryDrawer
+    :show="vm.showChatHistory"
+    :loading="vm.chatHistoryLoading"
+    :chat-history="vm.chatHistory"
+    @close="vm.closeChatHistory"
+  />
+
   <Teleport to="body">
     <Transition name="av-lb">
       <div v-if="adminLightboxSrc" class="av-lightbox" @click="adminLightboxSrc = null">
@@ -220,6 +238,28 @@ const adminLightboxSrc = ref<string | null>(null)
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.av-report-card__header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.av-chat-history-btn {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.av-chat-history-btn:hover {
+  color: var(--c-accent);
+  background: var(--c-bg-secondary);
 }
 
 .av-task-link {

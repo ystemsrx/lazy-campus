@@ -2,6 +2,7 @@ import { ref, watch } from 'vue'
 
 import {
   fetchAdminReports,
+  fetchReportChatHistory,
   fetchTaskSnapshot,
   reviewReport,
 } from '../../api/moderation'
@@ -27,6 +28,18 @@ export interface TaskSnapshotReview {
   reviewer_display_name: string
   created_at: string
   comment: string | null
+}
+
+export interface DirectChatMessage {
+  sender_display_name: string
+  content: string
+  created_at: string
+}
+
+export interface DirectChatHistory {
+  reporter_display_name: string
+  reported_user_display_name: string
+  messages: DirectChatMessage[]
 }
 
 export interface TaskSnapshot {
@@ -83,6 +96,10 @@ export function useAdminReports(showToast: AppToastNotifier) {
   const showSnapshot = ref(false)
   const snapshotLoading = ref(false)
   const snapshot = ref<TaskSnapshot | null>(null)
+
+  const showChatHistory = ref(false)
+  const chatHistoryLoading = ref(false)
+  const chatHistory = ref<DirectChatHistory | null>(null)
 
   async function loadReports() {
     try {
@@ -187,6 +204,24 @@ export function useAdminReports(showToast: AppToastNotifier) {
     showSnapshot.value = false
   }
 
+  async function openChatHistory(reportId: number) {
+    showChatHistory.value = true
+    chatHistoryLoading.value = true
+    chatHistory.value = null
+    try {
+      chatHistory.value = await fetchReportChatHistory(reportId)
+    } catch (error: unknown) {
+      showToast(extractError(error, '加载聊天记录失败'), 'error')
+      showChatHistory.value = false
+    } finally {
+      chatHistoryLoading.value = false
+    }
+  }
+
+  function closeChatHistory() {
+    showChatHistory.value = false
+  }
+
   return {
     reports,
     reportSubTab,
@@ -209,6 +244,11 @@ export function useAdminReports(showToast: AppToastNotifier) {
     snapshot,
     openSnapshot,
     closeSnapshot,
+    showChatHistory,
+    chatHistoryLoading,
+    chatHistory,
+    openChatHistory,
+    closeChatHistory,
   }
 }
 

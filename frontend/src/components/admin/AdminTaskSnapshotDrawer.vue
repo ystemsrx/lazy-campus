@@ -67,10 +67,24 @@ defineEmits<{
 
             <div class="av-snap-section">
               <h4 class="av-snap-subtitle"><i class="fa-regular fa-comment-dots"></i> 聊天记录 ({{ snapshot.messages.length }})</h4>
+              <div v-if="snapshot.messages.length" class="av-snap-chat-legend">
+                <span class="av-snap-legend-item av-snap-legend-item--publisher">
+                  <i class="fa-solid fa-circle"></i> 发布者
+                </span>
+                <span class="av-snap-legend-item av-snap-legend-item--assignee">
+                  <i class="fa-solid fa-circle"></i> 接单者
+                </span>
+              </div>
               <div v-if="snapshot.messages.length" class="av-snap-chat">
                 <div v-for="(msg, idx) in snapshot.messages" :key="idx" class="av-snap-msg">
                   <div class="av-snap-msg__head">
-                    <span class="av-snap-msg__sender">{{ msg.sender_display_name }}</span>
+                    <span
+                      class="av-snap-msg__sender"
+                      :class="{
+                        'av-snap-msg__sender--publisher': msg.sender_display_name === snapshot.publisher_display_name,
+                        'av-snap-msg__sender--assignee': msg.sender_display_name === snapshot.assignee_display_name,
+                      }"
+                    >{{ msg.sender_display_name }}</span>
                     <span class="av-snap-msg__time">{{ formatShort(msg.created_at) }}</span>
                   </div>
                   <div class="av-snap-msg__text">{{ msg.content }}</div>
@@ -247,6 +261,14 @@ defineEmits<{
   color: var(--c-text);
 }
 
+.av-snap-msg__sender--publisher {
+  color: var(--c-accent, #6366f1);
+}
+
+.av-snap-msg__sender--assignee {
+  color: #ef4444;
+}
+
 .av-snap-msg__time {
   font-size: 11px;
   color: var(--c-text-muted);
@@ -310,6 +332,32 @@ defineEmits<{
   font-size: var(--text-sm);
   text-align: center;
   padding: 16px 0;
+}
+
+.av-snap-chat-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.av-snap-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--c-text-muted);
+}
+
+.av-snap-legend-item i {
+  font-size: 8px;
+}
+
+.av-snap-legend-item--publisher i {
+  color: var(--c-accent, #6366f1);
+}
+
+.av-snap-legend-item--assignee i {
+  color: #ef4444;
 }
 
 .av-drawer-enter-active {

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import AuthContext, require_admin, require_completed_user, require_user
 from app.db.session import get_db
 from app.models.enums import ReportStatus, ReportType, TaskStatus
+from app.models.chat import ChatMessage
 from app.models.moderation import AdminActionLog, Blacklist, Report
 from app.models.notification import Notification
 from app.models.task import Task, TaskMessage, TaskReview
@@ -21,6 +22,8 @@ from app.schemas.moderation import (
     BanRecord,
     BanUserRequest,
     BlacklistCreate,
+    DirectChatHistoryOut,
+    DirectChatMessage,
     RegistrationSettingOut,
     RegistrationSettingUpdate,
     ReportCreate,
@@ -477,6 +480,50 @@ def admin_task_snapshot(
                 created_at=r.created_at,
             )
             for r in reviews
+        ],
+    )
+
+
+@router.get('/admin/reports/{report_id}/chat-history', response_model=DirectChatHistoryOut)
+def admin_report_chat_history(
+    report_id: int,
+    _admin: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> DirectChatHistoryOut:
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail='Report not found')
+    if not report.reported_user_id:
+        raise HTTPException(status_code=400, detail='该举报无被举报用户')
+
+    user_a = report.reporter_id
+    user_b = report.reported_user_id
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(
+            or_(
+                (ChatMessage.sender_id == user_a) & (ChatMessage.receiver_id == user_b),
+                (ChatMessage.sender_id == user_b) & (ChatMessage.receiver_id == user_a),
+            )
+        )
+        .order_by(ChatMessage.created_at)
+        .all()
+    )
+
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([user_a, user_b])).all()}
+    dn = lambda uid: display_name(users.get(uid)) if users.get(uid) else '未知用户'
+
+    return DirectChatHistoryOut(
+        reporter_display_name=dn(user_a),
+        reported_user_display_name=dn(user_b),
+        messages=[
+            DirectChatMessage(
+                sender_display_name=dn(m.sender_id),
+                content=m.content,
+                created_at=m.created_at,
+            )
+            for m in messages
         ],
     )
 

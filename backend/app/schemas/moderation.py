@@ -98,6 +98,18 @@ class TaskSnapshotOut(BaseModel):
     reviews: list[TaskSnapshotReview]
 
 
+class DirectChatMessage(BaseModel):
+    sender_display_name: str
+    content: str
+    created_at: datetime
+
+
+class DirectChatHistoryOut(BaseModel):
+    reporter_display_name: str
+    reported_user_display_name: str
+    messages: list[DirectChatMessage]
+
+
 class BlacklistCreate(BaseModel):
     blocked_user_id: int
     reason: str | None = None

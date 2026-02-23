@@ -871,6 +871,10 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--c-border-light);
 }
 
+.user-detail-section:last-child {
+  border-bottom: none;
+}
+
 .user-detail-top-section {
   display: flex;
   flex-direction: column;

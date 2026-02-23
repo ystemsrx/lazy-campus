@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AdminCategoriesSection from '../components/admin/AdminCategoriesSection.vue'
@@ -24,7 +24,7 @@ const router = useRouter()
 const activeTab = ref<AdminTabKey>('dashboard')
 const loading = ref(true)
 
-const toastModel = useAppToast()
+const toastModel = reactive(useAppToast())
 const dashboardModel = useAdminDashboard(toastModel.showToast)
 const reportsModel = useAdminReports(toastModel.showToast)
 const usersModel = useAdminUsers(toastModel.showToast)

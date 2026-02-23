@@ -91,6 +91,11 @@ export async function fetchTaskSnapshot(taskId: number) {
   return data
 }
 
+export async function fetchReportChatHistory(reportId: number) {
+  const { data } = await api.get(`/moderation/admin/reports/${reportId}/chat-history`)
+  return data
+}
+
 export async function banUser(userId: number, payload: { banned: boolean; reason?: string; innocent?: boolean }) {
   const { data } = await api.post(`/moderation/admin/users/${userId}/ban`, payload)
   return data
