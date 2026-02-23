@@ -41,6 +41,8 @@ def run_startup_migrations() -> None:
                 conn.execute(text('CREATE INDEX IF NOT EXISTS ix_tasks_is_deleted ON tasks (is_deleted)'))
             if 'deleted_at' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN deleted_at DATETIME DEFAULT NULL'))
+            if 'demote_level' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN demote_level INTEGER NOT NULL DEFAULT 0'))
 
         if 'reports' in tables:
             report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}

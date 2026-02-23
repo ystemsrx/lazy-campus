@@ -312,7 +312,7 @@ export interface AdminTaskItem {
   is_pinned: boolean
   is_urgent: boolean
   is_deleted: boolean
-  admin_note: string | null
+  demote_level: number
   deadline: string | null
   created_at: string
   updated_at: string

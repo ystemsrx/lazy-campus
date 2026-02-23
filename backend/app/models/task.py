@@ -35,6 +35,7 @@ class Task(Base):
     is_pinned: Mapped[bool] = mapped_column(default=False)
     is_urgent: Mapped[bool] = mapped_column(default=False)
     admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demote_level: Mapped[int] = mapped_column(Integer, default=0)
     publisher_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True, index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey('task_categories.id'), nullable=True, index=True)

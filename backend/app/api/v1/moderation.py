@@ -284,7 +284,7 @@ def _serialize_task_item(
         is_pinned=bool(task.is_pinned),
         is_urgent=bool(task.is_urgent),
         is_deleted=bool(task.is_deleted),
-        admin_note=task.admin_note,
+        demote_level=int(task.demote_level or 0),
         deadline=task.deadline,
         created_at=task.created_at,
         updated_at=task.updated_at,
@@ -1486,8 +1486,9 @@ def admin_list_tasks(
     assignee_id: int | None = Query(default=None),
     flag: str | None = Query(default=None, pattern='^(pinned|urgent|flagged)$'),
     deleted: bool | None = Query(default=None),
+    overdue: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=50),
+    page_size: int = Query(default=40, ge=1, le=100),
     _admin: AuthContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> AdminTaskListResponse:
@@ -1514,10 +1515,16 @@ def admin_list_tasks(
         query = query.filter(Task.is_deleted.is_(True))
     elif deleted is False:
         query = query.filter(Task.is_deleted.is_(False))
+    if overdue is True:
+        now = datetime.utcnow()
+        query = query.filter(Task.deadline.isnot(None), Task.deadline < now)
+    elif overdue is False:
+        now = datetime.utcnow()
+        query = query.filter(or_(Task.deadline.is_(None), Task.deadline >= now))
 
     total = query.count()
     rows = (
-        query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.created_at), desc(Task.id))
+        query.order_by(desc(Task.id))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -1599,40 +1606,44 @@ def admin_operate_task(
         return {'message': 'deleted', 'deleted': True}
 
     changed: list[str] = []
+    notify_parts: list[str] = []
     if payload.set_pinned is not None and bool(task.is_pinned) != bool(payload.set_pinned):
         task.is_pinned = bool(payload.set_pinned)
         changed.append(f'is_pinned={task.is_pinned}')
+        notify_parts.append('置顶' if task.is_pinned else '取消置顶')
     if payload.set_urgent is not None and bool(task.is_urgent) != bool(payload.set_urgent):
         task.is_urgent = bool(payload.set_urgent)
         changed.append(f'is_urgent={task.is_urgent}')
-    if 'admin_note' in payload.model_fields_set:
-        note = payload.admin_note.strip() if isinstance(payload.admin_note, str) and payload.admin_note.strip() else None
-        if task.admin_note != note:
-            task.admin_note = note
-            changed.append('admin_note')
+        notify_parts.append('加急' if task.is_urgent else '取消加急')
+    if payload.set_demote_level is not None and int(task.demote_level or 0) != payload.set_demote_level:
+        task.demote_level = payload.set_demote_level
+        changed.append(f'demote_level={task.demote_level}')
 
     if not changed:
         raise HTTPException(status_code=400, detail='No task operation provided')
 
     db.add(task)
-    if task.publisher_id:
-        db.add(Notification(
-            user_id=task.publisher_id,
-            type='admin_task_notice',
-            title='任务状态被管理员调整',
-            description=f'你的任务「{task.title}」已被管理员调整优先级（置顶/加急或备注更新）。',
-            related_task_id=task.id,
-            dismiss_type='read',
-        ))
-    if task.assignee_id:
-        db.add(Notification(
-            user_id=task.assignee_id,
-            type='admin_task_notice',
-            title='任务状态被管理员调整',
-            description=f'你参与的任务「{task.title}」已被管理员调整优先级（置顶/加急或备注更新）。',
-            related_task_id=task.id,
-            dismiss_type='read',
-        ))
+
+    if notify_parts:
+        action_desc = '、'.join(notify_parts)
+        if task.publisher_id:
+            db.add(Notification(
+                user_id=task.publisher_id,
+                type='admin_task_notice',
+                title=f'你的任务「{task.title}」已被管理员{action_desc}',
+                description=f'管理员已将你的任务「{task.title}」设为{action_desc}，该操作可能影响任务在大厅中的展示顺序。如有疑问请联系平台。',
+                related_task_id=task.id,
+                dismiss_type='read',
+            ))
+        if task.assignee_id:
+            db.add(Notification(
+                user_id=task.assignee_id,
+                type='admin_task_notice',
+                title=f'你参与的任务「{task.title}」已被管理员{action_desc}',
+                description=f'你参与的任务「{task.title}」已被管理员设为{action_desc}，该操作可能影响任务在大厅中的展示顺序。如有疑问请联系平台。',
+                related_task_id=task.id,
+                dismiss_type='read',
+            ))
     db.add(
         AdminActionLog(
             admin_identifier=admin.admin_account or 'admin',

@@ -206,6 +206,7 @@ export async function fetchAdminTasks(params: {
   assignee_id?: number
   flag?: 'pinned' | 'urgent' | 'flagged'
   deleted?: boolean
+  overdue?: boolean
   page?: number
   page_size?: number
 } = {}) {
@@ -217,7 +218,7 @@ export async function operateAdminTask(taskId: number, payload: {
   delete?: boolean
   set_pinned?: boolean
   set_urgent?: boolean
-  admin_note?: string | null
+  set_demote_level?: number
 }) {
   const { data } = await api.post<{ message: string; deleted: boolean; item?: unknown }>(`/moderation/admin/tasks/${taskId}/operate`, payload)
   return data

@@ -5,14 +5,13 @@ import type { AdminTaskItem } from '../../types/api'
 import { extractError } from '../../utils/error'
 import type { AppToastNotifier } from '../useAppToast'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 40
 
 export function useAdminTasks(showToast: AppToastNotifier) {
   const loading = ref(false)
   const taskSearch = ref('')
   const statusFilter = ref<string>('all')
   const flagFilter = ref<string>('all')
-  const deletedFilter = ref<string>('all')
   const page = ref(1)
   const total = ref(0)
   const tasks = ref<AdminTaskItem[]>([])
@@ -23,11 +22,14 @@ export function useAdminTasks(showToast: AppToastNotifier) {
   async function loadTasks() {
     loading.value = true
     try {
+      const isOverdue = statusFilter.value === 'overdue'
+      const isDeleted = statusFilter.value === 'deleted'
       const data = await fetchAdminTasks({
         q: taskSearch.value.trim() || undefined,
-        status: statusFilter.value !== 'all' ? statusFilter.value : undefined,
+        status: !isOverdue && !isDeleted && statusFilter.value !== 'all' ? statusFilter.value : undefined,
         flag: flagFilter.value !== 'all' ? (flagFilter.value as 'pinned' | 'urgent' | 'flagged') : undefined,
-        deleted: deletedFilter.value === 'deleted' ? true : deletedFilter.value === 'normal' ? false : undefined,
+        deleted: isDeleted ? true : undefined,
+        overdue: isOverdue ? true : undefined,
         page: page.value,
         page_size: PAGE_SIZE,
       })
@@ -49,7 +51,7 @@ export function useAdminTasks(showToast: AppToastNotifier) {
     }, 300)
   })
 
-  watch([statusFilter, flagFilter, deletedFilter], () => {
+  watch([statusFilter, flagFilter], () => {
     page.value = 1
     loadTasks()
   })
@@ -70,12 +72,15 @@ export function useAdminTasks(showToast: AppToastNotifier) {
   }
 
   async function togglePinned(task: AdminTaskItem) {
+    const next = !task.is_pinned
+    const idx = tasks.value.findIndex(t => t.id === task.id)
+    if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], is_pinned: next }
     setOperating(task.id, true)
     try {
-      await operateAdminTask(task.id, { set_pinned: !task.is_pinned })
-      showToast(task.is_pinned ? '已取消置顶' : '已置顶任务', 'success')
-      await loadTasks()
+      await operateAdminTask(task.id, { set_pinned: next })
+      showToast(next ? '已置顶任务' : '已取消置顶', 'success')
     } catch (error: unknown) {
+      if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], is_pinned: !next }
       showToast(extractError(error, '任务置顶操作失败'), 'error')
     } finally {
       setOperating(task.id, false)
@@ -83,26 +88,34 @@ export function useAdminTasks(showToast: AppToastNotifier) {
   }
 
   async function toggleUrgent(task: AdminTaskItem) {
+    const next = !task.is_urgent
+    const idx = tasks.value.findIndex(t => t.id === task.id)
+    if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], is_urgent: next }
     setOperating(task.id, true)
     try {
-      await operateAdminTask(task.id, { set_urgent: !task.is_urgent })
-      showToast(task.is_urgent ? '已取消加急' : '已加急任务', 'success')
-      await loadTasks()
+      await operateAdminTask(task.id, { set_urgent: next })
+      showToast(next ? '已加急任务' : '已取消加急', 'success')
     } catch (error: unknown) {
+      if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], is_urgent: !next }
       showToast(extractError(error, '任务加急操作失败'), 'error')
     } finally {
       setOperating(task.id, false)
     }
   }
 
-  async function updateAdminNote(task: AdminTaskItem, note: string) {
+  async function setDemoteLevel(task: AdminTaskItem, level: number) {
+    if (task.demote_level === level) return
+    const prevLevel = task.demote_level
+    const idx = tasks.value.findIndex(t => t.id === task.id)
+    // Optimistic update
+    if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], demote_level: level }
     setOperating(task.id, true)
     try {
-      await operateAdminTask(task.id, { admin_note: note })
-      showToast('管理员备注已更新', 'success')
-      await loadTasks()
+      await operateAdminTask(task.id, { set_demote_level: level })
     } catch (error: unknown) {
-      showToast(extractError(error, '更新备注失败'), 'error')
+      // Revert on failure
+      if (idx !== -1) tasks.value[idx] = { ...tasks.value[idx], demote_level: prevLevel }
+      showToast(extractError(error, '权重调整失败'), 'error')
     } finally {
       setOperating(task.id, false)
     }
@@ -131,7 +144,6 @@ export function useAdminTasks(showToast: AppToastNotifier) {
     taskSearch,
     statusFilter,
     flagFilter,
-    deletedFilter,
     page,
     total,
     tasks,
@@ -140,7 +152,7 @@ export function useAdminTasks(showToast: AppToastNotifier) {
     goPage,
     togglePinned,
     toggleUrgent,
-    updateAdminNote,
+    setDemoteLevel,
     deleteTask,
     isOperating,
   }

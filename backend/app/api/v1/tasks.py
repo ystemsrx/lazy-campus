@@ -286,11 +286,15 @@ def list_tasks(
     if max_price is not None:
         query = query.filter(Task.price <= max_price)
 
+    # demote_level=2 → hard last tier; demote_level=1 → stays in main pool (soft penalty applied in Python)
+    demote_hard = case((Task.demote_level == 2, 1), else_=0)
+
     if sort == 'newest':
-        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.created_at))
+        query = query.order_by(asc(demote_hard), desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.created_at))
         rows = query.limit(200).all()
     elif sort == 'deadline_asc':
         query = query.order_by(
+            asc(demote_hard),
             desc(Task.is_pinned),
             desc(Task.is_urgent),
             case((Task.deadline.is_(None), 1), else_=0),
@@ -300,6 +304,7 @@ def list_tasks(
         rows = query.limit(200).all()
     elif sort == 'publisher_rating':
         query = query.order_by(
+            asc(demote_hard),
             desc(Task.is_pinned),
             desc(Task.is_urgent),
             desc(User.publisher_rating_avg),
@@ -318,20 +323,23 @@ def list_tasks(
                 .group_by(Task.publisher_id)
                 .all()
             )
-        rows.sort(
-            key=lambda r: (
-                -int(bool(r[0].is_pinned)),
-                -int(bool(r[0].is_urgent)),
-                -completed_map.get(r[1].id, 0),
-                -r[0].created_at.timestamp(),
-            ),
-        )
+        def _demote_weight(r) -> tuple:
+            task = r[0]
+            demote = int(task.demote_level or 0)
+            base = -completed_map.get(r[1].id, 0) * 1.0
+            if demote == 2:
+                return (1, -int(bool(task.is_pinned)), -int(bool(task.is_urgent)), base, -task.created_at.timestamp())
+            elif demote == 1:
+                # Soft penalty: multiply effective score by 0.4
+                return (0, -int(bool(task.is_pinned)), -int(bool(task.is_urgent)), base * 0.4 - 1e6, -task.created_at.timestamp())
+            return (0, -int(bool(task.is_pinned)), -int(bool(task.is_urgent)), base, -task.created_at.timestamp())
+        rows.sort(key=_demote_weight)
         rows = rows[:200]
     elif sort == 'price_asc':
-        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), asc(Task.price), desc(Task.created_at))
+        query = query.order_by(asc(demote_hard), desc(Task.is_pinned), desc(Task.is_urgent), asc(Task.price), desc(Task.created_at))
         rows = query.limit(200).all()
     elif sort == 'price_desc':
-        query = query.order_by(desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.price), desc(Task.created_at))
+        query = query.order_by(asc(demote_hard), desc(Task.is_pinned), desc(Task.is_urgent), desc(Task.price), desc(Task.created_at))
         rows = query.limit(200).all()
     else:
         rows = query.all()
@@ -349,15 +357,18 @@ def list_tasks(
         user_gender = user.gender if user else None
         def _rank_key(r):
             task, pub = r
+            demote = int(task.demote_level or 0)
             mismatch = 1 if (task.required_gender and task.required_gender != user_gender) else 0
             pin_rank = 0 if task.is_pinned else 1
             urgent_rank = 0 if task.is_urgent else 1
-            return (
-                mismatch,
-                pin_rank,
-                urgent_rank,
-                -_task_ranking_score(task, pub, now, mu, cmap.get(pub.id, 0)),
-            )
+            base_score = _task_ranking_score(task, pub, now, mu, cmap.get(pub.id, 0))
+            if demote == 2:
+                # Hard last tier
+                return (1, mismatch, pin_rank, urgent_rank, -base_score)
+            elif demote == 1:
+                # Soft penalty: 40% of original score, stays in main pool
+                return (0, mismatch, pin_rank, urgent_rank, -(base_score * 0.4))
+            return (0, mismatch, pin_rank, urgent_rank, -base_score)
         rows.sort(key=_rank_key)
         rows = rows[:200]
 

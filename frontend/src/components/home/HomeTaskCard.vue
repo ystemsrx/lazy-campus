@@ -17,7 +17,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="card card-hover hv-task-card" @click="emit('select', task)">
+  <div
+    class="card card-hover hv-task-card"
+    :class="{ 'hv-task-card--pinned': task.is_pinned }"
+    @click="emit('select', task)"
+  >
     <div class="hv-task-card__top">
       <div class="hv-task-card__badges">
         <span class="badge" :class="statusOf(task.status).cls">{{ statusOf(task.status).label }}</span>
@@ -90,6 +94,17 @@ const emit = defineEmits<{
   flex-direction: column;
   gap: 10px;
   padding: 22px;
+}
+
+.hv-task-card--pinned {
+  border: 1.5px solid rgba(245, 158, 11, 0.45) !important;
+  box-shadow: 0 0 14px -2px rgba(251, 191, 36, 0.22), 0 0 4px rgba(245, 158, 11, 0.10) !important;
+}
+
+@media (hover: hover) {
+  .hv-task-card--pinned:hover {
+    box-shadow: 0 0 22px -2px rgba(251, 191, 36, 0.32), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+  }
 }
 
 .hv-task-card__top {

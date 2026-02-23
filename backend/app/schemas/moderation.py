@@ -234,7 +234,7 @@ class AdminTaskItem(BaseModel):
     is_pinned: bool = False
     is_urgent: bool = False
     is_deleted: bool = False
-    admin_note: str | None = None
+    demote_level: int = 0
     deadline: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -252,7 +252,7 @@ class AdminTaskOperateRequest(BaseModel):
     delete: bool = False
     set_pinned: bool | None = None
     set_urgent: bool | None = None
-    admin_note: str | None = Field(default=None, max_length=1000)
+    set_demote_level: int | None = Field(default=None, ge=0, le=2)
 
 
 class AdminChatConversationItem(BaseModel):

@@ -3,16 +3,30 @@ import { nextTick, onUnmounted, ref, watch } from 'vue'
 import type { TaskSnapshot } from '../../composables/admin/useAdminReports'
 import { formatShort } from '../../utils/time'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   show: boolean
   loading: boolean
   snapshot: TaskSnapshot | null
   taskStatusMap: Record<string, string>
-}>()
+  taskId?: number | null
+  demoteLevel?: number
+  isOperatingDemote?: boolean
+}>(), {
+  taskId: null,
+  demoteLevel: 0,
+  isOperatingDemote: false,
+})
 
 const emit = defineEmits<{
   close: []
+  setDemoteLevel: [level: number]
 }>()
+
+const demoteOptions = [
+  { value: 0, label: '正常' },
+  { value: 1, label: '略降' },
+  { value: 2, label: '垫底' },
+]
 
 const chatRef = ref<HTMLElement | null>(null)
 const sheetRef = ref<HTMLElement | null>(null)
@@ -193,6 +207,28 @@ onUnmounted(() => {
                   <span>{{ formatShort(snapshot.deadline) }}</span>
                 </div>
               </div>
+            </div>
+
+            <!-- 降权控制 - 仅移动端显示 -->
+            <div v-if="taskId != null && !snapshot.is_deleted" class="av-snap-section av-snap-demote">
+              <h4 class="av-snap-subtitle"><i class="fa-solid fa-arrow-down-wide-short"></i> 显示权重</h4>
+              <div class="av-snap-demote-slider">
+                <div
+                  class="av-snap-demote-pill"
+                  :style="{ transform: `translateX(calc(${demoteLevel} * 100%))` }"
+                ></div>
+                <button
+                  v-for="opt in demoteOptions"
+                  :key="opt.value"
+                  class="av-snap-demote-btn"
+                  :class="[`av-snap-demote-lv${opt.value}`, { 'av-snap-demote-btn--active': demoteLevel === opt.value }]"
+                  :disabled="isOperatingDemote"
+                  @click="emit('setDemoteLevel', opt.value)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+              <p class="av-snap-demote-hint">调整此任务在大厅中的显示顺序权重，不会通知用户</p>
             </div>
 
             <div class="av-snap-section">
@@ -542,6 +578,71 @@ onUnmounted(() => {
 .av-drawer-enter-from .av-snapshot-drawer,
 .av-drawer-leave-to .av-snapshot-drawer {
   transform: translateX(100%);
+}
+
+/* Demote section - desktop hidden, mobile shown */
+.av-snap-demote {
+  display: none;
+}
+
+.av-snap-demote-slider {
+  position: relative;
+  display: flex;
+  background: rgba(241, 245, 249, 0.9);
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.av-snap-demote-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  background: #fff;
+  border-radius: 7px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.av-snap-demote-btn {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.av-snap-demote-lv0.av-snap-demote-btn--active { color: #16a34a; }
+.av-snap-demote-lv1.av-snap-demote-btn--active { color: #d97706; }
+.av-snap-demote-lv2.av-snap-demote-btn--active { color: #dc2626; }
+
+.av-snap-demote-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.av-snap-demote-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+@media (max-width: 900px) {
+  .av-snap-demote {
+    display: block;
+  }
 }
 
 @media (max-width: 900px) {
