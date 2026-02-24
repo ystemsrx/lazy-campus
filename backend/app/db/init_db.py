@@ -23,6 +23,8 @@ def run_startup_migrations() -> None:
             for col in ('ban_publish', 'ban_accept', 'ban_contact'):
                 if col not in user_cols:
                     conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT 0'))
+            if 'id_number' not in user_cols:
+                conn.execute(text('ALTER TABLE users ADD COLUMN id_number VARCHAR(64) DEFAULT NULL'))
 
         if 'tasks' in tables:
             task_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))}

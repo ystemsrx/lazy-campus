@@ -469,6 +469,7 @@ def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut
         gender=user.gender.value if user.gender else None,
         display_name=display_name(user),
         avatar_url=user.avatar_url,
+        id_number=user.id_number,
         role=user.role.value,
         is_active=bool(user.is_active),
         is_banned=bool(user.is_banned),
@@ -1356,6 +1357,9 @@ def admin_update_user_profile(
     if 'gender' in data:
         gender = data.get('gender')
         user.gender = Gender(gender) if gender else None
+    if 'id_number' in data:
+        id_number = data.get('id_number')
+        user.id_number = id_number.strip() if isinstance(id_number, str) and id_number.strip() else None
     if 'role' in data:
         role_value = data.get('role')
         user.role = UserRole(role_value) if role_value else user.role

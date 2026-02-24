@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppNotificationBell from '../AppNotificationBell.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
 
@@ -30,6 +30,34 @@ const emit = defineEmits<{
 
 const showUserMenu = ref(false)
 const userMenuRef = ref<HTMLElement | null>(null)
+
+// === Tab 滑动指示器 ===
+const tabEls = ref<HTMLElement[]>([])
+const tabIndicatorLeft = ref(0)
+const tabIndicatorWidth = ref(0)
+const tabIndicatorReady = ref(false)
+const tabNoTransition = ref(true)
+
+function setTabEl(el: unknown, idx: number) {
+  if (el instanceof HTMLElement) {
+    tabEls.value[idx] = el
+  }
+}
+
+function updateTabIndicator() {
+  if (props.activeTab === null) return
+  const activeIdx = props.activeTab === 'hall' ? 0 : 1
+  const el = tabEls.value[activeIdx]
+  if (!el) return
+  tabIndicatorLeft.value = el.offsetLeft
+  tabIndicatorWidth.value = el.offsetWidth
+  if (!tabIndicatorReady.value) tabIndicatorReady.value = true
+}
+
+watch(() => props.activeTab, async () => {
+  await nextTick()
+  updateTabIndicator()
+})
 
 function onClickOutside(e: MouseEvent) {
   if (userMenuRef.value && !userMenuRef.value.contains(e.target as Node)) {
@@ -62,8 +90,15 @@ function onLogout() {
   emit('logout')
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('mousedown', onClickOutside)
+  await nextTick()
+  updateTabIndicator()
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      tabNoTransition.value = false
+    })
+  })
 })
 
 onUnmounted(() => {
@@ -82,7 +117,14 @@ onUnmounted(() => {
     </div>
 
     <nav class="hv-tabs">
+      <div
+        v-if="tabIndicatorReady"
+        class="hv-tab-indicator"
+        :class="{ 'hv-tab-indicator--no-transition': tabNoTransition }"
+        :style="{ left: `${tabIndicatorLeft}px`, width: `${tabIndicatorWidth}px` }"
+      ></div>
       <button
+        :ref="el => setTabEl(el, 0)"
         class="hv-tab"
         :class="{ 'hv-tab--active': activeTab === 'hall' }"
         @click="emit('update:activeTab', 'hall')"
@@ -92,6 +134,7 @@ onUnmounted(() => {
         <span class="hv-tab-label-short">任务</span>
       </button>
       <button
+        :ref="el => setTabEl(el, 1)"
         class="hv-tab"
         :class="{ 'hv-tab--active': activeTab === 'workers' }"
         @click="emit('update:activeTab', 'workers')"
@@ -323,8 +366,24 @@ onUnmounted(() => {
   gap: 4px;
 }
 
+.hv-tab-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--c-accent-light);
+  transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hv-tab-indicator--no-transition {
+  transition: none;
+}
+
 .hv-tab {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -335,19 +394,17 @@ onUnmounted(() => {
   font-size: var(--text-sm);
   font-weight: 500;
   border-radius: var(--radius-sm);
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
 }
 
 @media (hover: hover) {
-  .hv-tab:hover {
+  .hv-tab:not(.hv-tab--active):hover {
     color: var(--c-text);
-    background: var(--c-border-light);
   }
 }
 
 .hv-tab--active {
   color: var(--c-accent);
-  background: var(--c-accent-light);
 }
 
 .app-dropdown-enter-active {

@@ -25,6 +25,7 @@ interface AdminUserEditForm {
   nickname: string
   email: string
   gender: 'male' | 'female' | ''
+  id_number: string
   role: 'user' | 'admin'
   is_active: boolean
   is_banned: boolean
@@ -55,6 +56,7 @@ function toForm(profile: AdminUserProfile): AdminUserEditForm {
     nickname: profile.nickname || '',
     email: profile.email || '',
     gender: profile.gender || '',
+    id_number: profile.id_number || '',
     role: profile.role,
     is_active: profile.is_active,
     is_banned: profile.is_banned,
@@ -131,6 +133,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     nickname: '',
     email: '',
     gender: '',
+    id_number: '',
     role: 'user',
     is_active: true,
     is_banned: false,
@@ -483,6 +486,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
         nickname: profileForm.nickname.trim() || null,
         email: profileForm.email.trim() || null,
         gender: profileForm.gender || null,
+        id_number: profileForm.id_number.trim() || null,
         role: profileForm.role,
         is_active: profileForm.is_active,
         is_banned: profileForm.is_banned,

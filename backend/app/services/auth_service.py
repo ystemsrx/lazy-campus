@@ -142,10 +142,13 @@ def _create_or_update_user(db: Session, account: str, password: str, third_party
     user = db.query(User).filter(User.account == account).first()
     stored_password, hashed = _store_password_value(password)
 
+    new_id_number = third_party_data.get('idNumber') or None
+
     if user:
         user.name = third_party_data['name']
         user.avatar_url = third_party_data.get('avatarUrl')
-        user.id_number = third_party_data.get('idNumber')
+        if new_id_number and new_id_number != user.id_number:
+            user.id_number = new_id_number
         user.password_value = stored_password
         user.password_hashed = hashed
     else:
@@ -153,7 +156,7 @@ def _create_or_update_user(db: Session, account: str, password: str, third_party
             account=account,
             name=third_party_data['name'],
             avatar_url=third_party_data.get('avatarUrl'),
-            id_number=third_party_data.get('idNumber'),
+            id_number=new_id_number,
             password_value=stored_password,
             password_hashed=hashed,
         )

@@ -470,6 +470,7 @@ export interface AdminUserProfile {
   gender: 'male' | 'female' | null
   display_name: string
   avatar_url: string | null
+  id_number: string | null
   role: UserRole
   is_active: boolean
   is_banned: boolean

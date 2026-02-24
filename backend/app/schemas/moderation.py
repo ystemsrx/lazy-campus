@@ -417,6 +417,7 @@ class AdminUserProfileOut(BaseModel):
     gender: str | None
     display_name: str
     avatar_url: str | None
+    id_number: str | None = None
     role: str
     is_active: bool
     is_banned: bool
@@ -466,6 +467,7 @@ class AdminUserUpdateRequest(BaseModel):
     nickname: str | None = Field(default=None, max_length=100)
     email: str | None = Field(default=None, max_length=255)
     gender: str | None = Field(default=None, pattern='^(male|female)$')
+    id_number: str | None = Field(default=None, max_length=64)
     role: str | None = Field(default=None, pattern='^(user|admin)$')
     is_active: bool | None = None
     is_banned: bool | None = None

@@ -66,14 +66,96 @@ watch([() => props.selectedCategory, () => props.taskSort], async () => {
   }, 30)
 })
 
+// === 桌面端 Sidebar 滑动指示器 ===
+const sidebarItemEls = ref<HTMLElement[]>([])
+const sidebarIndicatorTop = ref(0)
+const sidebarIndicatorHeight = ref(0)
+const sidebarIndicatorReady = ref(false)
+const sidebarNoTransition = ref(true)
+
+function setSidebarItem(el: unknown, idx: number) {
+  if (el instanceof HTMLElement) {
+    sidebarItemEls.value[idx] = el
+  }
+}
+
+function updateSidebarIndicator() {
+  const activeIdx =
+    props.selectedCategory === null
+      ? 0
+      : props.categories.findIndex(c => c.id === props.selectedCategory) + 1
+  const el = sidebarItemEls.value[activeIdx]
+  if (!el) return
+  sidebarIndicatorTop.value = el.offsetTop
+  sidebarIndicatorHeight.value = el.offsetHeight
+  if (!sidebarIndicatorReady.value) sidebarIndicatorReady.value = true
+}
+
+// === 移动端 Chips 滑动指示器 ===
+const chipsContainerRef = ref<HTMLElement | null>(null)
+const chipItemEls = ref<HTMLElement[]>([])
+const chipsIndicatorLeft = ref(0)
+const chipsIndicatorWidth = ref(0)
+const chipsIndicatorReady = ref(false)
+const chipsNoTransition = ref(true)
+
+function setChipItem(el: unknown, idx: number) {
+  if (el instanceof HTMLElement) {
+    chipItemEls.value[idx] = el
+  }
+}
+
+function scrollChipIntoView(el: HTMLElement) {
+  const container = chipsContainerRef.value
+  if (!container) return
+  const elLeft = el.offsetLeft
+  const elRight = elLeft + el.offsetWidth
+  const scrollLeft = container.scrollLeft
+  const containerWidth = container.clientWidth
+  if (elLeft < scrollLeft) {
+    container.scrollTo({ left: elLeft - 8, behavior: 'smooth' })
+  } else if (elRight > scrollLeft + containerWidth) {
+    container.scrollTo({ left: elRight - containerWidth + 8, behavior: 'smooth' })
+  }
+}
+
+function updateChipsIndicator(scrollActive = false) {
+  const activeIdx =
+    props.selectedCategory === null
+      ? 0
+      : props.categories.findIndex(c => c.id === props.selectedCategory) + 1
+  const el = chipItemEls.value[activeIdx]
+  if (!el) return
+  chipsIndicatorLeft.value = el.offsetLeft
+  chipsIndicatorWidth.value = el.offsetWidth
+  if (!chipsIndicatorReady.value) chipsIndicatorReady.value = true
+  if (scrollActive) scrollChipIntoView(el)
+}
+
+watch([() => props.selectedCategory, () => props.categories], async () => {
+  await nextTick()
+  updateSidebarIndicator()
+  updateChipsIndicator(true)
+})
+
 function onClickOutside(e: MouseEvent) {
   if (mobileSortRef.value && !mobileSortRef.value.contains(e.target as Node)) {
     showMobileSort.value = false
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('mousedown', onClickOutside)
+  await nextTick()
+  updateSidebarIndicator()
+  updateChipsIndicator()
+  // 两帧后启用动画，避免初始定位触发过渡
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      sidebarNoTransition.value = false
+      chipsNoTransition.value = false
+    })
+  })
 })
 
 onUnmounted(() => {
@@ -119,30 +201,56 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="hv-category-chips">
-      <button class="hv-chip" :class="{ 'hv-chip--active': selectedCategory === null }" @click="setCategory(null)">
-        全部 ({{ totalTaskCount }})
-      </button>
-      <button
-        v-for="c in categories"
-        :key="c.id"
-        class="hv-chip"
-        :class="{ 'hv-chip--active': selectedCategory === c.id }"
-        @click="setCategory(c.id)"
-      >
-        {{ c.name }} ({{ c.task_count }})
-      </button>
+    <div class="hv-chips-bar">
+      <div ref="chipsContainerRef" class="hv-category-chips">
+        <div
+          v-if="chipsIndicatorReady"
+          class="hv-chips-indicator"
+          :class="{ 'hv-chips-indicator--no-transition': chipsNoTransition }"
+          :style="{ left: `${chipsIndicatorLeft}px`, width: `${chipsIndicatorWidth}px` }"
+        ></div>
+        <button
+          :ref="el => setChipItem(el, 0)"
+          class="hv-chip"
+          :class="{ 'hv-chip--active': selectedCategory === null }"
+          @click="setCategory(null)"
+        >
+          全部
+        </button>
+        <button
+          v-for="(c, idx) in categories"
+          :key="c.id"
+          :ref="el => setChipItem(el, idx + 1)"
+          class="hv-chip"
+          :class="{ 'hv-chip--active': selectedCategory === c.id }"
+          @click="setCategory(c.id)"
+        >
+          {{ c.name }}
+        </button>
+      </div>
     </div>
 
     <div class="hv-hall-layout">
       <aside class="hv-sidebar">
-        <button class="hv-sidebar__item" :class="{ 'hv-sidebar__item--active': selectedCategory === null }" @click="setCategory(null)">
+        <div
+          v-if="sidebarIndicatorReady"
+          class="hv-sidebar__indicator"
+          :class="{ 'hv-sidebar__indicator--no-transition': sidebarNoTransition }"
+          :style="{ top: `${sidebarIndicatorTop}px`, height: `${sidebarIndicatorHeight}px` }"
+        ></div>
+        <button
+          :ref="el => setSidebarItem(el, 0)"
+          class="hv-sidebar__item"
+          :class="{ 'hv-sidebar__item--active': selectedCategory === null }"
+          @click="setCategory(null)"
+        >
           <i class="fa-solid fa-layer-group"></i> 全部任务
           <span class="hv-sidebar__count">({{ totalTaskCount }})</span>
         </button>
         <button
-          v-for="c in categories"
+          v-for="(c, idx) in categories"
           :key="c.id"
+          :ref="el => setSidebarItem(el, idx + 1)"
           class="hv-sidebar__item"
           :class="{ 'hv-sidebar__item--active': selectedCategory === c.id }"
           @click="setCategory(c.id)"
@@ -308,43 +416,68 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.hv-category-chips {
+.hv-chips-bar {
   display: none;
+}
+
+.hv-category-chips {
+  position: relative;
+  display: flex;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  gap: 8px;
-  padding: 10px 0 2px;
   scrollbar-width: none;
+  background: var(--c-border-light);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 0;
 }
 
 .hv-category-chips::-webkit-scrollbar {
   display: none;
 }
 
+.hv-chips-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+  background: var(--c-surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.10), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hv-chips-indicator--no-transition {
+  transition: none;
+}
+
 .hv-chip {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   padding: 6px 16px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--c-border);
-  background: var(--c-surface);
+  border-radius: 999px;
+  border: none;
+  background: transparent;
   color: var(--c-text-secondary);
   font-size: var(--text-sm);
   font-weight: 500;
   font-family: var(--font-sans);
   white-space: nowrap;
-  transition: all var(--dur-fast) var(--ease);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
 }
 
 @media (hover: hover) {
   .hv-chip:hover {
-    border-color: var(--c-text-muted);
+    color: var(--c-text);
   }
 }
 
 .hv-chip--active {
-  background: var(--c-accent);
-  color: var(--c-text-inverse);
-  border-color: var(--c-accent);
+  color: var(--c-accent);
+  font-weight: 600;
 }
 
 .hv-hall-layout {
@@ -358,17 +491,34 @@ onUnmounted(() => {
 }
 
 .hv-sidebar {
+  position: sticky;
+  top: 84px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   width: 160px;
   flex-shrink: 0;
-  position: sticky;
-  top: 84px;
   align-self: flex-start;
 }
 
+.hv-sidebar__indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: var(--radius-md);
+  background: var(--c-accent-light);
+  transition: top 0.28s cubic-bezier(0.4, 0, 0.2, 1), height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hv-sidebar__indicator--no-transition {
+  transition: none;
+}
+
 .hv-sidebar__item {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -381,20 +531,18 @@ onUnmounted(() => {
   font-weight: 500;
   font-family: var(--font-sans);
   text-align: left;
-  transition: all var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
   white-space: nowrap;
   cursor: pointer;
 }
 
 @media (hover: hover) {
-  .hv-sidebar__item:hover {
-    background: var(--c-border-light);
+  .hv-sidebar__item:not(.hv-sidebar__item--active):hover {
     color: var(--c-text);
   }
 }
 
 .hv-sidebar__item--active {
-  background: var(--c-accent-light);
   color: var(--c-accent);
   font-weight: 600;
 }
@@ -464,8 +612,8 @@ onUnmounted(() => {
     max-width: none;
   }
 
-  .hv-category-chips {
-    display: flex;
+  .hv-chips-bar {
+    display: block;
     position: -webkit-sticky;
     position: sticky;
     top: 60px;

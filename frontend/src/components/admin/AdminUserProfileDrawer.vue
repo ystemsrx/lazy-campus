@@ -292,15 +292,21 @@ async function openTaskSnapshot(taskId: number) {
                   />
                 </label>
               </div>
-              <label class="form-group">
-                <span class="form-label">角色</span>
-                <AppDropdown
-                  v-model="vm.profileForm.role"
-                  :options="roleOptions"
-                  width="100%"
-                  min-width="100%"
-                />
-              </label>
+              <div class="aupd-row">
+                <label class="form-group">
+                  <span class="form-label">角色</span>
+                  <AppDropdown
+                    v-model="vm.profileForm.role"
+                    :options="roleOptions"
+                    width="100%"
+                    min-width="100%"
+                  />
+                </label>
+                <label class="form-group">
+                  <span class="form-label">身份证号</span>
+                  <input v-model="vm.profileForm.id_number" class="form-input" placeholder="未录入" />
+                </label>
+              </div>
             </section>
 
             <section class="aupd-panel card">
