@@ -48,7 +48,7 @@ export async function fetchUserReviews(userId: number, role: 'publisher' | 'work
 }
 
 export async function fetchUserPublic(userId: number) {
-  const { data } = await api.get<{ id: number; display_name: string; avatar_url: string | null; gender: 'male' | 'female' | null }>(`/users/${userId}`)
+  const { data } = await api.get<{ id: number; display_name: string; avatar_url: string | null; gender: 'male' | 'female' | null; last_active: string | null }>(`/users/${userId}`)
   return data
 }
 

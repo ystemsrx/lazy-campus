@@ -13,6 +13,7 @@ class UserPublic(BaseModel):
     display_name: str
     avatar_url: str | None
     gender: Gender | None = None
+    last_active: datetime | None = None
     worker_rating_avg: float
     worker_rating_count: int
     publisher_rating_avg: float

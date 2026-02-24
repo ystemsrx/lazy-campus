@@ -176,7 +176,7 @@ export function useChatSync(options: UseChatSyncOptions) {
             peer_name: userInfo.display_name,
             peer_avatar: userInfo.avatar_url,
             peer_gender: userInfo.gender ?? null,
-            peer_last_active: null,
+            peer_last_active: userInfo.last_active ?? null,
             task_id: taskId,
             task_title: taskTitle,
             task_price: taskPrice,
