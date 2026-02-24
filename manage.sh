@@ -19,6 +19,13 @@ FRONTEND_DIST="$FRONTEND_DIR/dist"
 LOG_DIR="$PROJECT_DIR/logs"
 PID_FILE="$PROJECT_DIR/.pids"
 
+# ── 加载部署层 .env（如果存在）──────────────────────────────────────────────
+if [ -f "$PROJECT_DIR/.env" ]; then
+  set -a
+  source "$PROJECT_DIR/.env"
+  set +a
+fi
+
 # ── 域名 & 端口配置（按需修改）──────────────────────────────────────────────
 API_DOMAIN="${API_DOMAIN:-api.example.com}"
 LINK_DOMAIN="${LINK_DOMAIN:-link.example.com}"
@@ -33,10 +40,10 @@ BACKEND_WORKERS="${BACKEND_WORKERS:-1}"   # 小机子建议 1；需要可改 2/4
 
 # ── 颜色输出 ────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
-success() { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+info()    { echo -e "${CYAN}[INFO]${NC}  $*" >&2; }
+success() { echo -e "${GREEN}[OK]${NC}    $*" >&2; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $*" >&2; }
+error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || error "缺少命令：$1"; }
 
