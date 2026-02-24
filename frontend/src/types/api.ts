@@ -235,7 +235,7 @@ export interface Report {
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'task_canceled' | 'punishment' | 'admin_notice' | 'admin_task_notice'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'task_canceled' | 'punishment' | 'admin_notice' | 'admin_task_notice' | 'admin_warning' | 'admin_success' | 'admin_info' | 'admin_announcement'
 export type DismissType = 'read' | 'action' | 'source' | 'persistent'
 
 export interface AppNotification {
@@ -417,6 +417,16 @@ export interface AdminChatAttachment {
 export interface AdminPushNotificationResult {
   sent_count: number
   target_user_ids: number[]
+}
+
+export interface AdminSentNotification {
+  title: string
+  description: string | null
+  type: string
+  dismiss_type: string
+  remaining_count: number
+  read_count: number
+  sent_at: string
 }
 
 export interface AdminMiniUser {

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_user
@@ -15,20 +15,9 @@ from app.schemas.notification import NotificationOut
 router = APIRouter(prefix='/notifications', tags=['notifications'])
 
 
-@router.get('', response_model=list[NotificationOut])
-def list_notifications(
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-) -> list[NotificationOut]:
-    db_rows = (
-        db.query(Notification)
-        .filter(Notification.user_id == user.id, Notification.is_read == False)  # noqa: E712
-        .order_by(desc(Notification.created_at))
-        .limit(50)
-        .all()
-    )
-    result: list[NotificationOut] = [NotificationOut.model_validate(n) for n in db_rows]
-
+def _sync_task_expired_notifications(user: User, db: Session) -> None:
+    """Ensure task_expired notifications exist as real DB records
+    and clean up stale ones for tasks no longer expired."""
     now = datetime.utcnow()
     expired_tasks = (
         db.query(Task)
@@ -40,22 +29,65 @@ def list_notifications(
         )
         .all()
     )
+    expired_task_ids = {t.id for t in expired_tasks}
+
+    existing_rows = (
+        db.query(Notification.related_task_id)
+        .filter(
+            Notification.user_id == user.id,
+            Notification.type == 'task_expired',
+        )
+        .all()
+    )
+    existing_ids = {r[0] for r in existing_rows if r[0] is not None}
+
+    changed = False
+
     for task in expired_tasks:
-        result.append(
-            NotificationOut(
-                id=-(task.id),
+        if task.id not in existing_ids:
+            db.add(Notification(
+                user_id=user.id,
                 type='task_expired',
                 title='任务已过期',
                 description=f'「{task.title}」的截止时间已过，请及时处理',
                 related_task_id=task.id,
-                dismiss_type='action',
+                dismiss_type='persistent',
                 is_read=False,
-                created_at=task.deadline,
-            )
-        )
+                created_at=task.deadline or now,
+            ))
+            changed = True
 
-    result.sort(key=lambda x: x.created_at, reverse=True)
-    return result
+    stale_ids = existing_ids - expired_task_ids
+    if stale_ids:
+        db.query(Notification).filter(
+            Notification.user_id == user.id,
+            Notification.type == 'task_expired',
+            Notification.related_task_id.in_(stale_ids),
+        ).delete(synchronize_session=False)
+        changed = True
+
+    if changed:
+        db.commit()
+
+
+@router.get('', response_model=list[NotificationOut])
+def list_notifications(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> list[NotificationOut]:
+    _sync_task_expired_notifications(user, db)
+
+    db_rows = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == user.id,
+            or_(Notification.is_read == False, Notification.dismiss_type == 'persistent'),  # noqa: E712
+        )
+        .order_by(desc(Notification.created_at))
+        .limit(50)
+        .all()
+    )
+    return [NotificationOut.model_validate(n) for n in db_rows]
 
 
 @router.get('/count')
@@ -63,27 +95,18 @@ def get_unread_count(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    _sync_task_expired_notifications(user, db)
+
     db_count = (
         db.query(func.count(Notification.id))
-        .filter(Notification.user_id == user.id, Notification.is_read.is_(False))
-        .scalar()
-        or 0
-    )
-
-    now = datetime.utcnow()
-    expired_count = (
-        db.query(func.count(Task.id))
         .filter(
-            Task.publisher_id == user.id,
-            Task.status.in_([TaskStatus.OPEN, TaskStatus.IN_PROGRESS]),
-            Task.deadline.isnot(None),
-            Task.deadline < now,
+            Notification.user_id == user.id,
+            or_(Notification.is_read.is_(False), Notification.dismiss_type == 'persistent'),
         )
         .scalar()
         or 0
     )
-
-    return {'count': db_count + expired_count}
+    return {'count': db_count}
 
 
 @router.post('/{notification_id}/read')
@@ -95,9 +118,10 @@ def mark_as_read(
     notification = db.get(Notification, notification_id)
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=404, detail='Notification not found')
-    if notification.dismiss_type not in ('read',):
-        raise HTTPException(status_code=400, detail='This notification cannot be dismissed by reading')
-    db.delete(notification)
+    if notification.dismiss_type == 'read':
+        db.delete(notification)
+    else:
+        notification.is_read = True
     db.commit()
     return {'message': 'ok'}
 
@@ -111,6 +135,11 @@ def mark_all_as_read(
         Notification.user_id == user.id,
         Notification.dismiss_type == 'read',
     ).delete()
+    db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.dismiss_type != 'read',
+        Notification.is_read == False,  # noqa: E712
+    ).update({'is_read': True})
     db.commit()
     return {'message': 'ok'}
 
@@ -140,7 +169,7 @@ def delete_notification(
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=404, detail='Notification not found')
     if notification.dismiss_type == 'persistent':
-        raise HTTPException(status_code=400, detail='此通知在处罚解除前不可删除')
+        raise HTTPException(status_code=400, detail='此通知无法手动删除')
     db.delete(notification)
     db.commit()
     return {'message': 'ok'}

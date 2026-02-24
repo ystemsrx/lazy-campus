@@ -127,6 +127,11 @@ async function loadTabData(tab: AdminTabKey, force = false) {
     loaded.chats = true
     return
   }
+  if (tab === 'notifications') {
+    await notificationsModel.loadSentNotifications()
+    loaded.notifications = true
+    return
+  }
   if (tab === 'categories') {
     await categoriesModel.loadCategories()
     loaded.categories = true

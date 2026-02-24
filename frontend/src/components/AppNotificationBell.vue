@@ -7,7 +7,9 @@ import {
   Bell,
   Check,
   CheckCircle,
+  Info,
   LogOut,
+  Megaphone,
   MessageCircle,
   ShieldCheck,
   UserCheck,
@@ -32,7 +34,7 @@ const notifications = computed(() => notifStore.notifications)
 const unreadCount = computed(() => notifStore.unreadCount)
 
 const hasReadableUnread = computed(() =>
-  notifications.value.some(n => !n.is_read && n.dismiss_type === 'read'),
+  notifications.value.some(n => !n.is_read),
 )
 
 const displayedNotifications = computed(() => {
@@ -66,7 +68,7 @@ async function markAllRead() {
 function handleClick(n: AppNotification) {
   isOpen.value = false
 
-  if (n.dismiss_type === 'read' && !n.is_read && n.id > 0) {
+  if (!n.is_read && n.id > 0) {
     notifStore.markRead(n.id).catch(() => {})
   }
 
@@ -102,6 +104,10 @@ const iconMap: Record<NotificationType, any> = {
   punishment: Ban,
   admin_notice: Bell,
   admin_task_notice: AlertTriangle,
+  admin_warning: AlertTriangle,
+  admin_success: CheckCircle,
+  admin_info: Info,
+  admin_announcement: Megaphone,
 }
 
 function getIcon(type: string) {
@@ -180,7 +186,7 @@ onUnmounted(() => {
                   :class="{ 'notif-item__desc--unread': !n.is_read }"
                 >{{ n.description }}</p>
               </div>
-              <span v-if="n.dismiss_type === 'persistent'" class="notif-item__persistent-tag">
+              <span v-if="n.dismiss_type !== 'read' && n.dismiss_type !== 'source'" class="notif-item__persistent-tag">
                 <i class="fa-solid fa-thumbtack"></i>
               </span>
               <button
@@ -444,6 +450,36 @@ onUnmounted(() => {
 .notif-icon--punishment {
   background: #fef2f2;
   color: #ef4444;
+}
+
+.notif-icon--admin_notice {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.notif-icon--admin_task_notice {
+  background: #fff7ed;
+  color: #f59e0b;
+}
+
+.notif-icon--admin_warning {
+  background: #fff7ed;
+  color: #f59e0b;
+}
+
+.notif-icon--admin_success {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.notif-icon--admin_info {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.notif-icon--admin_announcement {
+  background: #faf5ff;
+  color: #a855f7;
 }
 
 .notif-item__persistent-tag {

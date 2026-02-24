@@ -25,6 +25,8 @@ from app.schemas.moderation import (
     AdminMiniUser,
     AdminPushNotificationOut,
     AdminPushNotificationRequest,
+    AdminSentNotificationItem,
+    AdminSentNotificationListResponse,
     AdminRiskUser,
     AdminTaskItem,
     AdminTaskListResponse,
@@ -2132,6 +2134,66 @@ def admin_push_notification(
     )
     db.commit()
     return AdminPushNotificationOut(sent_count=len(valid_ids), target_user_ids=sorted(valid_ids))
+
+
+@router.get('/admin/notifications/sent', response_model=AdminSentNotificationListResponse)
+def admin_list_sent_notifications(
+    admin: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminSentNotificationListResponse:
+    rows = (
+        db.query(
+            Notification.title,
+            Notification.description,
+            Notification.type,
+            Notification.dismiss_type,
+            func.count().label('remaining_count'),
+            func.sum(case((Notification.is_read.is_(True), 1), else_=0)).label('read_count'),
+            func.min(Notification.created_at).label('sent_at'),
+        )
+        .filter(Notification.type.in_(['admin_notice', 'admin_warning', 'admin_success', 'admin_info', 'admin_announcement']))
+        .group_by(Notification.title, Notification.description, Notification.type, Notification.dismiss_type)
+        .order_by(func.min(Notification.created_at).desc())
+        .limit(30)
+        .all()
+    )
+    items = [
+        AdminSentNotificationItem(
+            title=r.title,
+            description=r.description,
+            type=r.type,
+            dismiss_type=r.dismiss_type,
+            remaining_count=int(r.remaining_count),
+            read_count=int(r.read_count or 0),
+            sent_at=r.sent_at,
+        )
+        for r in rows
+    ]
+    return AdminSentNotificationListResponse(items=items)
+
+
+@router.delete('/admin/notifications/sent')
+def admin_delete_sent_notification(
+    title: str = Query(...),
+    type: str = Query(...),
+    admin: AuthContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    count = db.query(Notification).filter(
+        Notification.title == title,
+        Notification.type == type,
+    ).delete()
+    db.add(
+        AdminActionLog(
+            admin_identifier=admin.admin_account or 'admin',
+            action='delete_notification_batch',
+            target_type='notification',
+            target_id='batch',
+            detail=f'deleted={count}, title={title}',
+        )
+    )
+    db.commit()
+    return {'message': 'ok', 'deleted_count': count}
 
 
 @router.get('/admin/action-logs', response_model=AdminActionLogListResponse)

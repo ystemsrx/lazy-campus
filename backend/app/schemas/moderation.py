@@ -362,6 +362,20 @@ class AdminPushNotificationOut(BaseModel):
     target_user_ids: list[int]
 
 
+class AdminSentNotificationItem(BaseModel):
+    title: str
+    description: str | None = None
+    type: str
+    dismiss_type: str
+    remaining_count: int
+    read_count: int
+    sent_at: datetime
+
+
+class AdminSentNotificationListResponse(BaseModel):
+    items: list[AdminSentNotificationItem]
+
+
 class AdminMiniUser(BaseModel):
     id: int
     account: str

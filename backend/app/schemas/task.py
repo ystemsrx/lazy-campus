@@ -1,8 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import ContactVisibility, Gender, RatingTargetRole, TaskStatus
+
+
+def _to_naive_utc(v: datetime | None) -> datetime | None:
+    """将带时区的 datetime 转为 naive UTC，无时区则原样返回。"""
+    if v is not None and v.tzinfo is not None:
+        v = v.astimezone(timezone.utc).replace(tzinfo=None)
+    return v
 
 
 class CategoryCreate(BaseModel):
@@ -35,6 +42,11 @@ class TaskCreate(BaseModel):
     icon: str | None = None
     captcha_token: str | None = Field(default=None, min_length=8, max_length=64)
 
+    @field_validator('deadline', mode='after')
+    @classmethod
+    def normalize_deadline(cls, v: datetime | None) -> datetime | None:
+        return _to_naive_utc(v)
+
 
 class TaskUpdate(BaseModel):
     title: str | None = None
@@ -47,6 +59,11 @@ class TaskUpdate(BaseModel):
     contact_info: str | None = None
     required_gender: Gender | None = None
     icon: str | None = None
+
+    @field_validator('deadline', mode='after')
+    @classmethod
+    def normalize_deadline(cls, v: datetime | None) -> datetime | None:
+        return _to_naive_utc(v)
 
 
 class TaskOut(BaseModel):

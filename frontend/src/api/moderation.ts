@@ -7,6 +7,7 @@ import type {
   AdminChatMessage,
   AdminDashboardData,
   AdminPushNotificationResult,
+  AdminSentNotification,
   AdminTaskChatConversationListResponse,
   AdminTaskChatMessage,
   AdminTaskListResponse,
@@ -291,6 +292,16 @@ export async function pushAdminNotification(payload: {
   related_user_id?: number | null
 }) {
   const { data } = await api.post<AdminPushNotificationResult>('/moderation/admin/notifications/push', payload)
+  return data
+}
+
+export async function fetchAdminSentNotifications() {
+  const { data } = await api.get<{ items: AdminSentNotification[] }>('/moderation/admin/notifications/sent')
+  return data.items
+}
+
+export async function deleteAdminSentNotification(title: string, type: string) {
+  const { data } = await api.delete('/moderation/admin/notifications/sent', { params: { title, type } })
   return data
 }
 
