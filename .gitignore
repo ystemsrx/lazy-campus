@@ -16,5 +16,9 @@ Thumbs.db
 
 # Uploads
 backend/uploads/
+frontend/public/
 
 AGENTS.md
+
+*.pids
+logs/
