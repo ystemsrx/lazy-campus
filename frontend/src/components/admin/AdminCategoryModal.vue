@@ -1,10 +1,11 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   show: boolean
   isEditing: boolean
   name: string
   description: string
-  sortOrder: number
   submitting: boolean
 }>()
 
@@ -13,8 +14,9 @@ const emit = defineEmits<{
   confirm: []
   'update:name': [value: string]
   'update:description': [value: string]
-  'update:sort-order': [value: number]
 }>()
+
+const descLength = computed(() => props.description.length)
 
 function updateName(event: Event) {
   const target = event.target as HTMLInputElement
@@ -22,75 +24,71 @@ function updateName(event: Event) {
 }
 
 function updateDescription(event: Event) {
-  const target = event.target as HTMLInputElement
+  const target = event.target as HTMLTextAreaElement
   emit('update:description', target.value)
-}
-
-function updateSortOrder(event: Event) {
-  const target = event.target as HTMLInputElement
-  emit('update:sort-order', Number(target.value))
 }
 </script>
 
 <template>
-  <Transition name="fade">
+  <Teleport to="body">
+    <Transition name="modal">
     <div v-if="show" class="av-modal-overlay" @click.self="$emit('close')">
       <div class="av-modal">
         <div class="av-modal__header">
           <h3>{{ isEditing ? '编辑类别' : '添加类别' }}</h3>
-          <button class="btn btn-ghost btn-sm" @click="$emit('close')">
+          <button class="av-modal__close" @click="$emit('close')">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
-        <div class="av-modal__body">
-          <div class="form-group">
-            <label class="form-label">名称</label>
+        <form class="av-modal__body" @submit.prevent="$emit('confirm')">
+          <div class="av-modal__field">
+            <label class="av-modal__label">
+              类别名称
+              <span class="av-modal__required">*</span>
+            </label>
             <input
               :value="name"
-              class="form-input"
-              placeholder="输入类别名称"
+              class="av-modal__input"
+              placeholder="例如：跑腿代购"
               @input="updateName"
-              @keyup.enter="$emit('confirm')"
             />
           </div>
-          <div class="form-group">
-            <label class="form-label">描述（选填）</label>
-            <input
+          <div class="av-modal__field">
+            <label class="av-modal__label av-modal__label--flex">
+              <span>类别描述（选填）</span>
+              <span class="av-modal__counter">{{ descLength }}/100</span>
+            </label>
+            <textarea
               :value="description"
-              class="form-input"
-              placeholder="输入类别描述"
+              class="av-modal__input av-modal__textarea"
+              rows="3"
+              maxlength="100"
+              placeholder="简短描述该类别包含哪些任务，帮助用户准确选择..."
               @input="updateDescription"
             />
+            <p class="av-modal__field-hint">此描述将在用户发布任务选择类别时作为提示信息显示。</p>
           </div>
-          <div class="form-group">
-            <label class="form-label">排序（越小越靠前）</label>
-            <input
-              :value="sortOrder"
-              class="form-input"
-              type="number"
-              @input="updateSortOrder"
-            />
-          </div>
-        </div>
+        </form>
         <div class="av-modal__footer">
           <button class="btn btn-outline btn-sm" @click="$emit('close')">取消</button>
           <button class="btn btn-primary btn-sm" :disabled="submitting" @click="$emit('confirm')">
-            {{ submitting ? '保存中…' : '保存' }}
+            {{ submitting ? '保存中…' : isEditing ? '保存修改' : '确认创建' }}
           </button>
         </div>
       </div>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
-<style scoped>
+<style>
 .av-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -98,19 +96,11 @@ function updateSortOrder(event: Event) {
 }
 
 .av-modal {
-  background: var(--c-surface);
-  border-radius: var(--radius-2xl);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+  background: var(--c-surface, #fff);
+  border-radius: 16px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.12);
   width: min(440px, 100%);
   overflow: hidden;
-  animation: av-modal-in 0.3s var(--ease);
-}
-
-@keyframes av-modal-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.97);
-  }
 }
 
 .av-modal__header {
@@ -127,8 +117,94 @@ function updateSortOrder(event: Event) {
   font-weight: 700;
 }
 
+.av-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 200ms ease, background 200ms ease;
+}
+
+.av-modal__close:hover {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.08);
+}
+
 .av-modal__body {
   padding: 24px;
+}
+
+.av-modal__field {
+  margin-bottom: 20px;
+}
+
+.av-modal__field:last-child {
+  margin-bottom: 0;
+}
+
+.av-modal__label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.av-modal__label--flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.av-modal__required {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+.av-modal__counter {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.av-modal__input {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--c-text);
+  background: #fff;
+  outline: none;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.av-modal__input::placeholder {
+  color: #94a3b8;
+}
+
+.av-modal__input:focus {
+  border-color: var(--c-accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.av-modal__textarea {
+  resize: none;
+  line-height: 1.5;
+}
+
+.av-modal__field-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .av-modal__footer {
@@ -139,13 +215,48 @@ function updateSortOrder(event: Event) {
   border-top: 1px solid rgba(241, 245, 249, 0.8);
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity var(--dur-fast) var(--ease);
+/* ======== 过渡动画 ======== */
+
+.modal-enter-active {
+  transition: opacity 300ms ease-out;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.modal-enter-active .av-modal {
+  animation: modal-slide-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.modal-leave-active {
+  transition: opacity 200ms ease-in;
+}
+
+.modal-leave-active .av-modal {
+  animation: modal-slide-out 200ms ease-in both;
+}
+
+.modal-enter-from,
+.modal-leave-to {
   opacity: 0;
+}
+
+@keyframes modal-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
 }
 </style>

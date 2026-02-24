@@ -79,6 +79,35 @@ export function useAdminCategories(showToast: AppToastNotifier) {
     }
   }
 
+  async function saveSortOrder(orderedIds: number[]) {
+    // orderedIds 是拖拽后的 id 排列顺序（原始顺序，sort_order 字段尚未改写）
+    const snapshot = categoryList.value.slice()
+    const idToCategory = new Map(snapshot.map(c => [c.id, c]))
+
+    try {
+      await Promise.all(
+        orderedIds.map((id, i) => {
+          const cat = idToCategory.get(id)
+          if (!cat) return Promise.resolve()
+          return updateCategory(id, {
+            name: cat.name,
+            description: cat.description || undefined,
+            sort_order: i + 1,
+          })
+        }),
+      )
+      // 本地同步新顺序，避免重新请求
+      categoryList.value = orderedIds
+        .map(id => idToCategory.get(id))
+        .filter((c): c is Category => !!c)
+        .map((cat, i) => ({ ...cat, sort_order: i + 1 }))
+      showToast('排序已保存', 'success')
+    } catch (error: unknown) {
+      showToast(extractError(error, '保存排序失败'), 'error')
+      await loadCategories()
+    }
+  }
+
   async function handleDeleteCategory(category: Category) {
     const warnings: string[] = []
     if (category.task_count > 0) {
@@ -118,6 +147,7 @@ export function useAdminCategories(showToast: AppToastNotifier) {
     openCategoryModal,
     closeCategoryModal,
     submitCategory,
+    saveSortOrder,
     handleDeleteCategory,
   }
 }
