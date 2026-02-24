@@ -539,4 +539,5 @@ export interface AdminActionLogListResponse {
   page: number
   page_size: number
   items: AdminActionLogItem[]
+  distinct_actions: string[]
 }

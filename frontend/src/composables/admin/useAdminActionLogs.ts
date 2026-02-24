@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 
 import { fetchAdminActionLogs } from '../../api/moderation'
 import type { AdminActionLogItem } from '../../types/api'
@@ -14,13 +14,9 @@ export function useAdminActionLogs(showToast: AppToastNotifier) {
   const page = ref(1)
   const total = ref(0)
   const logs = ref<AdminActionLogItem[]>([])
+  const actionOptions = ref<string[]>(['all'])
 
-  const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
-
-  const actionOptions = computed(() => {
-    const set = new Set(logs.value.map(l => l.action))
-    return ['all', ...Array.from(set).sort()]
-  })
+  const totalPages = ref(1)
 
   async function loadLogs() {
     loading.value = true
@@ -33,6 +29,10 @@ export function useAdminActionLogs(showToast: AppToastNotifier) {
       })
       logs.value = data.items
       total.value = data.total
+      totalPages.value = Math.max(1, Math.ceil(data.total / PAGE_SIZE))
+      if (data.distinct_actions && data.distinct_actions.length > 0) {
+        actionOptions.value = ['all', ...data.distinct_actions]
+      }
     } catch (error: unknown) {
       showToast(extractError(error, '加载操作日志失败'), 'error')
     } finally {

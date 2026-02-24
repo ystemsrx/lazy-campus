@@ -10,7 +10,8 @@ import {
   removeAdminUserBlacklist,
   updateAdminUserProfile,
 } from '../../api/moderation'
-import type { AdminBlacklistItem, AdminTaskItem, AdminUserItem, AdminUserProfile } from '../../types/api'
+import { fetchCategories } from '../../api/tasks'
+import type { AdminBlacklistItem, AdminTaskItem, AdminUserItem, AdminUserProfile, Category } from '../../types/api'
 import { extractError } from '../../utils/error'
 import { localToUTC, utcToLocal } from '../../utils/time'
 import type { AppToastNotifier } from '../useAppToast'
@@ -45,7 +46,7 @@ interface AdminUserEditForm {
   worker_phone: string
   worker_wechat: string
   worker_show_contact: boolean
-  worker_skill_tag_ids_text: string
+  worker_skill_tag_ids: number[]
 }
 
 function toForm(profile: AdminUserProfile): AdminUserEditForm {
@@ -75,15 +76,8 @@ function toForm(profile: AdminUserProfile): AdminUserEditForm {
     worker_phone: profile.worker_phone || '',
     worker_wechat: profile.worker_wechat || '',
     worker_show_contact: profile.worker_show_contact,
-    worker_skill_tag_ids_text: profile.worker_skill_ids.join(','),
+    worker_skill_tag_ids: profile.worker_skill_ids,
   }
-}
-
-function parseSkillIds(text: string): number[] {
-  return text
-    .split(/[,，\s]+/)
-    .map(s => Number(s.trim()))
-    .filter(n => Number.isFinite(n) && n > 0)
 }
 
 function toNullableNumber(text: string): number | null {
@@ -107,6 +101,8 @@ export function useAdminUsers(showToast: AppToastNotifier) {
 
   const unbanOpenId = ref<number | null>(null)
   const unbanSubmitting = ref(false)
+
+  const categories = ref<Category[]>([])
 
   const profileOpen = ref(false)
   const profileLoading = ref(false)
@@ -156,7 +152,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     worker_phone: '',
     worker_wechat: '',
     worker_show_contact: true,
-    worker_skill_tag_ids_text: '',
+    worker_skill_tag_ids: [],
   })
 
   const totalPages = computed(() => Math.max(1, Math.ceil(userTotal.value / PAGE_SIZE)))
@@ -309,10 +305,12 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     profileDataLoaded.value = false
     profileLoading.value = true
     try {
-      const [profile, bl] = await Promise.all([
+      const [profile, bl, cats] = await Promise.all([
         fetchAdminUserProfile(userId),
         fetchAdminUserBlacklist(userId),
+        categories.value.length ? Promise.resolve(categories.value) : fetchCategories(),
       ])
+      categories.value = cats
       selectedProfile.value = profile
       Object.assign(profileForm, toForm(profile))
       blacklistItems.value = bl
@@ -506,7 +504,7 @@ export function useAdminUsers(showToast: AppToastNotifier) {
         worker_phone: profileForm.worker_phone.trim() || null,
         worker_wechat: profileForm.worker_wechat.trim() || null,
         worker_show_contact: profileForm.worker_show_contact,
-        worker_skill_tag_ids: parseSkillIds(profileForm.worker_skill_tag_ids_text),
+        worker_skill_tag_ids: profileForm.worker_skill_tag_ids,
       }
       const updated = await updateAdminUserProfile(selectedProfile.value.id, payload)
       selectedProfile.value = updated
@@ -530,6 +528,16 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     },
     { deep: true },
   )
+
+  function toggleProfileSkillTag(id: number) {
+    const ids = profileForm.worker_skill_tag_ids
+    const idx = ids.indexOf(id)
+    if (idx >= 0) {
+      ids.splice(idx, 1)
+    } else if (ids.length < 5) {
+      ids.push(id)
+    }
+  }
 
   onUnmounted(() => {
     clearTimeout(searchDebounce)
@@ -585,6 +593,8 @@ export function useAdminUsers(showToast: AppToastNotifier) {
     refreshBlacklist,
     addBlacklistItem,
     removeBlacklistItem,
+    categories,
+    toggleProfileSkillTag,
   }
 }
 

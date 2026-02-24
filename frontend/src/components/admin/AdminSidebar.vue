@@ -68,15 +68,17 @@ function updateSlider(animate = true) {
     const navRect = nav.getBoundingClientRect()
     const itemRect = el.getBoundingClientRect()
     if (!animate) {
-      // 禁用 transition 后立即定位，避免初次加载时从顶部滑下
       sliderReady.value = false
       sliderStyle.value = {
         top: `${itemRect.top - navRect.top + nav.scrollTop}px`,
         height: `${itemRect.height}px`,
         opacity: '1',
       }
-      // 下一帧再恢复 transition
-      requestAnimationFrame(() => { sliderReady.value = true })
+      // 双层 rAF：第一帧让浏览器绘制无动画的正确位置，第二帧再开启 transition
+      // 单层 rAF 可能在同一渲染批次中执行，导致 sliderReady 翻转时位置变化仍带动画
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => { sliderReady.value = true })
+      })
     } else {
       sliderStyle.value = {
         top: `${itemRect.top - navRect.top + nav.scrollTop}px`,

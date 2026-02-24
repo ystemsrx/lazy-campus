@@ -118,10 +118,7 @@ def mark_as_read(
     notification = db.get(Notification, notification_id)
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=404, detail='Notification not found')
-    if notification.dismiss_type == 'read':
-        db.delete(notification)
-    else:
-        notification.is_read = True
+    notification.is_read = True
     db.commit()
     return {'message': 'ok'}
 
@@ -133,11 +130,6 @@ def mark_all_as_read(
 ) -> dict:
     db.query(Notification).filter(
         Notification.user_id == user.id,
-        Notification.dismiss_type == 'read',
-    ).delete()
-    db.query(Notification).filter(
-        Notification.user_id == user.id,
-        Notification.dismiss_type != 'read',
         Notification.is_read == False,  # noqa: E712
     ).update({'is_read': True})
     db.commit()

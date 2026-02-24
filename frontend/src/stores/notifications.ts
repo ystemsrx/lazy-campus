@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import {
   deleteNotification,
@@ -132,9 +132,12 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch { /* silent */ }
   }
 
+  const trueUnreadCount = computed(() => notifications.value.filter(n => !n.is_read).length)
+
   return {
     notifications,
     unreadCount,
+    trueUnreadCount,
     load,
     pollCount,
     startPolling,

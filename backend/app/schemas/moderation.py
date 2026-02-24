@@ -514,3 +514,4 @@ class AdminActionLogListResponse(BaseModel):
     page: int
     page_size: int
     items: list[AdminActionLogItem]
+    distinct_actions: list[str]

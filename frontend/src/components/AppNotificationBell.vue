@@ -32,6 +32,7 @@ const wrapRef = ref<HTMLElement | null>(null)
 
 const notifications = computed(() => notifStore.notifications)
 const unreadCount = computed(() => notifStore.unreadCount)
+const trueUnreadCount = computed(() => notifStore.trueUnreadCount)
 
 const hasReadableUnread = computed(() =>
   notifications.value.some(n => !n.is_read),
@@ -145,7 +146,7 @@ onUnmounted(() => {
         <div class="notif-dropdown__header">
           <div class="notif-dropdown__title-row">
             <h3 class="notif-dropdown__title">通知中心</h3>
-            <span v-if="unreadCount > 0" class="notif-unread-tag">{{ unreadCount }} 未读</span>
+            <span v-if="trueUnreadCount > 0" class="notif-unread-tag">{{ trueUnreadCount }} 未读</span>
           </div>
           <button v-if="hasReadableUnread" class="notif-mark-all-btn" @click="markAllRead">
             <Check :size="14" />

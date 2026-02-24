@@ -2225,6 +2225,9 @@ def admin_list_action_logs(
         .limit(page_size)
         .all()
     )
+    distinct_actions = sorted(
+        r[0] for r in db.query(AdminActionLog.action).distinct().all()
+    )
     return AdminActionLogListResponse(
         total=total,
         page=page,
@@ -2241,6 +2244,7 @@ def admin_list_action_logs(
             )
             for r in rows
         ],
+        distinct_actions=distinct_actions,
     )
 
 

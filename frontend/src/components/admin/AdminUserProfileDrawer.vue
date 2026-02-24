@@ -355,10 +355,25 @@ async function openTaskSnapshot(taskId: number) {
                 <label><input v-model="vm.profileForm.worker_enabled" type="checkbox" /> 启用接单</label>
                 <label><input v-model="vm.profileForm.worker_show_contact" type="checkbox" /> 公开联系方式</label>
               </div>
-              <label class="form-group">
-                <span class="form-label">技能 ID（逗号分隔）</span>
-                <input v-model="vm.profileForm.worker_skill_tag_ids_text" class="form-input" placeholder="例如 1,2,3" />
-              </label>
+              <div class="form-group">
+                <div class="aupd-skill-label">
+                  <span class="form-label">擅长类别</span>
+                  <span class="aupd-skill-count" :class="{ 'aupd-skill-count--warn': vm.profileForm.worker_skill_tag_ids.length >= 5 }">
+                    {{ vm.profileForm.worker_skill_tag_ids.length }}/5
+                  </span>
+                </div>
+                <div v-if="vm.categories.length" class="aupd-skill-picker">
+                  <button
+                    v-for="cat in vm.categories"
+                    :key="cat.id"
+                    type="button"
+                    class="aupd-skill-chip"
+                    :class="{ 'aupd-skill-chip--selected': vm.profileForm.worker_skill_tag_ids.includes(cat.id) }"
+                    @click="vm.toggleProfileSkillTag(cat.id)"
+                  >{{ cat.name }}</button>
+                </div>
+                <p v-else class="form-hint" style="margin-top: 4px;">暂无类别</p>
+              </div>
               <div class="aupd-row">
                 <label class="form-group">
                   <span class="form-label">电话</span>
@@ -1034,6 +1049,58 @@ async function openTaskSnapshot(taskId: number) {
 .aupd-task-card__who i {
   margin-right: 3px;
   font-size: 11px;
+}
+
+/* ── Skill picker ── */
+.aupd-skill-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.aupd-skill-label .form-label {
+  margin-bottom: 0;
+}
+
+.aupd-skill-count {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.aupd-skill-count--warn {
+  color: #f59e0b;
+}
+
+.aupd-skill-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aupd-skill-chip {
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: #f8fafc;
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  transition: border-color 150ms var(--ease), background 150ms var(--ease), color 150ms var(--ease);
+  white-space: nowrap;
+}
+
+.aupd-skill-chip:not(.aupd-skill-chip--selected):hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.aupd-skill-chip--selected {
+  border-color: var(--c-accent);
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--c-accent);
+  font-weight: 500;
 }
 
 /* ── Transitions ── */

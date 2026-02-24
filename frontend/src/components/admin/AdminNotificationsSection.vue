@@ -20,6 +20,7 @@ import {
 
 import type { AdminNotificationsModel } from '../../composables/admin/useAdminNotifications'
 import type { AdminUserItem } from '../../types/api'
+import { parseUTC } from '../../utils/time'
 
 const props = defineProps<{
   model: AdminNotificationsModel
@@ -40,11 +41,11 @@ const dismissOptions = [
 ]
 
 const iconOptions = [
-  { type: 'admin_notice', icon: Bell, label: '默认通知' },
-  { type: 'admin_warning', icon: AlertTriangle, label: '警告' },
-  { type: 'admin_success', icon: CheckCircle, label: '成功' },
-  { type: 'admin_info', icon: Info, label: '信息' },
-  { type: 'admin_announcement', icon: Megaphone, label: '公告' },
+  { type: 'admin_notice', icon: Bell, label: '默认通知', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.3)' },
+  { type: 'admin_warning', icon: AlertTriangle, label: '警告', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)' },
+  { type: 'admin_success', icon: CheckCircle, label: '成功', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.3)' },
+  { type: 'admin_info', icon: Info, label: '信息', color: '#06b6d4', bg: 'rgba(6,182,212,0.08)', border: 'rgba(6,182,212,0.3)' },
+  { type: 'admin_announcement', icon: Megaphone, label: '公告', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.3)' },
 ]
 
 const iconMap: Record<string, any> = {
@@ -73,14 +74,9 @@ const targetLabel = computed(() => {
 })
 
 function formatSentAt(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  const d = parseUTC(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function onSelectUser(user: AdminUserItem) {
@@ -229,6 +225,9 @@ function onSelectUser(user: AdminUserItem) {
                     type="button"
                     class="an__icon-btn"
                     :class="{ 'an__icon-btn--active': vm.notificationType === opt.type }"
+                    :style="vm.notificationType === opt.type
+                      ? { color: opt.color, background: opt.bg, borderColor: opt.border, boxShadow: `0 0 0 1px ${opt.border}` }
+                      : { color: opt.color }"
                     :title="opt.label"
                     @click="vm.notificationType = opt.type"
                   >
@@ -316,19 +315,14 @@ function onSelectUser(user: AdminUserItem) {
                     <Eye :size="14" /> 已读情况
                   </span>
                   <span class="an__stat-value">
-                    <template v-if="msg.dismiss_type === 'persistent'">
-                      {{ msg.read_count }} 已读 / {{ msg.remaining_count }} 总计
-                    </template>
-                    <template v-else>
-                      剩余 {{ msg.remaining_count }} 条未读
-                    </template>
+                    {{ msg.read_count }} / {{ msg.remaining_count }}
                   </span>
                 </div>
                 <div class="an__stat-bar">
                   <div
                     class="an__stat-bar-fill"
                     :style="{
-                      width: msg.dismiss_type === 'persistent' && msg.remaining_count > 0
+                      width: msg.remaining_count > 0
                         ? `${Math.round((msg.read_count / msg.remaining_count) * 100)}%`
                         : '0%'
                     }"
@@ -763,21 +757,17 @@ function onSelectUser(user: AdminUserItem) {
   border-radius: var(--radius-sm);
   border: 1px solid var(--c-border);
   background: var(--c-surface);
-  color: var(--c-text-muted);
   transition: all 200ms var(--ease);
 }
 
 .an__icon-btn:hover {
   border-color: #cbd5e1;
-  color: var(--c-text-secondary);
   background: #f8fafc;
+  opacity: 0.85;
 }
 
 .an__icon-btn--active {
-  background: var(--c-accent-light);
-  border-color: var(--c-accent-soft);
-  color: var(--c-accent);
-  box-shadow: 0 0 0 1px var(--c-accent);
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 /* ── Footer ── */
