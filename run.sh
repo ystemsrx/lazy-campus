@@ -74,10 +74,10 @@ fi
 
 # 启动后端（生产模式，不带 --reload）
 info "[ 后端 ] 启动 FastAPI（端口 $BACKEND_PORT）..."
-nohup "$VENV_PYTHON" -m uvicorn app.main:app \
+(cd "$BACKEND_DIR" && nohup "$VENV_PYTHON" -m uvicorn app.main:app \
     --host 0.0.0.0 \
     --port "$BACKEND_PORT" \
-    > "$LOG_DIR/backend.log" 2>&1 &
+    > "$LOG_DIR/backend.log" 2>&1) &
 BACKEND_PID=$!
 success "[ 后端 ] 已启动（PID $BACKEND_PID）"
 
