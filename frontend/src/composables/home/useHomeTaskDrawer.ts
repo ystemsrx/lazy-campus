@@ -225,6 +225,10 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
   }
 
   async function submitCreateTask() {
+    if (!newTask.value.category_id) {
+      options.showToast('请选择所属类目', 'error')
+      return
+    }
     try {
       await withCaptchaRetry(
         (captchaToken) =>
@@ -426,6 +430,10 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
 
   async function submitEditTask() {
     if (!editingTask.value) return
+    if (!editTaskForm.value.category_id) {
+      options.showToast('请选择所属类目', 'error')
+      return
+    }
     try {
       const updated = await updateTask(editingTask.value.id, {
         title: editTaskForm.value.title,

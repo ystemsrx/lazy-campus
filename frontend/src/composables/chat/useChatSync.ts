@@ -221,7 +221,24 @@ export function useChatSync(options: UseChatSyncOptions) {
       const newestInBatch = latestBatch.at(-1)!.id
       const newestLocal = messages.value.at(-1)?.id ?? 0
 
-      if (newestInBatch <= newestLocal) return
+      // 将批次数据建立 id→message 索引，用于同步 is_read 状态
+      const batchById = new Map(latestBatch.map(m => [m.id, m]))
+
+      // 无论是否有新消息，都将已读状态同步到现有消息列表（双勾显示依赖此逻辑）
+      let readStatusChanged = false
+      messages.value = messages.value.map(m => {
+        const fresh = batchById.get(m.id)
+        if (fresh && !m.is_read && fresh.is_read) {
+          readStatusChanged = true
+          return { ...m, is_read: true }
+        }
+        return m
+      })
+
+      if (newestInBatch <= newestLocal) {
+        if (readStatusChanged) await options.onAfterMessagesUpdated?.()
+        return
+      }
 
       // Only append genuinely new messages (don't replace existing paginated history)
       const newOnes = latestBatch.filter(m => m.id > newestLocal)

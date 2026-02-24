@@ -35,7 +35,7 @@ class TaskCreate(BaseModel):
     deadline: datetime | None = None
     location: str | None = None
     price: float = Field(gt=0)
-    category_id: int | None = None
+    category_id: int
     contact_visibility: ContactVisibility = ContactVisibility.AFTER_ACCEPT
     contact_info: str | None = None
     required_gender: Gender | None = None
