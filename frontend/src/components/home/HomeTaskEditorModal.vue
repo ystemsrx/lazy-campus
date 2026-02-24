@@ -134,7 +134,7 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
           />
         </div>
         <div class="form-group">
-          <label class="form-label">联系方式</label>
+          <label class="form-label">联系方式<span v-if="form.contact_visibility === 'after_accept'" class="required-star">*</span></label>
           <input
             v-model="form.contact_info"
             class="form-input"
