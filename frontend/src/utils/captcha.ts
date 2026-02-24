@@ -32,7 +32,7 @@ export async function withCaptchaRetry<T>(
     if (!detail) {
       throw error
     }
-    const token = await requestCaptcha(detail.scene)
+    const token = await requestCaptcha(detail.scene as CaptchaScene)
     if (!token) {
       throw new CaptchaCancelledError()
     }

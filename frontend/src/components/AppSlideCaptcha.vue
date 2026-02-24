@@ -46,7 +46,7 @@ export function appAnonSlideCaptcha(
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { Slide } from "go-captcha-vue";
 import {
   createAnonCaptchaChallenge,
@@ -54,7 +54,6 @@ import {
   verifyAnonCaptchaChallenge,
   verifyCaptchaChallenge,
 } from "../api/captcha";
-import type { AnonCaptchaScene, CaptchaScene } from "../utils/captcha";
 
 type AnyScene = CaptchaScene | AnonCaptchaScene;
 

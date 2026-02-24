@@ -106,7 +106,7 @@ function toDateKey(ts: number): string {
 function toHTMLElement(el: Element | ComponentPublicInstance | null): HTMLElement | null {
   if (!el) return null
   if (el instanceof HTMLElement) return el
-  const maybeEl = el.$el
+  const maybeEl = (el as ComponentPublicInstance).$el
   return maybeEl instanceof HTMLElement ? maybeEl : null
 }
 

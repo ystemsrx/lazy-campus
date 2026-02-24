@@ -182,11 +182,13 @@ export function useChatSync(options: UseChatSyncOptions) {
             task_price: taskPrice,
             task_status: taskStatus,
             task_icon: taskIcon,
+            task_is_deleted: false,
             last_message: null,
             last_message_time: null,
             unread_count: 0,
             blocked_by_me: false,
             blocked_by_them: false,
+            peer_ban_contact: false,
           }
 
           conversations.value.unshift(placeholder)

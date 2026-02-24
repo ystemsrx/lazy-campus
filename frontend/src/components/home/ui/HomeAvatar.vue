@@ -6,7 +6,7 @@ import femaleAvatar from '../../../assets/avatars/default-female.svg'
 const props = withDefaults(defineProps<{
   avatarUrl?: string | null
   gender?: 'male' | 'female' | null
-  size?: 'sm' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   alt?: string
 }>(), {
   avatarUrl: null,
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
 })
 
 const sizeClass = computed(() => {
+  if (props.size === 'md') return 'hv-avatar--md'
   if (props.size === 'lg') return 'hv-avatar--lg'
   if (props.size === 'xl') return 'hv-avatar--xl'
   return ''
@@ -41,6 +42,11 @@ const imgSrc = computed(() => {
   border-radius: var(--radius-full);
   flex-shrink: 0;
   overflow: hidden;
+}
+
+.hv-avatar--md {
+  width: 38px;
+  height: 38px;
 }
 
 .hv-avatar--lg {
