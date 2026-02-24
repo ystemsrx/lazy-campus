@@ -115,6 +115,7 @@ def _task_to_out(
         publisher_completed_count=publisher_completed_count,
         publisher_blocked_by_count=publisher.blocked_by_count,
         publisher_task_count=publisher_task_count,
+        publisher_payment_qr_url=publisher.payment_qr_url,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )

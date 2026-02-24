@@ -42,6 +42,7 @@ export interface UserMe {
   email: string | null
   gender: 'male' | 'female' | null
   avatar_url: string | null
+  payment_qr_url: string | null
   is_banned: boolean
   ban_until: string | null
   ban_publish: boolean
@@ -110,6 +111,7 @@ export interface Task {
   publisher_completed_count: number
   publisher_blocked_by_count: number
   publisher_task_count: number
+  publisher_payment_qr_url: string | null
   icon: string | null
   created_at: string
   updated_at: string

@@ -30,6 +30,7 @@ class UserMe(BaseModel):
     email: EmailStr | None
     gender: Gender | None
     avatar_url: str | None
+    payment_qr_url: str | None = None
     is_banned: bool
     ban_until: datetime | None
     ban_publish: bool = False

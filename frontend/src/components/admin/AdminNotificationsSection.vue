@@ -17,6 +17,8 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
+import maleAvatar from '../../assets/avatars/default-male.svg'
+import femaleAvatar from '../../assets/avatars/default-female.svg'
 
 import type { AdminNotificationsModel } from '../../composables/admin/useAdminNotifications'
 import type { AdminUserItem } from '../../types/api'
@@ -136,8 +138,7 @@ function onSelectUser(user: AdminUserItem) {
                       @click="onSelectUser(user)"
                     >
                       <div class="an__search-item-avatar">
-                        <img v-if="user.avatar_url" :src="user.avatar_url" alt="" />
-                        <User v-else :size="14" />
+                        <img :src="user.avatar_url ?? (user.gender === 'female' ? femaleAvatar : maleAvatar)" alt="" />
                       </div>
                       <div class="an__search-item-info">
                         <span class="an__search-item-name">{{ user.display_name }}</span>

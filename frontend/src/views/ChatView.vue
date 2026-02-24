@@ -5,6 +5,7 @@ import { MessageSquare } from 'lucide-vue-next'
 
 import AppToast from '../components/AppToast.vue'
 import ChatAttachmentModal from '../components/chat/ChatAttachmentModal.vue'
+import ChatPaymentQrLightbox from '../components/chat/ChatPaymentQrLightbox.vue'
 import ChatConversationSidebar from '../components/chat/ChatConversationSidebar.vue'
 import ChatHeaderPanel from '../components/chat/ChatHeaderPanel.vue'
 import ChatInputArea from '../components/chat/ChatInputArea.vue'
@@ -41,6 +42,7 @@ const { toast, showToast, clearToast } = useAppToast()
 const statusMap = getSnapshotStatusMap()
 
 const messageListRef = ref<ChatMessageListExpose | null>(null)
+const showPaymentQrLightbox = ref(false)
 
 let loadAttachmentsHook: () => Promise<void> = async () => {}
 let resetAttachmentsHook: () => void = () => {}
@@ -255,6 +257,7 @@ onUnmounted(() => {
             @toggle-banner="isBannerCollapsed = !isBannerCollapsed"
             @open-task-detail="openTaskDetail"
             @open-user-detail="openUserDetail"
+            @open-payment-qr="showPaymentQrLightbox = true"
           />
 
           <ChatMessageList
@@ -312,6 +315,11 @@ onUnmounted(() => {
         :reported-user-name="activeConversation?.peer_name"
         @success="showToast('举报已提交，请等待管理员审核', 'success')"
         @error="(msg) => showToast(msg, 'error')"
+      />
+
+      <ChatPaymentQrLightbox
+        v-model="showPaymentQrLightbox"
+        :qr-url="activeConversation?.peer_payment_qr_url ?? null"
       />
 
       <AppToast :toast="toast" @dismiss="clearToast" />

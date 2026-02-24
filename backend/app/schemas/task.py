@@ -93,6 +93,7 @@ class TaskOut(BaseModel):
     publisher_completed_count: int = 0
     publisher_blocked_by_count: int = 0
     publisher_task_count: int = 0
+    publisher_payment_qr_url: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -24,6 +24,7 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     gender: Mapped[Gender | None] = mapped_column(Enum(Gender), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    payment_qr_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     id_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     password_value: Mapped[str] = mapped_column(String(255))

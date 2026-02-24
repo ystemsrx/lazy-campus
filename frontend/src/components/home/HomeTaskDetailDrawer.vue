@@ -8,6 +8,8 @@ import type { ChatMessage } from '../../types/chat'
 
 const chatRouter = useRouter()
 
+const showPaymentQrLightbox = ref(false)
+
 type ReviewForm = {
   stars: number
   comment: string
@@ -70,6 +72,13 @@ const emit = defineEmits<{
 }>()
 
 const task = computed(() => props.task)
+
+const showPayBtn = computed(() => {
+  const t = props.task
+  if (!t || !t.publisher_payment_qr_url) return false
+  return !props.isPublisher && props.isParticipant && t.status !== 'open'
+})
+
 const chatContentValue = computed({
   get: () => props.chatContent,
   set: (value: string) => emit('update:chatContent', value),
@@ -313,6 +322,7 @@ onUnmounted(() => {
                 <button v-if="canAccept" class="btn btn-primary" @click="emit('accept-task')"><i class="fa-solid fa-hand-pointer"></i> 接取此任务</button>
                 <button v-if="canConfirm" class="btn btn-success" @click="emit('confirm-task')"><i class="fa-solid fa-circle-check"></i> 确认完成</button>
                 <button v-if="canAbandon" class="btn btn-danger btn-sm" @click="emit('abandon-task')"><i class="fa-solid fa-person-running"></i> 放弃接取</button>
+                <button v-if="showPayBtn" class="btn btn-pay btn-sm" @click="showPaymentQrLightbox = true"><i class="fa-solid fa-credit-card"></i> 去付款</button>
                 <button v-if="canCancelTask" class="btn btn-danger btn-sm" @click="emit('cancel-task')"><i class="fa-solid fa-xmark"></i> 取消任务</button>
                 <button v-if="canRepublish" class="btn btn-primary btn-sm" @click="emit('republish-task')"><i class="fa-solid fa-rotate-right"></i> 重新发布</button>
                 <button v-if="canEditTask" class="btn btn-outline btn-sm" @click="emit('edit-task')"><i class="fa-solid fa-pen-to-square"></i> 编辑</button>
@@ -436,6 +446,16 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </div>
+    </Transition>
+
+    <Transition name="drawer-lightbox">
+      <div
+        v-if="showPaymentQrLightbox && task?.publisher_payment_qr_url"
+        class="hv-payment-qr-overlay"
+        @click="showPaymentQrLightbox = false"
+      >
+        <img :src="task.publisher_payment_qr_url" class="hv-payment-qr-img" alt="收款码" />
       </div>
     </Transition>
   </Teleport>
@@ -794,6 +814,56 @@ onUnmounted(() => {
   padding: 1px 5px;
   vertical-align: middle;
   margin-left: 3px;
+}
+
+.btn-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.btn-pay:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+.hv-payment-qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.hv-payment-qr-img {
+  max-width: min(90vw, 420px);
+  max-height: 85vh;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.drawer-lightbox-enter-active,
+.drawer-lightbox-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.drawer-lightbox-enter-from,
+.drawer-lightbox-leave-to {
+  opacity: 0;
 }
 
 .badge-pink {

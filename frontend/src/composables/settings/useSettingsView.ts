@@ -3,10 +3,12 @@ import { useRouter } from 'vue-router'
 
 import { fetchCategories } from '../../api/tasks'
 import {
+  deletePaymentQr,
   fetchMyWorkerProfile,
   updateProfile,
   updateWorkerProfile,
   uploadAvatar,
+  uploadPaymentQr,
 } from '../../api/users'
 import { useAuthStore } from '../../stores/auth'
 import type { Category } from '../../types/api'
@@ -37,6 +39,8 @@ export function useSettingsView() {
   const categories = ref<Category[]>([])
   const activeTab = ref<SettingsTab>('profile')
   const avatarUploading = ref(false)
+  const paymentQrUploading = ref(false)
+  const paymentQrDeleting = ref(false)
   const isDataLoaded = ref(false)
 
   const profileForm = ref<ProfileForm>(createProfileForm())
@@ -139,6 +143,37 @@ export function useSettingsView() {
     }
   }
 
+  async function handlePaymentQrUpload(event: Event) {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+
+    paymentQrUploading.value = true
+    try {
+      const updated = await uploadPaymentQr(file)
+      auth.user = updated
+      showToast('收款码已上传', 'success')
+    } catch (error) {
+      showToast(extractError(error, '收款码上传失败'), 'error')
+    } finally {
+      paymentQrUploading.value = false
+      input.value = ''
+    }
+  }
+
+  async function handlePaymentQrDelete() {
+    paymentQrDeleting.value = true
+    try {
+      const updated = await deletePaymentQr()
+      auth.user = updated
+      showToast('收款码已删除', 'success')
+    } catch (error) {
+      showToast(extractError(error, '收款码删除失败'), 'error')
+    } finally {
+      paymentQrDeleting.value = false
+    }
+  }
+
   onMounted(async () => {
     try {
       const [cats, workerProfile] = await Promise.all([fetchCategories(), fetchMyWorkerProfile()])
@@ -184,6 +219,8 @@ export function useSettingsView() {
     profileForm,
     workerForm,
     avatarUploading,
+    paymentQrUploading,
+    paymentQrDeleting,
     saveStatus,
     logout,
     openHome,
@@ -193,5 +230,7 @@ export function useSettingsView() {
     handleHeaderTabChange,
     toggleSkillTag,
     handleAvatarUpload,
+    handlePaymentQrUpload,
+    handlePaymentQrDelete,
   }
 }

@@ -189,6 +189,8 @@ export function useChatSync(options: UseChatSyncOptions) {
             blocked_by_me: false,
             blocked_by_them: false,
             peer_ban_contact: false,
+            peer_payment_qr_url: null,
+            task_publisher_id: null,
           }
 
           conversations.value.unshift(placeholder)

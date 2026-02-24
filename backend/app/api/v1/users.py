@@ -32,6 +32,9 @@ from app.utils.user_display import display_name
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'avatars'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+PAYMENT_QR_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'payment_qr'
+PAYMENT_QR_DIR.mkdir(parents=True, exist_ok=True)
+
 _BAYESIAN_C = 3
 _BLOCK_K = 0.5
 _BAN_K = 1.5
@@ -121,6 +124,7 @@ def get_me(user: User = Depends(require_user)) -> UserMe:
         email=user.email,
         gender=user.gender,
         avatar_url=user.avatar_url,
+        payment_qr_url=user.payment_qr_url,
         is_banned=user.is_banned,
         ban_until=user.ban_until,
         ban_publish=user.ban_publish,
@@ -193,12 +197,72 @@ async def upload_avatar(
         bg.paste(img, mask=img.split()[3])
         img = bg
 
+    if user.avatar_url:
+        old_filename = user.avatar_url.rsplit('/', 1)[-1]
+        old_filepath = UPLOAD_DIR / old_filename
+        old_filepath.unlink(missing_ok=True)
+
     filename = f'{user.id}_{uuid.uuid4().hex[:8]}.webp'
     filepath = UPLOAD_DIR / filename
     img.save(filepath, format='WEBP', quality=80)
 
     avatar_url = f'{settings.backend_public_url}/uploads/avatars/{filename}'
     user.avatar_url = avatar_url
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return get_me(user)
+
+
+@router.post('/me/payment-qr', response_model=UserMe)
+async def upload_payment_qr(
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> UserMe:
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail='仅支持图片文件')
+
+    try:
+        from PIL import Image
+    except ImportError:
+        raise HTTPException(status_code=500, detail='服务器缺少 Pillow 依赖')
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='图片大小不能超过 10MB')
+
+    img = Image.open(io.BytesIO(raw))
+    img = img.convert('RGBA') if img.mode == 'RGBA' else img.convert('RGB')
+
+    if img.mode == 'RGBA':
+        bg = Image.new('RGB', img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[3])
+        img = bg
+
+    filename = f'{user.id}_{uuid.uuid4().hex[:8]}.webp'
+    filepath = PAYMENT_QR_DIR / filename
+    img.save(filepath, format='WEBP', quality=80)
+
+    qr_url = f'{settings.backend_public_url}/uploads/payment_qr/{filename}'
+    user.payment_qr_url = qr_url
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return get_me(user)
+
+
+@router.delete('/me/payment-qr', response_model=UserMe)
+def delete_payment_qr(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> UserMe:
+    if user.payment_qr_url:
+        filename = user.payment_qr_url.rsplit('/', 1)[-1]
+        filepath = PAYMENT_QR_DIR / filename
+        filepath.unlink(missing_ok=True)
+
+    user.payment_qr_url = None
     db.add(user)
     db.commit()
     db.refresh(user)

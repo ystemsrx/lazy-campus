@@ -28,12 +28,14 @@ class ConversationOut(BaseModel):
     peer_avatar: str | None
     peer_gender: str | None
     peer_last_active: datetime | None
+    peer_payment_qr_url: str | None = None
     task_id: int | None
     task_title: str | None
     task_price: float | None
     task_status: str | None
     task_icon: str | None
     task_is_deleted: bool = False
+    task_publisher_id: int | None = None
     last_message: str | None
     last_message_time: datetime | None
     unread_count: int

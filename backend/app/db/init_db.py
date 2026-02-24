@@ -25,6 +25,8 @@ def run_startup_migrations() -> None:
                     conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT 0'))
             if 'id_number' not in user_cols:
                 conn.execute(text('ALTER TABLE users ADD COLUMN id_number VARCHAR(64) DEFAULT NULL'))
+            if 'payment_qr_url' not in user_cols:
+                conn.execute(text('ALTER TABLE users ADD COLUMN payment_qr_url VARCHAR(500) DEFAULT NULL'))
 
         if 'tasks' in tables:
             task_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))}

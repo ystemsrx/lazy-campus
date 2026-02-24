@@ -60,3 +60,17 @@ export async function uploadAvatar(file: File) {
   })
   return data
 }
+
+export async function uploadPaymentQr(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post<UserMe>('/users/me/payment-qr', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+}
+
+export async function deletePaymentQr() {
+  const { data } = await api.delete<UserMe>('/users/me/payment-qr')
+  return data
+}

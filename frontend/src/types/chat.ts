@@ -15,12 +15,14 @@ export interface Conversation {
   peer_avatar: string | null
   peer_gender: 'male' | 'female' | null
   peer_last_active: string | null
+  peer_payment_qr_url: string | null
   task_id: number | null
   task_title: string | null
   task_price: number | null
   task_status: string | null
   task_icon: string | null
   task_is_deleted: boolean
+  task_publisher_id: number | null
   last_message: string | null
   last_message_time: string | null
   unread_count: number

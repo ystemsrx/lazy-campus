@@ -128,6 +128,9 @@ def list_conversations(
             .first()
         )
 
+        publisher_id = task.publisher_id if task else None
+        peer_qr = peer.payment_qr_url if peer.payment_qr_url else None
+
         results.append(
             ConversationOut(
                 peer_id=row.peer_id,
@@ -135,12 +138,14 @@ def list_conversations(
                 peer_avatar=peer.avatar_url,
                 peer_gender=peer.gender.value if peer.gender else None,
                 peer_last_active=peer.last_active,
+                peer_payment_qr_url=peer_qr,
                 task_id=row.task_id,
                 task_title=task.title if task else None,
                 task_price=task.price if task else None,
                 task_status=task.status.value if task else None,
                 task_icon=task.icon if task else None,
                 task_is_deleted=bool(task.is_deleted) if task else False,
+                task_publisher_id=publisher_id,
                 last_message=last_msg.content[:100] if last_msg else None,
                 last_message_time=last_msg.created_at if last_msg else None,
                 unread_count=int(row.unread or 0),

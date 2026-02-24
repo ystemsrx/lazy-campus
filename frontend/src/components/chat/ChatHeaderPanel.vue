@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ChevronUp, Compass, Flag, Paperclip, ShieldOff, ArrowLeft } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { ChevronUp, Compass, Flag, Paperclip, ShieldOff, ArrowLeft, CreditCard } from 'lucide-vue-next'
 
 import HomeAvatar from '../home/ui/HomeAvatar.vue'
 import type { Conversation } from '../../types/chat'
@@ -9,7 +10,7 @@ import {
   snapshotStatusLabel,
 } from '../../composables/chat/taskSnapshotStatus'
 
-defineProps<{
+const props = defineProps<{
   conversation: Conversation
   isMobile: boolean
   isBlocked: boolean
@@ -26,7 +27,19 @@ const emit = defineEmits<{
   (e: 'toggleBanner'): void
   (e: 'openTaskDetail'): void
   (e: 'openUserDetail'): void
+  (e: 'openPaymentQr'): void
 }>()
+
+const showTaskPayBtn = computed(() => {
+  const c = props.conversation
+  if (!c.task_id || !c.peer_payment_qr_url) return false
+  return c.task_publisher_id === c.peer_id && c.task_status !== 'open'
+})
+
+const showMarketplacePayBtn = computed(() => {
+  const c = props.conversation
+  return !c.task_id && !!c.peer_payment_qr_url
+})
 </script>
 
 <template>
@@ -101,11 +114,27 @@ const emit = defineEmits<{
               {{ snapshotStatusLabel(conversation.task_status) }}
             </span>
           </div>
+          <button
+            v-if="showTaskPayBtn"
+            class="snapshot-pay-btn"
+            @click.stop="emit('openPaymentQr')"
+          >
+            <CreditCard :size="13" />
+            <span>去付款</span>
+          </button>
         </div>
 
         <div v-else class="marketplace-badge marketplace-badge--clickable" @click="emit('openUserDetail')">
           <Compass :size="16" />
           <span>来自接单广场 · 查看对方资料</span>
+          <button
+            v-if="showMarketplacePayBtn"
+            class="marketplace-pay-btn"
+            @click.stop="emit('openPaymentQr')"
+          >
+            <CreditCard :size="13" />
+            <span>去付款</span>
+          </button>
         </div>
       </div>
 
@@ -411,6 +440,51 @@ const emit = defineEmits<{
   border-color: #93c5fd;
   box-shadow: var(--shadow-sm);
   background: #eff6ffcc;
+}
+
+.snapshot-pay-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.snapshot-pay-btn:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+.marketplace-pay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 4px;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.marketplace-pay-btn:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
 }
 
 .collapse-chevron {

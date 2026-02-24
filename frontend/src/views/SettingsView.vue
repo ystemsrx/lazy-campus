@@ -24,6 +24,8 @@ const {
   profileForm,
   workerForm,
   avatarUploading,
+  paymentQrUploading,
+  paymentQrDeleting,
   saveStatus,
   logout,
   openHome,
@@ -33,6 +35,8 @@ const {
   handleHeaderTabChange,
   toggleSkillTag,
   handleAvatarUpload,
+  handlePaymentQrUpload,
+  handlePaymentQrDelete,
 } = useSettingsView()
 </script>
 
@@ -110,7 +114,11 @@ const {
                   :me="me"
                   :profile-form="profileForm"
                   :avatar-uploading="avatarUploading"
+                  :payment-qr-uploading="paymentQrUploading"
+                  :payment-qr-deleting="paymentQrDeleting"
                   @avatar-upload="handleAvatarUpload"
+                  @payment-qr-upload="handlePaymentQrUpload"
+                  @payment-qr-delete="handlePaymentQrDelete"
                 />
 
                 <SettingsWorkerPanel
