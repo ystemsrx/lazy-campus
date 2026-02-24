@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =========================
-#  LaZy Campus 管理脚本
+#  LaZy Campus 管理脚本（dist 静态托管版）
 #  用法：
 #    ./manage.sh start
 #    ./manage.sh stop
@@ -15,6 +15,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
+FRONTEND_DIST="$FRONTEND_DIR/dist"
 LOG_DIR="$PROJECT_DIR/logs"
 PID_FILE="$PROJECT_DIR/.pids"
 
@@ -22,10 +23,9 @@ PID_FILE="$PROJECT_DIR/.pids"
 API_DOMAIN="${API_DOMAIN:-api.example.com}"
 LINK_DOMAIN="${LINK_DOMAIN:-link.example.com}"
 
+# 后端只监听本地，由 Nginx 对外
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 # 后端启动参数
 BACKEND_MODULE="${BACKEND_MODULE:-app.main:app}"
@@ -41,8 +41,7 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || error "缺少命令：$1"; }
 
 is_port_listening() {
-  local host="$1" port="$2"
-  # ss 兼容性更好；匹配 LISTEN
+  local port="$1"
   ss -tln 2>/dev/null | awk '{print $4}' | grep -E "(^|:)${port}$" >/dev/null 2>&1 && return 0
   return 1
 }
@@ -55,10 +54,11 @@ read_pids() {
 }
 
 write_pids() {
-  local bpid="$1" fpid="$2"
+  local bpid="$1"
+  # 兼容旧版本：仍写 FRONTEND_PID 为空，避免老 stop/status 报错
   cat > "$PID_FILE" <<EOF
 BACKEND_PID=$bpid
-FRONTEND_PID=$fpid
+FRONTEND_PID=
 EOF
 }
 
@@ -76,7 +76,6 @@ kill_pid_gracefully() {
   info "停止 $name（PID $pid）..."
   kill -TERM "$pid" >/dev/null 2>&1 || true
 
-  # 等待最多 10 秒
   for _ in $(seq 1 20); do
     if ! kill -0 "$pid" >/dev/null 2>&1; then
       success "$name 已停止。"
@@ -131,7 +130,7 @@ ensure_backend_env() {
   success "[后端] 依赖安装完成"
 }
 
-ensure_frontend_env() {
+ensure_frontend_build() {
   need_cmd node
   need_cmd npm
   info "[前端] $(node -v) / npm $(npm -v)"
@@ -147,15 +146,16 @@ ensure_frontend_env() {
 
   info "[前端] 生产构建（vite build）..."
   npm run build --prefix "$FRONTEND_DIR"
-  success "[前端] 构建完成：$FRONTEND_DIR/dist"
+  success "[前端] 构建完成：$FRONTEND_DIST"
+
+  [ -f "$FRONTEND_DIST/index.html" ] || error "[前端] dist/index.html 不存在，构建可能失败。请检查构建输出。"
 }
 
 start_backend() {
-  if is_port_listening "$BACKEND_HOST" "$BACKEND_PORT"; then
+  if is_port_listening "$BACKEND_PORT"; then
     error "[后端] 端口 ${BACKEND_PORT} 已在监听，可能已有进程占用。"
   fi
 
-  # 读取 THIRD_PARTY_AUTH_URL 仅用于展示
   local third_party_url=""
   if [ -f "$BACKEND_DIR/.env" ]; then
     third_party_url="$(grep -E '^THIRD_PARTY_AUTH_URL=' "$BACKEND_DIR/.env" | cut -d'=' -f2- | tr -d '[:space:]' || true)"
@@ -163,7 +163,6 @@ start_backend() {
   fi
 
   info "[后端] 启动 FastAPI：${BACKEND_MODULE} @ ${BACKEND_HOST}:${BACKEND_PORT}"
-  # 用 bash -c + exec，确保 $! 就是 uvicorn 的 PID
   nohup bash -c "cd \"$BACKEND_DIR\" && exec \"$VENV_PYTHON\" -m uvicorn \"$BACKEND_MODULE\" \
     --host \"$BACKEND_HOST\" \
     --port \"$BACKEND_PORT\" \
@@ -181,31 +180,6 @@ start_backend() {
   echo "$pid"
 }
 
-start_frontend() {
-  if is_port_listening "$FRONTEND_HOST" "$FRONTEND_PORT"; then
-    error "[前端] 端口 ${FRONTEND_PORT} 已在监听，可能已有进程占用。"
-  fi
-
-  # 优先用本地安装的 vite
-  local vite_bin="$FRONTEND_DIR/node_modules/.bin/vite"
-  [ -f "$vite_bin" ] || error "[前端] 找不到 vite：$vite_bin（请确认 npm 安装成功）"
-
-  info "[前端] 启动 Vite preview @ ${FRONTEND_HOST}:${FRONTEND_PORT}"
-  nohup bash -c "cd \"$FRONTEND_DIR\" && exec \"$vite_bin\" preview \
-    --host \"$FRONTEND_HOST\" \
-    --port \"$FRONTEND_PORT\" \
-    --strictPort \
-    " > "$LOG_DIR/frontend.log" 2>&1 &
-
-  local pid=$!
-  sleep 0.2
-  if ! kill -0 "$pid" >/dev/null 2>&1; then
-    error "[前端] 启动失败，请查看日志：$LOG_DIR/frontend.log"
-  fi
-  success "[前端] 已启动（PID $pid），日志：$LOG_DIR/frontend.log"
-  echo "$pid"
-}
-
 cmd_start() {
   ensure_dirs
 
@@ -215,27 +189,25 @@ cmd_start() {
   fi
 
   info "══════════════════════════════════════════"
-  info "         LaZy Campus 启动（脚本托管）      "
+  info "      LaZy Campus 启动（dist 静态托管）     "
   info "══════════════════════════════════════════"
 
   ensure_backend_env
-  ensure_frontend_env
+  ensure_frontend_build
 
-  local bpid fpid
+  local bpid
   bpid="$(start_backend)"
-  fpid="$(start_frontend)"
-
-  write_pids "$bpid" "$fpid"
+  write_pids "$bpid"
 
   echo ""
-  success "所有服务已启动 ✓"
+  success "服务已启动 ✓"
   echo -e "  ${CYAN}后端(内网)${NC}   http://${BACKEND_HOST}:${BACKEND_PORT}"
-  echo -e "  ${CYAN}前端(内网)${NC}   http://${FRONTEND_HOST}:${FRONTEND_PORT}"
   echo -e "  ${CYAN}API 文档${NC}     http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
+  echo -e "  ${CYAN}前端(dist)${NC}   ${FRONTEND_DIST}"
   echo ""
   echo -e "  ${CYAN}域名（需 Nginx）${NC}"
-  echo -e "    http://${API_DOMAIN}   -> ${BACKEND_HOST}:${BACKEND_PORT}"
-  echo -e "    http://${LINK_DOMAIN}  -> ${FRONTEND_HOST}:${FRONTEND_PORT}"
+  echo -e "    https://${API_DOMAIN}   -> ${BACKEND_HOST}:${BACKEND_PORT}"
+  echo -e "    https://${LINK_DOMAIN}  -> (nginx 静态托管 dist)"
   echo ""
   echo -e "  日志目录：${LOG_DIR}"
   echo -e "  停止服务：${YELLOW}./manage.sh stop${NC}"
@@ -248,7 +220,8 @@ cmd_stop() {
     exit 0
   fi
 
-  kill_pid_gracefully "${FRONTEND_PID:-}" "前端"
+  # 兼容旧字段：如果 FRONTEND_PID 存在也会尝试停；新版本为空会跳过
+  kill_pid_gracefully "${FRONTEND_PID:-}" "前端(旧)"
   kill_pid_gracefully "${BACKEND_PID:-}" "后端"
 
   rm -f "$PID_FILE"
@@ -256,29 +229,24 @@ cmd_stop() {
 }
 
 cmd_status() {
-  if ! read_pids; then
-    warn "未找到 $PID_FILE（未启动或 PID 文件已被删）"
-    exit 0
-  fi
-
   echo -e "${CYAN}══════════════════════════════════════════${NC}"
   echo -e "${CYAN}                服务状态                  ${NC}"
   echo -e "${CYAN}══════════════════════════════════════════${NC}"
 
-  if [ -n "${BACKEND_PID:-}" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+  if read_pids && [ -n "${BACKEND_PID:-}" ] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     echo -e "${GREEN}[RUN]${NC} 后端 PID=$BACKEND_PID  ${BACKEND_HOST}:${BACKEND_PORT}"
   else
-    echo -e "${RED}[DOWN]${NC} 后端 PID=${BACKEND_PID:-N/A}"
+    echo -e "${RED}[DOWN]${NC} 后端（未运行或 PID 文件缺失）"
   fi
 
-  if [ -n "${FRONTEND_PID:-}" ] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
-    echo -e "${GREEN}[RUN]${NC} 前端 PID=$FRONTEND_PID  ${FRONTEND_HOST}:${FRONTEND_PORT}"
+  if [ -f "$FRONTEND_DIST/index.html" ]; then
+    echo -e "${GREEN}[OK]${NC}  前端 dist 存在：$FRONTEND_DIST"
   else
-    echo -e "${RED}[DOWN]${NC} 前端 PID=${FRONTEND_PID:-N/A}"
+    echo -e "${YELLOW}[WARN]${NC} 前端 dist 不存在：$FRONTEND_DIST（请 ./manage.sh start 或手动 npm run build）"
   fi
 
   echo ""
-  echo -e "日志：$LOG_DIR/backend.log / $LOG_DIR/frontend.log"
+  echo -e "日志：$LOG_DIR/backend.log"
 }
 
 cmd_restart() {
@@ -297,7 +265,6 @@ nginx_write_site() {
 }
 
 cmd_nginx() {
-  # 需要 root 写 /etc/nginx
   if [ "${EUID:-$(id -u)}" -ne 0 ]; then
     need_cmd sudo
     exec sudo -E bash "$0" nginx
@@ -305,12 +272,8 @@ cmd_nginx() {
 
   need_cmd nginx
 
-  # 如果没装 nginx，提示你自行安装（避免脚本擅自装包）
-  if ! command -v nginx >/dev/null 2>&1; then
-    error "未安装 nginx，请先：apt update && apt install nginx -y"
-  fi
-
   info "[nginx] 写入站点配置（HTTP）：$API_DOMAIN / $LINK_DOMAIN"
+  info "[nginx] 前端将静态托管：$FRONTEND_DIST"
 
   # API 站点：反代到 127.0.0.1:8000
   nginx_write_site "$API_DOMAIN" "
@@ -328,22 +291,25 @@ server {
 }
 "
 
-  # LINK 站点：反代到 127.0.0.1:5173
-  # 兼容 WebSocket（Vite 预览/热更新类）
+  # LINK 站点：直接托管 dist（SPA fallback）
   nginx_write_site "$LINK_DOMAIN" "
 server {
     listen 80;
     server_name $LINK_DOMAIN;
 
-    location / {
-        proxy_pass http://$FRONTEND_HOST:$FRONTEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
+    root $FRONTEND_DIST;
+    index index.html;
 
-        # WebSocket
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \"upgrade\";
+    # 静态资源缓存（可选，但常用）
+    location ~* \\\\.(?:css|js|mjs|map|png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|eot)$ {
+        try_files \$uri =404;
+        expires 7d;
+        add_header Cache-Control \"public, max-age=604800\" always;
+    }
+
+    # SPA 路由：不存在的路径回退到 index.html
+    location / {
+        try_files \$uri \$uri/ /index.html;
     }
 }
 "
@@ -384,8 +350,7 @@ main() {
 
 可通过环境变量覆盖：
   API_DOMAIN / LINK_DOMAIN
-  BACKEND_HOST / FRONTEND_HOST
-  BACKEND_PORT / FRONTEND_PORT
+  BACKEND_HOST / BACKEND_PORT
   BACKEND_MODULE / BACKEND_WORKERS
 
 例子：
