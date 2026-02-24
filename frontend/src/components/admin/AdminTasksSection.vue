@@ -5,7 +5,7 @@ import { fetchTaskSnapshot } from '../../api/moderation'
 import type { AdminTasksModel } from '../../composables/admin/useAdminTasks'
 import type { TaskSnapshot } from '../../composables/admin/useAdminReports'
 import type { AdminTaskItem } from '../../types/api'
-import { formatShort } from '../../utils/time'
+import { formatShort, isExpired } from '../../utils/time'
 import { appConfirm } from '../AppConfirm.vue'
 import AppDropdown from '../AppDropdown.vue'
 import AdminTaskSnapshotDrawer from './AdminTaskSnapshotDrawer.vue'
@@ -34,11 +34,6 @@ const flagOptions = [
   { value: 'urgent', label: '仅加急' },
 ]
 
-
-function isExpired(deadline: string | null): boolean {
-  if (!deadline) return false
-  return new Date(deadline) < new Date()
-}
 
 const TASK_STATUS_MAP: Record<string, string> = {
   open: '待接取',
