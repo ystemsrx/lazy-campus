@@ -35,6 +35,8 @@ const loading = ref(false);
 const registrationEnabled = ref(false);
 const registrationLoaded = ref(false);
 
+const pageVisible = ref(false);
+
 const showAppeal = ref(false);
 const appealInitialBanUntil = ref<string | null>(null);
 
@@ -179,7 +181,14 @@ async function loadRegistrationStatus() {
   }
 }
 
-onMounted(loadRegistrationStatus);
+onMounted(() => {
+  loadRegistrationStatus();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      pageVisible.value = true;
+    });
+  });
+});
 </script>
 
 <template>
@@ -189,6 +198,18 @@ onMounted(loadRegistrationStatus);
       <div class="av-bg__orb av-bg__orb--br"></div>
       <div class="av-bg__orb av-bg__orb--tr"></div>
     </div>
+
+    <div class="av-outer" :class="{ 'av-outer--visible': pageVisible }">
+      <div class="av-subtitle-wrap">
+        <span
+          class="av-subtitle"
+          :class="isLogin ? 'av-subtitle--active' : 'av-subtitle--up'"
+        >欢迎回来</span>
+        <span
+          class="av-subtitle"
+          :class="!isLogin ? 'av-subtitle--active' : 'av-subtitle--down'"
+        >加入我们</span>
+      </div>
 
     <div class="av-card">
       <div class="av-header">
@@ -267,6 +288,7 @@ onMounted(loadRegistrationStatus);
         />
       </div>
     </div>
+    </div>
 
     <LoginAppealModal
       v-model="showAppeal"
@@ -331,11 +353,27 @@ onMounted(loadRegistrationStatus);
   filter: blur(60px);
 }
 
-.av-card {
+.av-outer {
   position: relative;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   width: 100%;
   max-width: 400px;
+  opacity: 0;
+  transform: translateY(32px) scale(0.97);
+  transition:
+    opacity 0.75s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.75s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.av-outer--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.av-card {
+  width: 100%;
   background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
@@ -343,7 +381,7 @@ onMounted(loadRegistrationStatus);
   box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.05);
   border-radius: 40px;
   padding: 32px 36px;
-  transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: height 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .av-header {
@@ -374,6 +412,45 @@ onMounted(loadRegistrationStatus);
 }
 .av-toggle:hover {
   color: #000;
+}
+
+.av-subtitle-wrap {
+  position: relative;
+  height: 36px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding-left: 6px;
+}
+.av-subtitle {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  background: linear-gradient(125deg, #1c1917 20%, #92400e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition:
+    opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.av-subtitle--active {
+  opacity: 1;
+  transform: translateY(0);
+}
+.av-subtitle--up {
+  opacity: 0;
+  transform: translateY(-14px);
+  pointer-events: none;
+}
+.av-subtitle--down {
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
 }
 
 .av-title-wrap {

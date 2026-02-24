@@ -33,7 +33,7 @@ function onPasswordInput(event: Event) {
       <input
         :value="account"
         type="text"
-        placeholder="账号"
+        placeholder="办事大厅账号"
         class="av-input"
         required
         @input="onAccountInput"
