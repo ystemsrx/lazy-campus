@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
@@ -205,10 +205,20 @@ watch(() => route.query.task, (newVal) => {
   consumeTaskQuery()
 })
 
+let bootstrapped = false
+
 onMounted(() => {
   bootstrap().then(() => {
+    bootstrapped = true
     consumeTaskQuery()
   })
+})
+
+onActivated(() => {
+  if (bootstrapped) {
+    Promise.all([loadTasks(), loadWorkers(), loadCategories()]).catch(() => {})
+    if (auth.isAuthenticated) loadMyTasks().catch(() => {})
+  }
 })
 </script>
 

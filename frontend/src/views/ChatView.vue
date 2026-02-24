@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessageSquare } from 'lucide-vue-next'
 
@@ -190,6 +190,15 @@ scrollToBottomHook = scrollToBottom
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+})
+
+onActivated(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onDeactivated(() => {
+  window.removeEventListener('resize', checkMobile)
 })
 
 onUnmounted(() => {

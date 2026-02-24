@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -16,6 +16,9 @@ worker_skill_tags = Table(
 
 class User(Base):
     __tablename__ = 'users'
+    __table_args__ = (
+        Index('ix_users_ban_flags', 'is_banned', 'ban_publish', 'ban_accept'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account: Mapped[str] = mapped_column(String(64), unique=True, index=True)
@@ -55,7 +58,10 @@ class User(Base):
 
 class WorkerProfile(Base):
     __tablename__ = 'worker_profiles'
-    __table_args__ = (UniqueConstraint('user_id', name='uq_worker_profile_user'),)
+    __table_args__ = (
+        UniqueConstraint('user_id', name='uq_worker_profile_user'),
+        Index('ix_worker_profiles_enabled', 'enabled', 'user_id'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)

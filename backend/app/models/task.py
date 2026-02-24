@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,6 +18,11 @@ class TaskCategory(Base):
 
 class Task(Base):
     __tablename__ = 'tasks'
+    __table_args__ = (
+        Index('ix_tasks_list_open', 'status', 'is_deleted', 'publisher_id'),
+        Index('ix_tasks_publisher_status', 'publisher_id', 'status'),
+        Index('ix_tasks_assignee_status', 'assignee_id', 'status'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200), index=True)

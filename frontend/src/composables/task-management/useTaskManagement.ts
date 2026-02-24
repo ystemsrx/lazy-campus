@@ -1,5 +1,6 @@
 import {
   computed,
+  onActivated,
   onMounted,
   onUnmounted,
   ref,
@@ -698,8 +699,11 @@ export function useTaskManagement() {
     consumeTaskQuery()
   })
 
+  let bootstrapped = false
+
   onMounted(() => {
     bootstrap().then(() => {
+      bootstrapped = true
       consumeTaskQuery()
     })
     scrollObserver = new IntersectionObserver(
@@ -713,6 +717,12 @@ export function useTaskManagement() {
   watch(sentinelRef, (el, oldEl) => {
     if (oldEl) scrollObserver?.unobserve(oldEl)
     if (el) scrollObserver?.observe(el)
+  })
+
+  onActivated(() => {
+    if (bootstrapped) {
+      Promise.all([loadMyTasks(), loadCategories()]).catch(() => {})
+    }
   })
 
   onUnmounted(() => {

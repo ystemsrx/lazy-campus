@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onActivated, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { fetchMyReports, fetchReceivedReports } from '../../api/moderation'
@@ -140,8 +140,14 @@ export function useMyReportsData(options: UseMyReportsDataOptions) {
     selectedReceivedId.value = null
   })
 
+  let bootstrapped = false
+
   onMounted(() => {
-    void loadReports()
+    loadReports().then(() => { bootstrapped = true })
+  })
+
+  onActivated(() => {
+    if (bootstrapped) loadReports().catch(() => {})
   })
 
   return {

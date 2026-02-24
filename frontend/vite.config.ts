@@ -15,6 +15,18 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       allowedHosts
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-vue': ['vue', 'vue-router', 'pinia'],
+            'vendor-katex': ['katex'],
+            'vendor-markdown': ['marked', 'dompurify'],
+            'vendor-hljs': ['highlight.js/lib/core'],
+          }
+        }
+      }
     }
   }
 })

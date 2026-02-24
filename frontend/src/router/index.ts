@@ -23,25 +23,31 @@ const SESSION_REFRESH_KEY = 'token_refreshed'
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  // 每次新的浏览器会话（sessionStorage 随 tab 关闭而清空）刷新一次 token
-  // 实现滑动窗口：只要在 30 天内有过访问，就自动续期
-  if (auth.isAuthenticated && !sessionStorage.getItem(SESSION_REFRESH_KEY)) {
-    sessionStorage.setItem(SESSION_REFRESH_KEY, '1')
-    const ok = await auth.refresh()
-    if (!ok) return '/login'
-  }
+  const needsRefresh = auth.isAuthenticated && !sessionStorage.getItem(SESSION_REFRESH_KEY)
+  const needsFetchMe = auth.isAuthenticated && !auth.user && auth.role === 'user'
 
-  if (!auth.isAuthenticated && !publicPaths.includes(to.path)) {
-    return '/login'
-  }
+  if (needsRefresh || needsFetchMe) {
+    const tasks: Promise<unknown>[] = []
 
-  if (auth.isAuthenticated && !auth.user && auth.role === 'user') {
+    if (needsRefresh) {
+      sessionStorage.setItem(SESSION_REFRESH_KEY, '1')
+      tasks.push(auth.refresh().then(ok => { if (!ok) throw new Error('refresh_failed') }))
+    }
+
+    if (needsFetchMe) {
+      tasks.push(auth.fetchMe())
+    }
+
     try {
-      await auth.fetchMe()
+      await Promise.all(tasks)
     } catch {
       auth.logout()
       return '/login'
     }
+  }
+
+  if (!auth.isAuthenticated && !publicPaths.includes(to.path)) {
+    return '/login'
   }
 
   if (to.path === '/login' && auth.isAuthenticated) {

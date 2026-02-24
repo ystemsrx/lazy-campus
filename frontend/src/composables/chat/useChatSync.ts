@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 
 import { fetchConversations, fetchMessages, markRead } from '../../api/chat'
@@ -262,20 +262,37 @@ export function useChatSync(options: UseChatSyncOptions) {
     }
   }
 
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(async () => {
+      await pollConversationChanges()
+    }, 5000)
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
   onMounted(async () => {
     await loadConversations()
     await options.onAfterLoadConversations?.()
     await hydrateRouteSelection()
+    startPolling()
+  })
 
-    pollTimer = setInterval(async () => {
-      await pollConversationChanges()
-    }, 5000)
+  onActivated(() => {
+    startPolling()
+  })
+
+  onDeactivated(() => {
+    stopPolling()
   })
 
   onUnmounted(() => {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-    }
+    stopPolling()
   })
 
   return {
