@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { ref, watch, onMounted, nextTick } from 'vue'
 import { BarChart3, LayoutDashboard, Plus } from 'lucide-vue-next'
 
-defineProps<{
+const props = defineProps<{
   activeView: 'dashboard' | 'stats'
 }>()
 
@@ -9,11 +10,48 @@ const emit = defineEmits<{
   (e: 'update:activeView', value: 'dashboard' | 'stats'): void
   (e: 'create'): void
 }>()
+
+const sidebarRef = ref<HTMLElement | null>(null)
+const dashBtnRef = ref<HTMLElement | null>(null)
+const statsBtnRef = ref<HTMLElement | null>(null)
+const isAnimating = ref(false)
+const indicatorStyle = ref<Record<string, string>>({ top: '0px', height: '0px' })
+
+function updateIndicator(animate = true) {
+  const sidebar = sidebarRef.value
+  const btn = props.activeView === 'dashboard' ? dashBtnRef.value : statsBtnRef.value
+  if (!sidebar || !btn) return
+  const sr = sidebar.getBoundingClientRect()
+  const br = btn.getBoundingClientRect()
+  isAnimating.value = animate
+  indicatorStyle.value = {
+    top: `${br.top - sr.top}px`,
+    height: `${br.height}px`,
+  }
+}
+
+watch(() => props.activeView, async () => {
+  await nextTick()
+  updateIndicator(true)
+})
+
+onMounted(async () => {
+  await nextTick()
+  updateIndicator(false)
+  requestAnimationFrame(() => { isAnimating.value = true })
+})
 </script>
 
 <template>
-  <aside class="tm-sidebar">
+  <aside ref="sidebarRef" class="tm-sidebar">
+    <div
+      class="tm-sidebar__indicator"
+      :class="{ 'tm-sidebar__indicator--animated': isAnimating }"
+      :style="indicatorStyle"
+    />
+
     <button
+      ref="dashBtnRef"
       class="tm-sidebar__btn"
       :class="{ 'tm-sidebar__btn--active': activeView === 'dashboard' }"
       @click="emit('update:activeView', 'dashboard')"
@@ -28,6 +66,7 @@ const emit = defineEmits<{
     </button>
 
     <button
+      ref="statsBtnRef"
       class="tm-sidebar__btn"
       :class="{ 'tm-sidebar__btn--active': activeView === 'stats' }"
       @click="emit('update:activeView', 'stats')"
@@ -56,6 +95,22 @@ const emit = defineEmits<{
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.02);
 }
 
+.tm-sidebar__indicator {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  border-radius: 14px;
+  background: var(--c-accent-light);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.tm-sidebar__indicator--animated {
+  transition:
+    top 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    height 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .tm-sidebar__btn {
   width: 64px;
   padding: 10px 6px;
@@ -69,22 +124,21 @@ const emit = defineEmits<{
   justify-content: center;
   gap: 5px;
   cursor: pointer;
-  transition: all 0.2s var(--ease);
+  transition: color 0.2s var(--ease);
   font-size: 11px;
   font-weight: 500;
   font-family: var(--font-sans);
   line-height: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .tm-sidebar__btn:hover {
-  background: var(--c-border-light);
   color: var(--c-text);
 }
 
 .tm-sidebar__btn--active {
-  background: var(--c-accent-light);
   color: var(--c-accent);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 .tm-sidebar__add-btn {
@@ -106,6 +160,8 @@ const emit = defineEmits<{
   font-weight: 600;
   font-family: var(--font-sans);
   line-height: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .tm-sidebar__add-btn:hover {

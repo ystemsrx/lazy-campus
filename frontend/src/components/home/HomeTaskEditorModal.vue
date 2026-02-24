@@ -250,7 +250,7 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
 }
 
 @media (hover: hover) {
-  .hv-icon-picker__item:hover {
+  .hv-icon-picker__item:not(.hv-icon-picker__item--active):hover {
     border-color: var(--c-border);
   }
 }
