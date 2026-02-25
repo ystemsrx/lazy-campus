@@ -57,6 +57,9 @@ export function useChatViewUiState(
   }
 
   function clearConversationMetaState() {
+    showTaskPreview.value = false
+    showUserDetailModal.value = false
+    showReportModal.value = false
     taskPreview.value = null
     peerWorkerProfile.value = null
     peerWorkerReviews.value = []

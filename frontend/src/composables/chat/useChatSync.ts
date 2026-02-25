@@ -1,4 +1,4 @@
-import { onActivated, onDeactivated, onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 
 import { fetchConversations, fetchMessages, markRead } from '../../api/chat'
@@ -31,32 +31,106 @@ export function useChatSync(options: UseChatSyncOptions) {
   const loadingMore = ref(false)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let mountedReady = false
+
+  function normalizeTaskId(taskId: number | null | undefined): number | null {
+    if (typeof taskId !== 'number' || !Number.isFinite(taskId) || taskId <= 0) return null
+    return taskId
+  }
+
+  function parseQueryId(raw: unknown): number | null {
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (value === undefined || value === null || value === '') return null
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return null
+    return parsed
+  }
+
+  function conversationKey(peerId: number, taskId: number | null): string {
+    return `${peerId}-${taskId === null ? 'null' : taskId}`
+  }
+
+  function normalizeConversation(conversation: Conversation): Conversation {
+    return {
+      ...conversation,
+      task_id: normalizeTaskId(conversation.task_id),
+      peer_last_active: conversation.peer_last_active ?? null,
+    }
+  }
+
+  function isSameConversation(conversation: Conversation | null | undefined, peerId: number, taskId: number | null): boolean {
+    if (!conversation) return false
+    return (
+      conversation.peer_id === peerId &&
+      normalizeTaskId(conversation.task_id) === taskId
+    )
+  }
+
+  function dedupeConversations(list: Conversation[]): Conversation[] {
+    const order: string[] = []
+    const byKey = new Map<string, Conversation>()
+
+    const pickBetter = (a: Conversation, b: Conversation): Conversation => {
+      const aScore = (a.last_message_time ? 8 : 0) + (a.last_message ? 4 : 0) + (a.peer_last_active ? 2 : 0) + (a.task_title ? 1 : 0)
+      const bScore = (b.last_message_time ? 8 : 0) + (b.last_message ? 4 : 0) + (b.peer_last_active ? 2 : 0) + (b.task_title ? 1 : 0)
+      if (bScore > aScore) return b
+      if (bScore < aScore) return a
+
+      const aTime = a.last_message_time ?? ''
+      const bTime = b.last_message_time ?? ''
+      return bTime > aTime ? b : a
+    }
+
+    for (const item of list) {
+      const normalized = normalizeConversation(item)
+      const key = conversationKey(normalized.peer_id, normalized.task_id)
+      if (!byKey.has(key)) {
+        byKey.set(key, normalized)
+        order.push(key)
+        continue
+      }
+
+      byKey.set(key, pickBetter(byKey.get(key)!, normalized))
+    }
+
+    return order
+      .map((key) => byKey.get(key))
+      .filter((conversation): conversation is Conversation => Boolean(conversation))
+  }
+
+  function findConversation(peerId: number, taskId: number | null): Conversation | undefined {
+    return conversations.value.find((conversation) => isSameConversation(conversation, peerId, taskId))
+  }
 
   async function loadConversations() {
     try {
-      const freshList = await fetchConversations()
+      const fetchedList = await fetchConversations()
+      const freshList = dedupeConversations(fetchedList)
 
       const activePeer = activeConversation.value?.peer_id
-      const activeTask = activeConversation.value?.task_id
+      const activeTask = normalizeTaskId(activeConversation.value?.task_id)
 
       if (activePeer !== undefined) {
         const existsInFresh = freshList.some(
-          (conversation) => conversation.peer_id === activePeer && conversation.task_id === activeTask,
+          (conversation) => isSameConversation(conversation, activePeer, activeTask),
         )
 
         if (!existsInFresh && activeConversation.value) {
-          freshList.unshift(activeConversation.value)
+          freshList.unshift(normalizeConversation(activeConversation.value))
         }
       }
 
-      conversations.value = freshList
-      options.onConversationsRefreshed?.(freshList)
+      const nextList = dedupeConversations(freshList)
+      conversations.value = nextList
+      options.onConversationsRefreshed?.(nextList)
 
       if (activeConversation.value) {
-        const updated = freshList.find(
-          (conversation) =>
-            conversation.peer_id === activeConversation.value!.peer_id &&
-            conversation.task_id === activeConversation.value!.task_id,
+        const updated = nextList.find(
+          (conversation) => isSameConversation(
+            conversation,
+            activeConversation.value!.peer_id,
+            normalizeTaskId(activeConversation.value!.task_id),
+          ),
         )
         if (updated) {
           activeConversation.value = updated
@@ -113,26 +187,27 @@ export function useChatSync(options: UseChatSyncOptions) {
   }
 
   async function selectConversation(conversation: Conversation) {
-    activeConversation.value = conversation
+    const normalizedConversation = normalizeConversation(conversation)
+    activeConversation.value = normalizedConversation
     messages.value = []
     hasMore.value = false
-    options.onBeforeSelectConversation?.(conversation)
+    options.onBeforeSelectConversation?.(normalizedConversation)
 
-    const query: Record<string, string> = { peer: String(conversation.peer_id) }
-    if (conversation.task_id) {
-      query.task = String(conversation.task_id)
+    const query: Record<string, string> = { peer: String(normalizedConversation.peer_id) }
+    if (normalizedConversation.task_id !== null) {
+      query.task = String(normalizedConversation.task_id)
     }
-    options.router.replace({ path: '/chat', query })
 
     const tasks: Promise<unknown>[] = [
       loadMessages(),
       options.onLoadAttachments?.() ?? Promise.resolve(),
-      options.onPrefetchPeerProfile?.(conversation.peer_id) ?? Promise.resolve(),
+      options.onPrefetchPeerProfile?.(normalizedConversation.peer_id) ?? Promise.resolve(),
     ]
 
-    if (conversation.task_id) {
-      tasks.push(options.onPrefetchTaskDetail?.(conversation.task_id) ?? Promise.resolve())
+    if (normalizedConversation.task_id !== null) {
+      tasks.push(options.onPrefetchTaskDetail?.(normalizedConversation.task_id) ?? Promise.resolve())
     }
+    options.router.replace({ path: '/chat', query })
 
     await Promise.all(tasks)
   }
@@ -142,13 +217,11 @@ export function useChatSync(options: UseChatSyncOptions) {
   }
 
   async function hydrateRouteSelection() {
-    const peerId = Number(options.route.query.peer)
-    const taskId = options.route.query.task ? Number(options.route.query.task) : null
+    const peerId = parseQueryId(options.route.query.peer) ?? 0
+    const taskId = parseQueryId(options.route.query.task)
 
     if (peerId) {
-      let found = conversations.value.find(
-        (conversation) => conversation.peer_id === peerId && conversation.task_id === taskId,
-      )
+      let found = findConversation(peerId, taskId)
 
       if (!found) {
         try {
@@ -159,7 +232,7 @@ export function useChatSync(options: UseChatSyncOptions) {
           let taskStatus: string | null = null
           let taskIcon: string | null = null
 
-          if (taskId) {
+          if (taskId !== null) {
             try {
               const taskInfo = await fetchTask(taskId)
               taskTitle = taskInfo.title
@@ -171,30 +244,33 @@ export function useChatSync(options: UseChatSyncOptions) {
             }
           }
 
-          const placeholder: Conversation = {
-            peer_id: peerId,
-            peer_name: userInfo.display_name,
-            peer_avatar: userInfo.avatar_url,
-            peer_gender: userInfo.gender ?? null,
-            peer_last_active: userInfo.last_active ?? null,
-            task_id: taskId,
-            task_title: taskTitle,
-            task_price: taskPrice,
-            task_status: taskStatus,
-            task_icon: taskIcon,
-            task_is_deleted: false,
-            last_message: null,
-            last_message_time: null,
-            unread_count: 0,
-            blocked_by_me: false,
-            blocked_by_them: false,
-            peer_ban_contact: false,
-            peer_payment_qr_url: null,
-            task_publisher_id: null,
-          }
+          found = findConversation(peerId, taskId)
+          if (!found) {
+            const placeholder: Conversation = normalizeConversation({
+              peer_id: peerId,
+              peer_name: userInfo.display_name,
+              peer_avatar: userInfo.avatar_url,
+              peer_gender: userInfo.gender ?? null,
+              peer_last_active: userInfo.last_active ?? null,
+              task_id: taskId,
+              task_title: taskTitle,
+              task_price: taskPrice,
+              task_status: taskStatus,
+              task_icon: taskIcon,
+              task_is_deleted: false,
+              last_message: null,
+              last_message_time: null,
+              unread_count: 0,
+              blocked_by_me: false,
+              blocked_by_them: false,
+              peer_ban_contact: false,
+              peer_payment_qr_url: null,
+              task_publisher_id: null,
+            })
 
-          conversations.value.unshift(placeholder)
-          found = placeholder
+            conversations.value = dedupeConversations([placeholder, ...conversations.value])
+            found = findConversation(peerId, taskId) ?? placeholder
+          }
         } catch {
           // user not found
         }
@@ -277,15 +353,53 @@ export function useChatSync(options: UseChatSyncOptions) {
   }
 
   onMounted(async () => {
-    await loadConversations()
-    await options.onAfterLoadConversations?.()
-    await hydrateRouteSelection()
+    try {
+      await loadConversations()
+      await options.onAfterLoadConversations?.()
+      await hydrateRouteSelection()
+    } finally {
+      mountedReady = true
+      startPolling()
+    }
+  })
+
+  onActivated(async () => {
+    if (!mountedReady) {
+      startPolling()
+      return
+    }
+
+    const routePeer = parseQueryId(options.route.query.peer) ?? 0
+    const routeTask = parseQueryId(options.route.query.task)
+
+    const needsRehydrate = routePeer > 0 && (
+      !isSameConversation(activeConversation.value, routePeer, routeTask)
+    )
+
+    if (needsRehydrate) {
+      await loadConversations()
+      await hydrateRouteSelection()
+    }
+
     startPolling()
   })
 
-  onActivated(() => {
-    startPolling()
-  })
+  watch(
+    () => [options.route.query.peer, options.route.query.task] as const,
+    async () => {
+      const routePeer = parseQueryId(options.route.query.peer) ?? 0
+      const routeTask = parseQueryId(options.route.query.task)
+
+      if (routePeer === 0) return
+
+      if (isSameConversation(activeConversation.value, routePeer, routeTask)) {
+        return
+      }
+
+      await loadConversations()
+      await hydrateRouteSelection()
+    },
+  )
 
   onDeactivated(() => {
     stopPolling()

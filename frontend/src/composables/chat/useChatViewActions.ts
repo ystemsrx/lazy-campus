@@ -109,6 +109,10 @@ export function useChatViewActions(options: UseChatViewActionsOptions) {
       options.messages.value.push(message)
       options.inputText.value = ''
 
+      if (options.activeConversation.value) {
+        options.unhideConversation(convKey(options.activeConversation.value))
+      }
+
       await nextTick()
       scrollToBottom()
       void options.loadConversations()

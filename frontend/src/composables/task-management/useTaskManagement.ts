@@ -1,6 +1,7 @@
 import {
   computed,
   onActivated,
+  onDeactivated,
   onMounted,
   onUnmounted,
   ref,
@@ -695,7 +696,7 @@ export function useTaskManagement() {
   }
 
   watch(() => route.query.task, (newVal) => {
-    if (!newVal || loading.value) return
+    if (!newVal || loading.value || route.path !== '/tasks') return
     consumeTaskQuery()
   })
 
@@ -723,6 +724,10 @@ export function useTaskManagement() {
     if (bootstrapped) {
       Promise.all([loadMyTasks(), loadCategories()]).catch(() => {})
     }
+  })
+
+  onDeactivated(() => {
+    closeDrawer()
   })
 
   onUnmounted(() => {

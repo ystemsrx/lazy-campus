@@ -14,6 +14,7 @@ import ChatTaskPreviewModal from '../components/chat/ChatTaskPreviewModal.vue'
 import ChatUserDetailModal from '../components/chat/ChatUserDetailModal.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import HomeReportModal from '../components/home/HomeReportModal.vue'
+import { convKey } from '../composables/chat/conversationKey'
 import { getSnapshotStatusMap } from '../composables/chat/taskSnapshotStatus'
 import { useChatAttachments } from '../composables/chat/useChatAttachments'
 import { useChatSync } from '../composables/chat/useChatSync'
@@ -47,6 +48,7 @@ const showPaymentQrLightbox = ref(false)
 let loadAttachmentsHook: () => Promise<void> = async () => {}
 let resetAttachmentsHook: () => void = () => {}
 let autoUnhideUnreadHook: (conversations: Conversation[]) => void = () => {}
+let unhideConversationHook: (key: string) => void = () => {}
 let prefetchTaskDetailHook: (taskId: number) => Promise<void> = async () => {}
 let prefetchPeerProfileHook: (peerId: number) => Promise<void> = async () => {}
 let clearConversationMetaStateHook: () => void = () => {}
@@ -70,9 +72,10 @@ const {
   onConversationsRefreshed: (freshConversations) => {
     autoUnhideUnreadHook(freshConversations)
   },
-  onBeforeSelectConversation: () => {
+  onBeforeSelectConversation: (conversation) => {
     resetAttachmentsHook()
     clearConversationMetaStateHook()
+    unhideConversationHook(convKey(conversation))
   },
   onLoadAttachments: () => loadAttachmentsHook(),
   onPrefetchPeerProfile: (peerId) => prefetchPeerProfileHook(peerId),
@@ -126,6 +129,7 @@ const {
 })
 
 autoUnhideUnreadHook = autoUnhideUnread
+unhideConversationHook = unhideConversation
 
 const {
   showAttachmentModal,

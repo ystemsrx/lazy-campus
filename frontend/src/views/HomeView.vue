@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
@@ -165,17 +165,30 @@ function findTaskById(taskId: number): Task | undefined {
   )
 }
 
+function getRouteTaskQuery() {
+  const rawTask = route.query.task
+  if (Array.isArray(rawTask)) return rawTask[0]
+  return rawTask
+}
+
 function consumeTaskQuery() {
-  const taskQuery = route.query.task
+  if (route.path !== '/') return
+
+  const taskQuery = getRouteTaskQuery()
   if (!taskQuery) return
+
   const taskId = Number(taskQuery)
-  const task = findTaskById(taskId)
-  if (task) {
-    openTaskDrawer(task)
+
+  if (Number.isFinite(taskId) && taskId > 0) {
+    const task = findTaskById(taskId)
+    if (task) {
+      openTaskDrawer(task)
+    }
   }
+
   const nextQuery = { ...route.query }
   delete nextQuery.task
-  router.replace({ query: nextQuery })
+  router.replace({ path: route.path, query: nextQuery })
 }
 
 function logout() {
@@ -200,8 +213,8 @@ function openChat() {
   router.push('/chat')
 }
 
-watch(() => route.query.task, (newVal) => {
-  if (!newVal || loading.value) return
+watch(() => [route.path, route.query.task, loading.value] as const, ([path, taskQuery, isLoading]) => {
+  if (path !== '/' || !taskQuery || isLoading) return
   consumeTaskQuery()
 })
 
@@ -219,6 +232,11 @@ onActivated(() => {
     Promise.all([loadTasks(), loadWorkers(), loadCategories()]).catch(() => {})
     if (auth.isAuthenticated) loadMyTasks().catch(() => {})
   }
+})
+
+onDeactivated(() => {
+  closeTaskDrawer()
+  closeWorkerDrawer()
 })
 </script>
 
