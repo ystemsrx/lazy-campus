@@ -4,12 +4,15 @@ import { useRouter } from 'vue-router'
 
 import AppToast from '../components/AppToast.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import LoginAppealModal from '../components/login/LoginAppealModal.vue'
 import ReceivedReportsSection from '../components/reports/sections/ReceivedReportsSection.vue'
 import SubmittedReportsSection from '../components/reports/sections/SubmittedReportsSection.vue'
 import { useMyReportsData } from '../composables/reports/useMyReportsData'
 import { useAppToast } from '../composables/useAppToast'
+import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
 import { useAuthStore } from '../stores/auth'
+import { nowLocal } from '../utils/time'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -17,6 +20,15 @@ const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 const me = computed(() => auth.user)
 
 const { toast, showToast, clearToast } = useAppToast()
+const {
+  showCreateModal,
+  newTask,
+  publishCategories,
+  canCreateWithAgent,
+  createWithAgentSubmitting,
+  openPublishModal,
+  submitPublishTask,
+} = useQuickTaskPublish({ showToast })
 
 const {
   sections,
@@ -76,7 +88,7 @@ function logout() {
       :display-name="auth.displayName"
       :avatar-url="me?.avatar_url"
       :gender="me?.gender ?? null"
-      @publish="router.push('/')"
+      @publish="openPublishModal"
       @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="loadReports"
@@ -159,6 +171,18 @@ function logout() {
     authenticated
     :initial-ban-until="me?.ban_until ?? null"
     @submitted="onAppealSubmitted"
+  />
+
+  <HomeTaskEditorModal
+    v-model="showCreateModal"
+    mode="create"
+    :form="newTask"
+    :categories="publishCategories"
+    :now-local="nowLocal"
+    :show-agent-action="canCreateWithAgent"
+    :agent-submitting="createWithAgentSubmitting"
+    @submit="submitPublishTask"
+    @submit-agent="submitPublishTask('agent')"
   />
 
   <Teleport to="body">

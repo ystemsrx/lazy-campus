@@ -90,7 +90,7 @@ export function useSettingsView() {
   }
 
   function openHome() {
-    router.push('/')
+    router.push({ path: '/', query: { publish: '1' } })
   }
 
   function openMyPanel() {

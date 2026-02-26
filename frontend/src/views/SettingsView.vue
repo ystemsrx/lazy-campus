@@ -2,11 +2,14 @@
 import AppSaveStatusBar from '../components/AppSaveStatusBar.vue'
 import AppToast from '../components/AppToast.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import SettingsBlacklistPanel from '../components/settings/SettingsBlacklistPanel.vue'
 import SettingsNavTabs from '../components/settings/SettingsNavTabs.vue'
 import SettingsProfilePanel from '../components/settings/SettingsProfilePanel.vue'
 import SettingsWorkerPanel from '../components/settings/SettingsWorkerPanel.vue'
+import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
 import { useSettingsView } from '../composables/settings/useSettingsView'
+import { nowLocal } from '../utils/time'
 
 const {
   appTitle,
@@ -28,7 +31,6 @@ const {
   paymentQrDeleting,
   saveStatus,
   logout,
-  openHome,
   openMyPanel,
   openSettings,
   goLogin,
@@ -38,6 +40,16 @@ const {
   handlePaymentQrUpload,
   handlePaymentQrDelete,
 } = useSettingsView()
+
+const {
+  showCreateModal,
+  newTask,
+  publishCategories,
+  canCreateWithAgent,
+  createWithAgentSubmitting,
+  openPublishModal,
+  submitPublishTask,
+} = useQuickTaskPublish({ showToast })
 </script>
 
 <template>
@@ -53,7 +65,7 @@ const {
       :display-name="displayName"
       :avatar-url="me?.avatar_url"
       :gender="me?.gender ?? null"
-      @publish="openHome"
+      @publish="openPublishModal"
       @open-my-panel="openMyPanel"
       @open-settings="openSettings"
       @open-reports="$router.push('/reports')"
@@ -142,6 +154,18 @@ const {
         </template>
       </div>
     </div>
+
+    <HomeTaskEditorModal
+      v-model="showCreateModal"
+      mode="create"
+      :form="newTask"
+      :categories="publishCategories"
+      :now-local="nowLocal"
+      :show-agent-action="canCreateWithAgent"
+      :agent-submitting="createWithAgentSubmitting"
+      @submit="submitPublishTask"
+      @submit-agent="submitPublishTask('agent')"
+    />
   </div>
 </template>
 

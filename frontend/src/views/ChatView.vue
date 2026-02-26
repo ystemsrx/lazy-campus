@@ -13,6 +13,7 @@ import ChatMessageList from '../components/chat/ChatMessageList.vue'
 import ChatTaskPreviewModal from '../components/chat/ChatTaskPreviewModal.vue'
 import ChatUserDetailModal from '../components/chat/ChatUserDetailModal.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import HomeReportModal from '../components/home/HomeReportModal.vue'
 import { convKey } from '../composables/chat/conversationKey'
 import { getSnapshotStatusMap } from '../composables/chat/taskSnapshotStatus'
@@ -22,9 +23,11 @@ import { useConversationListInteraction } from '../composables/chat/useConversat
 import { useChatViewActions, type ChatMessageListExpose } from '../composables/chat/useChatViewActions'
 import { useChatViewUiState } from '../composables/chat/useChatViewUiState'
 import { useAppToast } from '../composables/useAppToast'
+import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
 import { useAuthStore } from '../stores/auth'
 import { useNotificationStore } from '../stores/notifications'
 import type { Conversation } from '../types/chat'
+import { nowLocal } from '../utils/time'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +43,15 @@ const avatarGender = computed(() => auth.user?.gender ?? null)
 
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 const { toast, showToast, clearToast } = useAppToast()
+const {
+  showCreateModal,
+  newTask,
+  publishCategories,
+  canCreateWithAgent,
+  createWithAgentSubmitting,
+  openPublishModal,
+  submitPublishTask,
+} = useQuickTaskPublish({ showToast })
 const statusMap = getSnapshotStatusMap()
 
 const messageListRef = ref<ChatMessageListExpose | null>(null)
@@ -219,7 +231,7 @@ onUnmounted(() => {
       :display-name="displayName"
       :avatar-url="avatarUrl"
       :gender="avatarGender"
-      @publish="router.push('/')"
+      @publish="openPublishModal"
       @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
@@ -334,6 +346,18 @@ onUnmounted(() => {
       <ChatPaymentQrLightbox
         v-model="showPaymentQrLightbox"
         :qr-url="activeConversation?.peer_payment_qr_url ?? null"
+      />
+
+      <HomeTaskEditorModal
+        v-model="showCreateModal"
+        mode="create"
+        :form="newTask"
+        :categories="publishCategories"
+        :now-local="nowLocal"
+        :show-agent-action="canCreateWithAgent"
+        :agent-submitting="createWithAgentSubmitting"
+        @submit="submitPublishTask"
+        @submit-agent="submitPublishTask('agent')"
       />
 
       <AppToast :toast="toast" @dismiss="clearToast" />

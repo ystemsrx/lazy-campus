@@ -5,10 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import AppToast from '../components/AppToast.vue'
 import ChatRichTextRenderer from '../components/chat/ChatRichTextRenderer.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import {
   cancelAgentSession,
   deleteAgentDeliverables,
-  downloadAgentDeliverable,
   downloadDeliverableZip,
   fetchAgentAvailability,
   fetchAgentMessages,
@@ -16,7 +16,9 @@ import {
   fetchMyAgentSessions,
   sendAgentMessage,
 } from '../api/agent'
+import { getFileIconComponent } from '../composables/chat/attachmentUtils'
 import { useAppToast } from '../composables/useAppToast'
+import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
 import { useAuthStore } from '../stores/auth'
 import type {
   AgentAvailability,
@@ -26,7 +28,7 @@ import type {
   AgentSessionDetail,
 } from '../types/api'
 import { extractError } from '../utils/error'
-import { formatChatTime, formatFull } from '../utils/time'
+import { formatChatTime, formatFull, nowLocal } from '../utils/time'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +37,15 @@ const auth = useAuthStore()
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const { toast, showToast, clearToast } = useAppToast()
+const {
+  showCreateModal,
+  newTask,
+  publishCategories,
+  canCreateWithAgent,
+  createWithAgentSubmitting,
+  openPublishModal,
+  submitPublishTask,
+} = useQuickTaskPublish({ showToast })
 
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 function checkMobile() { isMobile.value = window.innerWidth < 768 }
@@ -160,10 +171,8 @@ const maxFileSizeMb = computed(() => availability.value?.max_file_size_mb ?? 50)
 // ── Deliverable Modal ──
 
 const showDeliverableModal = ref(false)
-const downloadingName = ref<string | null>(null)
 const zippingAll = ref(false)
 const deletingSelected = ref(false)
-const selectMode = ref(false)
 const selectedNames = ref<Set<string>>(new Set())
 
 const deliverableCount = computed(() => session.value?.deliverables.length ?? 0)
@@ -673,6 +682,10 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function getAgentFileIcon(name: string, mime = '') {
+  return getFileIconComponent(mime, name)
+}
+
 function pickFiles(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])
@@ -747,29 +760,11 @@ async function handleCancel() {
 
 // ── Deliverable Actions ──
 
-async function handleDownload(item: AgentDeliverable) {
-  if (!session.value) return
-  downloadingName.value = item.name
-  try {
-    const blob = await downloadAgentDeliverable(session.value.session_id, item.name)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = item.name.split('/').pop() || item.name
-    link.click()
-    URL.revokeObjectURL(url)
-  } catch (error) {
-    showToast(extractError(error, '下载失败'), 'error')
-  } finally {
-    downloadingName.value = null
-  }
-}
-
 async function handleDownloadZip() {
   if (!session.value) return
   zippingAll.value = true
   try {
-    const names = selectMode.value && selectedNames.value.size > 0
+    const names = selectedNames.value.size > 0
       ? [...selectedNames.value]
       : []
     const blob = await downloadDeliverableZip(session.value.session_id, names)
@@ -800,11 +795,6 @@ async function handleDeleteSelected() {
   }
 }
 
-function toggleSelectMode() {
-  selectMode.value = !selectMode.value
-  if (!selectMode.value) selectedNames.value = new Set()
-}
-
 function toggleSelect(name: string) {
   const next = new Set(selectedNames.value)
   if (next.has(name)) next.delete(name)
@@ -813,8 +803,7 @@ function toggleSelect(name: string) {
 }
 
 function handleDeliverableClick(item: AgentDeliverable) {
-  if (selectMode.value) toggleSelect(item.name)
-  else handleDownload(item)
+  toggleSelect(item.name)
 }
 
 // ── Watchers ──
@@ -877,7 +866,7 @@ onUnmounted(() => {
       :display-name="auth.displayName"
       :avatar-url="auth.user?.avatar_url ?? null"
       :gender="auth.user?.gender ?? null"
-      @publish="router.push('/')"
+      @publish="openPublishModal"
       @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
@@ -975,7 +964,8 @@ onUnmounted(() => {
                   <ChatRichTextRenderer :content="round.userMessage.content || ''" />
                   <div v-if="round.userMessage.attachments?.length" class="chat-bubble-files">
                     <span v-for="att in round.userMessage.attachments" :key="att.stored_name" class="chat-file-chip">
-                      <i class="fa-solid fa-file"></i> {{ att.name }}
+                      <component :is="getAgentFileIcon(att.name)" :size="14" class="agent-file-icon" />
+                      {{ att.name }}
                       <small>({{ formatFileSize(att.size) }})</small>
                     </span>
                   </div>
@@ -1363,6 +1353,7 @@ onUnmounted(() => {
             <div class="agent-input-inner">
               <div v-if="pendingFiles.length" class="agent-pending">
                 <div v-for="(file, index) in pendingFiles" :key="`${file.name}-${index}`" class="agent-pending__item">
+                  <component :is="getAgentFileIcon(file.name, file.type)" :size="14" class="agent-file-icon" />
                   <span>{{ file.name }}</span>
                   <small>{{ formatFileSize(file.size) }}</small>
                   <button type="button" @click="removePendingFile(index)"><i class="fa-solid fa-xmark"></i></button>
@@ -1428,28 +1419,24 @@ onUnmounted(() => {
             <div class="modal-panel">
               <div class="modal-header">
                 <h3>交付文件</h3>
-                <template v-if="selectMode">
+                <div class="modal-select-stats">
+                  <span class="modal-count modal-count--select">
+                    <span class="modal-count-num modal-count-num--left">{{ selectedNames.size }}</span>
+                    <span class="modal-count-slash">/</span>
+                    <span class="modal-count-num modal-count-num--right">{{ deliverableCount }}</span>
+                  </span>
+                </div>
+                <div class="modal-header-actions">
                   <button
-                    class="modal-delete-btn"
+                    v-if="deliverableCount > 0"
+                    class="modal-action-btn modal-action-btn--danger"
                     :disabled="selectedNames.size === 0 || deletingSelected"
                     @click="handleDeleteSelected"
                   >
                     <i :class="deletingSelected ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash'"></i>
+                    删除
                   </button>
-                  <span class="modal-count">{{ selectedNames.size }}/{{ deliverableCount }}</span>
-                </template>
-                <span v-else class="modal-count">{{ deliverableCount }} 个文件</span>
-                <div class="modal-header-actions">
-                  <button
-                    v-if="deliverableCount > 0"
-                    class="modal-action-btn"
-                    :class="{ 'modal-action-btn--active': selectMode }"
-                    @click="toggleSelectMode"
-                  >
-                    <i :class="selectMode ? 'fa-solid fa-xmark' : 'fa-solid fa-list-check'"></i>
-                    {{ selectMode ? '取消' : '多选' }}
-                  </button>
-                  <button class="icon-btn" @click="showDeliverableModal = false">
+                  <button class="icon-btn modal-close-btn" @click="showDeliverableModal = false">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 </div>
@@ -1466,26 +1453,18 @@ onUnmounted(() => {
                     v-for="item in session?.deliverables || []"
                     :key="item.name"
                     class="deliverable-item"
-                    :class="{
-                      'deliverable-item--selected': selectMode && selectedNames.has(item.name),
-                      'deliverable-item--selectable': selectMode,
-                      'deliverable-item--loading': !selectMode && downloadingName === item.name,
-                    }"
+                    :class="{ 'deliverable-item--selected': selectedNames.has(item.name) }"
                     @click="handleDeliverableClick(item)"
                   >
-                    <div v-if="selectMode" class="deliverable-check">
+                    <div class="deliverable-check">
                       <i :class="selectedNames.has(item.name) ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>
                     </div>
                     <div class="deliverable-icon">
-                      <i class="fa-solid fa-file"></i>
+                      <component :is="getAgentFileIcon(item.name)" :size="18" class="agent-file-icon" />
                     </div>
                     <div class="deliverable-info">
                       <span class="deliverable-name">{{ item.name }}</span>
                       <span class="deliverable-meta">{{ formatFileSize(item.size) }} · {{ formatFull(item.updated_at) }}</span>
-                    </div>
-                    <div v-if="!selectMode" class="deliverable-action">
-                      <i v-if="downloadingName === item.name" class="fa-solid fa-spinner fa-spin"></i>
-                      <i v-else class="fa-solid fa-download"></i>
                     </div>
                   </div>
                 </div>
@@ -1494,13 +1473,25 @@ onUnmounted(() => {
               <div v-if="deliverableCount > 0" class="modal-footer">
                 <button class="modal-zip-btn" :disabled="zippingAll" @click="handleDownloadZip">
                   <i class="fa-solid fa-file-zipper"></i>
-                  {{ zippingAll ? '打包中...' : (selectMode && selectedNames.size > 0 ? `打包下载（${selectedNames.size} 个）` : '打包下载全部') }}
+                  {{ zippingAll ? '打包中...' : (selectedNames.size > 0 ? `打包下载（${selectedNames.size} 个）` : '打包下载全部') }}
                 </button>
               </div>
             </div>
           </div>
         </Transition>
       </Teleport>
+
+      <HomeTaskEditorModal
+        v-model="showCreateModal"
+        mode="create"
+        :form="newTask"
+        :categories="publishCategories"
+        :now-local="nowLocal"
+        :show-agent-action="canCreateWithAgent"
+        :agent-submitting="createWithAgentSubmitting"
+        @submit="submitPublishTask"
+        @submit-agent="submitPublishTask('agent')"
+      />
     </div>
   </div>
 </template>
@@ -1919,6 +1910,7 @@ onUnmounted(() => {
 }
 
 .chat-file-chip small { opacity: 0.7; }
+.agent-file-icon { flex-shrink: 0; }
 
 /* --- AI Intermediate (snap-scroll) --- */
 
@@ -2754,10 +2746,55 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+.modal-select-stats {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 86px;
+  flex-shrink: 0;
+}
+
+.modal-count--select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 7ch;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-count-num {
+  display: inline-block;
+}
+
+.modal-count-num--left {
+  min-width: 3ch;
+  text-align: right;
+}
+
+.modal-count-num--right {
+  min-width: 3ch;
+  text-align: left;
+}
+
+.modal-count-slash {
+  display: inline-block;
+  line-height: 1;
+}
+
 .modal-header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.modal-close-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
 }
 
 .modal-action-btn {
@@ -2777,32 +2814,14 @@ onUnmounted(() => {
 
 .modal-action-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
 
-.modal-action-btn--active {
+.modal-action-btn--danger {
   background: #fee2e2;
   border-color: #fca5a5;
   color: #dc2626;
 }
 
-.modal-action-btn--active:hover { background: #fecaca; }
-
-.modal-delete-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  flex-shrink: 0;
-}
-
-.modal-delete-btn:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
-.modal-delete-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.modal-action-btn--danger:hover { background: #fecaca; border-color: #f87171; color: #b91c1c; }
+.modal-action-btn--danger:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .modal-body {
   padding: 16px 20px;
@@ -2841,17 +2860,24 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.deliverable-item:hover:not(.deliverable-item--loading) {
-  border-color: var(--c-accent, #2563eb);
-  background: #fafbff;
+@media (hover: hover) {
+  .deliverable-item:hover {
+    border-color: var(--c-accent, #2563eb);
+    background: #fafbff;
+  }
+}
+
+@media (hover: none) {
+  .deliverable-item:active {
+    border-color: var(--c-accent, #2563eb);
+    background: #fafbff;
+  }
 }
 
 .deliverable-item--selected {
   background: #eff6ff;
   border-color: #93c5fd;
 }
-
-.deliverable-item--loading { opacity: 0.7; cursor: wait; }
 
 .deliverable-check {
   color: #2563eb;
@@ -2892,12 +2918,6 @@ onUnmounted(() => {
 .deliverable-meta {
   font-size: var(--text-xs, 11px);
   color: var(--c-text-muted, #94a3b8);
-}
-
-.deliverable-action {
-  color: var(--c-text-muted, #94a3b8);
-  font-size: 14px;
-  flex-shrink: 0;
 }
 
 .modal-footer {

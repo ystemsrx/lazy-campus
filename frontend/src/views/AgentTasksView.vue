@@ -3,17 +3,28 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppToast from '../components/AppToast.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
+import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
 import { fetchMyAgentSessions } from '../api/agent'
 import { useAppToast } from '../composables/useAppToast'
+import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
 import { useAuthStore } from '../stores/auth'
 import type { AgentMySessionItem } from '../types/api'
 import { extractError } from '../utils/error'
-import { formatFull } from '../utils/time'
+import { formatFull, nowLocal } from '../utils/time'
 
 const router = useRouter()
 const auth = useAuthStore()
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
 const { toast, showToast, clearToast } = useAppToast()
+const {
+  showCreateModal,
+  newTask,
+  publishCategories,
+  canCreateWithAgent,
+  createWithAgentSubmitting,
+  openPublishModal,
+  submitPublishTask,
+} = useQuickTaskPublish({ showToast })
 
 const sessions = ref<AgentMySessionItem[]>([])
 const loading = ref(true)
@@ -83,7 +94,7 @@ onMounted(() => {
       :display-name="auth.displayName"
       :avatar-url="auth.user?.avatar_url ?? null"
       :gender="auth.user?.gender ?? null"
-      @publish="router.push('/')"
+      @publish="openPublishModal"
       @open-my-panel="router.push('/tasks')"
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
@@ -192,6 +203,18 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <HomeTaskEditorModal
+      v-model="showCreateModal"
+      mode="create"
+      :form="newTask"
+      :categories="publishCategories"
+      :now-local="nowLocal"
+      :show-agent-action="canCreateWithAgent"
+      :agent-submitting="createWithAgentSubmitting"
+      @submit="submitPublishTask"
+      @submit-agent="submitPublishTask('agent')"
+    />
   </div>
 </template>
 

@@ -181,24 +181,39 @@ function getRouteTaskQuery() {
   return rawTask
 }
 
-function consumeTaskQuery() {
+function getRoutePublishQuery() {
+  const rawPublish = route.query.publish
+  if (Array.isArray(rawPublish)) return rawPublish[0]
+  return rawPublish
+}
+
+function consumeRouteQueries() {
   if (route.path !== '/') return
 
+  const nextQuery = { ...route.query }
+  let shouldReplace = false
+
   const taskQuery = getRouteTaskQuery()
-  if (!taskQuery) return
-
-  const taskId = Number(taskQuery)
-
-  if (Number.isFinite(taskId) && taskId > 0) {
-    const task = findTaskById(taskId)
-    if (task) {
-      openTaskDrawer(task)
+  if (taskQuery) {
+    const taskId = Number(taskQuery)
+    if (Number.isFinite(taskId) && taskId > 0) {
+      const task = findTaskById(taskId)
+      if (task) openTaskDrawer(task)
     }
+    delete nextQuery.task
+    shouldReplace = true
   }
 
-  const nextQuery = { ...route.query }
-  delete nextQuery.task
-  router.replace({ path: route.path, query: nextQuery })
+  const publishQuery = getRoutePublishQuery()
+  if (publishQuery) {
+    showPostModal.value = true
+    delete nextQuery.publish
+    shouldReplace = true
+  }
+
+  if (shouldReplace) {
+    router.replace({ path: route.path, query: nextQuery })
+  }
 }
 
 function logout() {
@@ -227,9 +242,9 @@ function openAgentTasks() {
   router.push('/agent-tasks')
 }
 
-watch(() => [route.path, route.query.task, loading.value] as const, ([path, taskQuery, isLoading]) => {
-  if (path !== '/' || !taskQuery || isLoading) return
-  consumeTaskQuery()
+watch(() => [route.path, route.query.task, route.query.publish, loading.value] as const, ([path, taskQuery, publishQuery, isLoading]) => {
+  if (path !== '/' || isLoading || (!taskQuery && !publishQuery)) return
+  consumeRouteQueries()
 })
 
 let bootstrapped = false
@@ -237,7 +252,7 @@ let bootstrapped = false
 onMounted(() => {
   bootstrap().then(() => {
     bootstrapped = true
-    consumeTaskQuery()
+    consumeRouteQueries()
   })
 })
 
