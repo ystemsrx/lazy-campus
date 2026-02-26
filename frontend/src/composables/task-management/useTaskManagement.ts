@@ -11,6 +11,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '../../stores/auth'
+import { appSlideCaptcha } from '../../components/AppSlideCaptcha.vue'
 import { appConfirm } from '../../components/AppConfirm.vue'
 import { fetchAgentAvailability, startTaskAgent } from '../../api/agent'
 import {
@@ -47,6 +48,7 @@ import {
   parseUTC,
   utcToLocal,
 } from '../../utils/time'
+import { CaptchaCancelledError, withCaptchaRetry } from '../../utils/captcha'
 import { extractError } from '../../utils/error'
 import { useAppToast } from '../useAppToast'
 
@@ -709,21 +711,26 @@ export function useTaskManagement() {
       createWithAgentSubmitting.value = true
     }
     try {
-      const created = await createTask({
-        title: newTask.value.title,
-        description: newTask.value.description,
-        deadline: newTask.value.deadline ? localToUTC(newTask.value.deadline) : null,
-        location: newTask.value.location || null,
-        price: Number(newTask.value.price),
-        category_id: newTask.value.category_id,
-        contact_visibility: newTask.value.contact_visibility,
-        contact_info:
-          newTask.value.contact_visibility === 'after_accept'
-            ? newTask.value.contact_info || null
-            : null,
-        required_gender: newTask.value.required_gender,
-        icon: newTask.value.icon,
-      })
+      const created = await withCaptchaRetry(
+        (captchaToken) =>
+          createTask({
+            title: newTask.value.title,
+            description: newTask.value.description,
+            deadline: newTask.value.deadline ? localToUTC(newTask.value.deadline) : null,
+            location: newTask.value.location || null,
+            price: Number(newTask.value.price),
+            category_id: newTask.value.category_id,
+            contact_visibility: newTask.value.contact_visibility,
+            contact_info:
+              newTask.value.contact_visibility === 'after_accept'
+                ? newTask.value.contact_info || null
+                : null,
+            required_gender: newTask.value.required_gender,
+            icon: newTask.value.icon,
+            captcha_token: captchaToken ?? null,
+          }),
+        appSlideCaptcha,
+      )
       if (republishSourceId.value) {
         await deleteTask(republishSourceId.value).catch(() => {})
         republishSourceId.value = null
@@ -748,6 +755,7 @@ export function useTaskManagement() {
         router.push(`/agent/${startedSessionId}`)
       }
     } catch (error: unknown) {
+      if (error instanceof CaptchaCancelledError) return
       showToast(extractError(error, '发布失败'), 'error')
     } finally {
       createWithAgentSubmitting.value = false

@@ -73,6 +73,11 @@ export async function downloadDeliverableZip(sessionId: string, names: string[] 
   return data
 }
 
+export async function cancelAgentSession(sessionId: string) {
+  const { data } = await api.post<{ canceled: boolean }>(`/agent/sessions/${sessionId}/cancel`)
+  return data
+}
+
 export async function deleteAgentDeliverables(sessionId: string, names: string[]) {
   const { data } = await api.delete<{ deleted: string[] }>(`/agent/sessions/${sessionId}/deliverables`, {
     data: { names },
