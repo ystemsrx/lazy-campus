@@ -65,6 +65,7 @@ function selectSession(s: AgentMySessionItem) {
 
 function sessionStatusDot(s: AgentMySessionItem): string {
   if (s.status === 'running') return 'running'
+  if (s.status === 'queued') return 'queued'
   if (s.task_status === 'completed') return 'done'
   if (s.task_status === 'canceled') return 'canceled'
   return ''
@@ -109,6 +110,11 @@ const interactionLeft = computed(() => {
   return Math.max(0, session.value.max_interactions - session.value.interaction_count)
 })
 
+const queueAheadUsers = computed(() => {
+  if (!session.value?.queue_waiting) return 0
+  return Math.max(0, session.value.queue_ahead_users || 0)
+})
+
 const isTaskTerminal = computed(() => {
   const status = session.value?.task_status
   return status === 'completed' || status === 'canceled'
@@ -136,6 +142,7 @@ const composePlaceholder = computed(() => {
   if (!session.value) return '描述你的目标、预期产物和约束条件...'
   if (session.value.task_status === 'canceled') return '任务已取消，会话已关闭。'
   if (session.value.task_status === 'completed') return '任务已完成，会话已关闭。'
+  if (session.value.status === 'queued') return queueAheadUsers.value > 0 ? `排队中，前面还有 ${queueAheadUsers.value} 人。` : '排队中，请稍候...'
   if (session.value.status === 'running') return '代理正在执行中，可中断后继续输入。'
   if (!session.value.can_send) return '当前会话不可继续发送。'
   if (session.value.interaction_count >= session.value.max_interactions) return '交互次数已用尽。'
@@ -347,6 +354,21 @@ function extractToolOutputText(raw: string): { systemLines: string[], text: stri
   return { systemLines, text: finalText }
 }
 
+const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_ESCAPE_RE, '')
+}
+
+function startsWithErrorPrefix(text: string): boolean {
+  if (!text) return false
+  const firstContentLine = stripAnsi(text)
+    .split('\n')
+    .map(line => line.trimStart())
+    .find(line => line.length > 0) || ''
+  return firstContentLine.startsWith('ERROR:')
+}
+
 // ── Terminal ──
 
 const terminalHostname = computed(() => {
@@ -363,6 +385,7 @@ interface TerminalEntry {
   args?: Record<string, any>
   systemLines: string[]
   outputText: string
+  hasErrorOutput: boolean
   pending: boolean
   success: boolean | null
 }
@@ -462,31 +485,31 @@ const conversationRounds = computed<ConversationRound[]>(() => {
       let entry: TerminalEntry
 
       if (isShellTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isWriteFileTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'write-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'write-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isReadFileTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'read-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'read-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isGlobTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'glob', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'glob', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isGrepTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'grep', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'grep', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isSearchWebTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'search-web', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'search-web', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isFetchURLTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'fetch-url', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'fetch-url', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isSetTodoListTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'set-todo', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'set-todo', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isTaskTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'task', toolName, args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'task', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isStrReplaceTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'str-replace', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'str-replace', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isReadMediaTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'read-media', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'read-media', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else {
         let pretty = msg.tool_arguments || ''
         try { pretty = JSON.stringify(JSON.parse(pretty), null, 2) } catch {}
-        entry = { id: msg.id, toolType: 'other', toolName, rawArgs: pretty, systemLines: [], outputText: '', pending: true, success: null }
+        entry = { id: msg.id, toolType: 'other', toolName, rawArgs: pretty, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       }
 
       let outputMsg: AgentMessage | undefined
@@ -501,10 +524,15 @@ const conversationRounds = computed<ConversationRound[]>(() => {
       }
       if (outputMsg?.content) {
         const { systemLines, text } = extractToolOutputText(outputMsg.content)
+        const systemHasError = systemLines.some(line => startsWithErrorPrefix(line))
+        entry.hasErrorOutput = startsWithErrorPrefix(text) || systemHasError
         if (entry.toolType === 'shell') {
           const kept: string[] = []
           for (const line of systemLines) {
-            if (/command executed successfully/i.test(line)) {
+            if (startsWithErrorPrefix(line)) {
+              entry.success = false
+              kept.push(line)
+            } else if (/command executed successfully/i.test(line)) {
               entry.success = true
             } else if (/\berror\b/i.test(line)) {
               entry.success = false
@@ -514,6 +542,7 @@ const conversationRounds = computed<ConversationRound[]>(() => {
             }
           }
           entry.systemLines = kept
+          if (entry.hasErrorOutput) entry.success = false
           if (entry.success === null) entry.success = true
         } else {
           entry.systemLines = systemLines
@@ -679,13 +708,16 @@ async function handleSend() {
   if (!canSendNow.value || !session.value) return
   sending.value = true
   try {
-    await sendAgentMessage(session.value.session_id, {
+    const result = await sendAgentMessage(session.value.session_id, {
       content: inputText.value.trim(),
       files: pendingFiles.value,
     })
     inputText.value = ''
     pendingFiles.value = []
     if (fileInputRef.value) fileInputRef.value.value = ''
+    if (result.queue_ahead_users > 0) {
+      showToast(`排队中，前面还有 ${result.queue_ahead_users} 人`, 'warning')
+    }
     await Promise.all([pollSession(), refreshAvailability()])
   } catch (error) {
     showToast(extractError(error, '发送失败'), 'error')
@@ -883,6 +915,7 @@ onUnmounted(() => {
             <div class="session-item-bottom">
               <span class="session-item-preview">已用 {{ s.interaction_count }}/{{ s.max_interactions }}</span>
               <span v-if="sessionStatusDot(s) === 'running'" class="session-dot session-dot--running"></span>
+              <span v-else-if="sessionStatusDot(s) === 'queued'" class="session-dot session-dot--queued"></span>
               <span v-else-if="sessionStatusDot(s) === 'done'" class="session-dot session-dot--done"></span>
               <span v-else-if="sessionStatusDot(s) === 'canceled'" class="session-dot session-dot--canceled"></span>
             </div>
@@ -917,8 +950,8 @@ onUnmounted(() => {
               </div>
               <div>
                 <h2 class="header-title">{{ session?.task_title || '代理会话' }}</h2>
-                <p class="header-status" :class="{ 'status-running': session?.status === 'running' }">
-                  {{ session?.status === 'running' ? '正在执行...' : isTaskTerminal ? (session?.task_status === 'completed' ? '已完成' : '已取消') : '空闲' }}
+                <p class="header-status" :class="{ 'status-running': session?.status === 'running', 'status-queued': session?.status === 'queued' }">
+                  {{ session?.status === 'running' ? '正在执行...' : session?.status === 'queued' ? (queueAheadUsers > 0 ? `排队中，前面还有 ${queueAheadUsers} 人` : '排队中...') : isTaskTerminal ? (session?.task_status === 'completed' ? '已完成' : '已取消') : '空闲' }}
                 </p>
               </div>
             </div>
@@ -1009,12 +1042,12 @@ onUnmounted(() => {
                   <template v-for="entry in round.entries" :key="entry.id">
                     <div v-if="entry.toolType === 'shell'" class="terminal-entry">
                       <div class="terminal-prompt-line">
-                        <span v-if="entry.success === true" class="terminal-status-dot terminal-status-dot--ok"></span>
-                        <span v-else-if="entry.success === false" class="terminal-status-dot terminal-status-dot--err"></span>
+                        <span v-if="entry.success === true" class="terminal-status-icon terminal-status-icon--ok"><i class="fa-solid fa-check"></i></span>
+                        <span v-else-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
                         <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">/workspace</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
                       </div>
                       <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
-                      <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
                         <span class="terminal-blink">█</span>
                       </div>
@@ -1030,11 +1063,16 @@ onUnmounted(() => {
                           <span class="terminal-write-key">path</span>
                           <span class="terminal-write-val">{{ entry.filePath }}</span>
                         </div>
-                        <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-write-ok">
-                          <i class="fa-solid fa-check"></i> {{ line }}
+                        <div
+                          v-for="(line, idx) in entry.systemLines"
+                          :key="'s'+idx"
+                          class="terminal-write-ok"
+                          :class="{ 'terminal-write-ok--error': startsWithErrorPrefix(line) || entry.hasErrorOutput }"
+                        >
+                          <i :class="(startsWithErrorPrefix(line) || entry.hasErrorOutput) ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ line }}
                         </div>
                       </div>
-                      <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
                         <span class="terminal-blink">█</span>
                       </div>
@@ -1050,15 +1088,20 @@ onUnmounted(() => {
                           <span class="terminal-write-key">path</span>
                           <span class="terminal-write-val">{{ entry.filePath }}</span>
                         </div>
-                        <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-write-ok">
-                          <i class="fa-solid fa-check"></i> {{ line }}
+                        <div
+                          v-for="(line, idx) in entry.systemLines"
+                          :key="'s'+idx"
+                          class="terminal-write-ok"
+                          :class="{ 'terminal-write-ok--error': startsWithErrorPrefix(line) || entry.hasErrorOutput }"
+                        >
+                          <i :class="(startsWithErrorPrefix(line) || entry.hasErrorOutput) ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ line }}
                         </div>
                         <div v-if="entry.outputText" class="terminal-readfile-output">
                           <div class="terminal-readfile-output-label">
                             <i class="fa-solid fa-align-left"></i>
                             <span>文件内容</span>
                           </div>
-                          <pre class="terminal-readfile-pre">{{ entry.outputText }}</pre>
+                          <pre class="terminal-readfile-pre" :class="{ 'terminal-readfile-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                         </div>
                         <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
                           <span class="terminal-blink">█</span>
@@ -1145,7 +1188,7 @@ onUnmounted(() => {
                                 <div v-if="result.summary" class="terminal-search-summary">{{ result.summary }}</div>
                               </div>
                             </div>
-                            <pre v-else class="terminal-pre terminal-pre--incard">{{ entry.outputText }}</pre>
+                            <pre v-else class="terminal-pre terminal-pre--incard" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                           </template>
                         </template>
                       </div>
@@ -1170,7 +1213,7 @@ onUnmounted(() => {
                               <div v-if="fetchData.title" class="terminal-fetch-title">{{ fetchData.title }}</div>
                               <div v-if="fetchData.content" class="terminal-fetch-content">{{ fetchData.content }}</div>
                             </div>
-                            <pre v-else class="terminal-pre terminal-pre--incard">{{ entry.outputText }}</pre>
+                            <pre v-else class="terminal-pre terminal-pre--incard" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                           </template>
                         </template>
                       </div>
@@ -1192,8 +1235,8 @@ onUnmounted(() => {
                             <span class="terminal-todo-badge" :class="'terminal-todo-badge--' + (todo.status || 'pending')">{{ todo.status }}</span>
                           </div>
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line">
-                          <i class="fa-solid fa-check"></i> {{ entry.outputText }}
+                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line" :class="{ 'terminal-tool-ok-line--error': entry.hasErrorOutput }">
+                          <i :class="entry.hasErrorOutput ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ entry.outputText }}
                         </div>
                       </div>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
@@ -1217,7 +1260,7 @@ onUnmounted(() => {
                             <i class="fa-solid fa-comment-dots"></i>
                             <span>子代理输出</span>
                           </div>
-                          <pre class="terminal-task-pre">{{ entry.outputText }}</pre>
+                          <pre class="terminal-task-pre" :class="{ 'terminal-task-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                         </div>
                         <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
                           <span class="terminal-blink">█</span>
@@ -1245,8 +1288,8 @@ onUnmounted(() => {
                             <code>{{ entry.args.edit.new }}</code>
                           </div>
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line">
-                          <i class="fa-solid fa-check"></i> {{ entry.outputText }}
+                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line" :class="{ 'terminal-tool-ok-line--error': entry.hasErrorOutput }">
+                          <i :class="entry.hasErrorOutput ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ entry.outputText }}
                         </div>
                       </div>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
@@ -1299,7 +1342,7 @@ onUnmounted(() => {
                       </div>
                       <pre v-if="entry.rawArgs" class="terminal-pre terminal-pre--args">{{ entry.rawArgs }}</pre>
                       <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
-                      <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
                         <span class="terminal-blink">█</span>
                       </div>
@@ -1363,6 +1406,7 @@ onUnmounted(() => {
               <div class="agent-hint-row">
                 <p class="agent-hint">
                   <span v-if="session?.task_status === 'completed'">任务已完成，会话已关闭。</span>
+                  <span v-else-if="session?.status === 'queued'">{{ queueAheadUsers > 0 ? `排队中，前面还有 ${queueAheadUsers} 人。` : '排队中，请稍候...' }}</span>
                   <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
                   <span v-else-if="interactionLeft <= 0">交互次数已用尽。</span>
                   <span v-else>单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。</span>
@@ -1641,6 +1685,7 @@ onUnmounted(() => {
 }
 
 .session-dot--running { background: #3b82f6; animation: dotPulse 1.5s ease-in-out infinite; }
+.session-dot--queued { background: #f59e0b; animation: dotPulse 1.5s ease-in-out infinite; }
 .session-dot--done { background: #22c55e; }
 .session-dot--canceled { background: #94a3b8; }
 
@@ -1747,6 +1792,7 @@ onUnmounted(() => {
 }
 
 .header-status.status-running { color: #3b82f6; font-weight: 500; }
+.header-status.status-queued { color: #d97706; font-weight: 500; }
 
 .header-actions {
   display: flex;
@@ -2112,17 +2158,16 @@ onUnmounted(() => {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.terminal-status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.terminal-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
   margin-right: 6px;
-  vertical-align: middle;
 }
 
-.terminal-status-dot--ok  { background: #3fb950; }
-.terminal-status-dot--err { background: #f85149; }
+.terminal-status-icon--ok { color: #3fb950; }
+.terminal-status-icon--err { color: #f85149; }
 
 .terminal-prompt-line {
   font-size: 13px;
@@ -2153,6 +2198,8 @@ onUnmounted(() => {
 }
 
 .terminal-pre--args { color: #79c0ff; font-size: 11px; }
+.terminal-pre--error { color: #fca5a5; }
+.terminal-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
 
 .terminal-write-box {
   border: 1px solid #30363d;
@@ -2194,6 +2241,7 @@ onUnmounted(() => {
 }
 
 .terminal-write-ok i { margin-right: 4px; }
+.terminal-write-ok--error { color: #fda4af; }
 
 .terminal-other-line {
   display: flex;
@@ -2979,6 +3027,7 @@ onUnmounted(() => {
 }
 
 .terminal-tool-ok-line i { margin-right: 4px; }
+.terminal-tool-ok-line--error { color: #fda4af; }
 
 .terminal-pre--incard {
   margin: 0;
@@ -3125,6 +3174,9 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
 }
 
+.terminal-readfile-pre--error { color: #fca5a5; }
+.terminal-readfile-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
+
 .terminal-readfile-pre::-webkit-scrollbar { width: 4px; }
 .terminal-readfile-pre::-webkit-scrollbar-track { background: #0d1117; }
 .terminal-readfile-pre::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
@@ -3170,6 +3222,9 @@ onUnmounted(() => {
   overflow-y: auto;
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
 }
+
+.terminal-task-pre--error { color: #fca5a5; }
+.terminal-task-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
 
 .terminal-task-pending {
   padding: 6px 12px 8px;

@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,8 @@ logger = logging.getLogger(__name__)
 MAX_AGENT_FILES_PER_MESSAGE = 5
 MAX_AGENT_FILE_SIZE = 50 * 1024 * 1024
 MAX_AGENT_INTERACTIONS = 8
-AGENT_IDLE_TTL_MINUTES = 20
+AGENT_IDLE_TTL_MINUTES = 5
+AGENT_QUEUE_GRACE_SECONDS = 5 * 60
 AGENT_ERROR_PREFIX = '__AGENT_ERROR__:'
 PROCESS_ENCODING = 'utf-8'
 
@@ -44,6 +46,23 @@ _RUNNING_EXEC: dict[str, subprocess.Popen] = {}
 _RUNNING_CONTAINER: dict[str, str] = {}
 _CANCEL_REQUESTED_SESSIONS: set[str] = set()
 _TERMINAL_TASK_STATUSES = {'completed', 'canceled'}
+_QUEUE_LOCK = threading.Lock()
+_QUEUE_COND = threading.Condition(_QUEUE_LOCK)
+_QUEUE_WORKER_STARTED = False
+_QUEUE_ITEMS: list['QueuedAgentRun'] = []
+_QUEUED_SESSION_IDS: set[str] = set()
+_RUNNING_SESSION_ID: str | None = None
+_ACTIVE_OWNER_USER_ID: int | None = None
+_OWNER_GRACE_UNTIL: datetime | None = None
+
+
+@dataclass
+class QueuedAgentRun:
+    session_id: str
+    user_id: int
+    user_prompt: str
+    attachments: list[dict[str, Any]]
+    queued_at: datetime
 
 
 def utcnow() -> datetime:
@@ -133,6 +152,34 @@ def cleanup_workspace_keep_deliverables(user_id: int, session_id: str) -> None:
 def safe_filename(name: str) -> str:
     base = Path(name).name
     return re.sub(r'[^A-Za-z0-9._-]+', '_', base).strip('._') or 'file'
+
+
+def normalize_uploaded_filename(name: str | None) -> str:
+    base = Path(name or '').name.strip()
+    return base or 'unnamed'
+
+
+def resolve_unique_upload_name(target_dir: Path, name: str | None, seen: set[str] | None = None) -> str:
+    candidate = normalize_uploaded_filename(name)
+    stem = Path(candidate).stem or 'unnamed'
+    suffix = Path(candidate).suffix
+
+    taken = seen if seen is not None else set()
+    index = 1
+    while candidate in taken or (target_dir / candidate).exists():
+        candidate = f'{stem}({index}){suffix}'
+        index += 1
+
+    if seen is not None:
+        seen.add(candidate)
+    return candidate
+
+
+def sanitize_cli_risky_prompt(prompt: str) -> str:
+    text = prompt.strip()
+    if text.startswith('/') and len(text) < 10:
+        return text[1:].lstrip()
+    return text
 
 
 def create_agent_message(
@@ -250,7 +297,7 @@ def _start_container(user_id: int, session_id: str) -> str:
 
 
 def _build_prompt(user_prompt: str, attachments: list[dict[str, Any]]) -> str:
-    prompt = user_prompt.strip()
+    prompt = sanitize_cli_risky_prompt(user_prompt)
     if not attachments:
         return prompt
 
@@ -325,7 +372,8 @@ def _prepare_container_for_session(db: Session, session: AgentSession) -> None:
         _stop_container(other.container_id)
         cleanup_workspace_keep_deliverables(other.user_id, other.id)
         other.container_id = None
-        other.status = 'idle'
+        if other.status != 'queued':
+            other.status = 'idle'
         other.last_error = None
         db.add(other)
 
@@ -453,6 +501,20 @@ def release_task_agent_resources(db: Session, task_id: int) -> int:
     return released
 
 
+def release_session_container_now(db: Session, session: AgentSession) -> bool:
+    if not session.container_id:
+        return False
+    _stop_container(session.container_id)
+    cleanup_workspace_keep_deliverables(session.user_id, session.id)
+    session.container_id = None
+    if session.status == 'running':
+        session.status = 'idle'
+    session.last_error = None
+    session.last_activity_at = utcnow()
+    db.add(session)
+    return True
+
+
 def _task_is_terminal(task: Task | None) -> bool:
     if not task:
         return False
@@ -460,16 +522,143 @@ def _task_is_terminal(task: Task | None) -> bool:
     return str(status) in _TERMINAL_TASK_STATUSES
 
 
+def _cleanup_user_idle_containers(user_id: int) -> int:
+    cleaned = 0
+    with SessionLocal() as db:
+        sessions = (
+            db.query(AgentSession)
+            .filter(
+                AgentSession.user_id == user_id,
+                AgentSession.container_id.isnot(None),
+                AgentSession.status != 'running',
+            )
+            .all()
+        )
+        for session in sessions:
+            _stop_container(session.container_id)
+            cleanup_workspace_keep_deliverables(session.user_id, session.id)
+            session.container_id = None
+            session.last_error = None
+            session.last_activity_at = utcnow()
+            db.add(session)
+            cleaned += 1
+        if cleaned:
+            db.commit()
+    return cleaned
+
+
+def _count_queue_ahead_users_locked(user_id: int, stop_at_session_id: str | None = None) -> int:
+    ahead: set[int] = set()
+    now = utcnow()
+    if _RUNNING_SESSION_ID and _ACTIVE_OWNER_USER_ID is not None and _ACTIVE_OWNER_USER_ID != user_id:
+        ahead.add(_ACTIVE_OWNER_USER_ID)
+    if (
+        _ACTIVE_OWNER_USER_ID is not None
+        and _OWNER_GRACE_UNTIL is not None
+        and now < _OWNER_GRACE_UNTIL
+        and _ACTIVE_OWNER_USER_ID != user_id
+    ):
+        ahead.add(_ACTIVE_OWNER_USER_ID)
+
+    for item in _QUEUE_ITEMS:
+        if stop_at_session_id and item.session_id == stop_at_session_id:
+            break
+        if item.user_id != user_id:
+            ahead.add(item.user_id)
+    return len(ahead)
+
+
+def get_agent_queue_info(session_id: str, user_id: int) -> tuple[bool, int]:
+    with _QUEUE_LOCK:
+        queued = False
+        for item in _QUEUE_ITEMS:
+            if item.session_id == session_id:
+                queued = True
+                break
+        ahead = _count_queue_ahead_users_locked(
+            user_id,
+            stop_at_session_id=session_id if queued else None,
+        )
+        return queued, ahead
+
+
+def enqueue_agent_run(
+    session_id: str,
+    user_id: int,
+    user_prompt: str,
+    attachments: list[dict[str, Any]],
+) -> int:
+    with _QUEUE_COND:
+        if session_id in _QUEUED_SESSION_IDS:
+            return _count_queue_ahead_users_locked(user_id, stop_at_session_id=session_id)
+
+        ahead = _count_queue_ahead_users_locked(user_id)
+        _QUEUE_ITEMS.append(QueuedAgentRun(
+            session_id=session_id,
+            user_id=user_id,
+            user_prompt=user_prompt,
+            attachments=attachments,
+            queued_at=utcnow(),
+        ))
+        _QUEUED_SESSION_IDS.add(session_id)
+        _QUEUE_COND.notify_all()
+        return ahead
+
+
+def _dequeue_next_run_locked() -> tuple[QueuedAgentRun | None, int | None, float | None]:
+    global _RUNNING_SESSION_ID, _ACTIVE_OWNER_USER_ID, _OWNER_GRACE_UNTIL
+
+    now = utcnow()
+    if _ACTIVE_OWNER_USER_ID is not None and _OWNER_GRACE_UNTIL is not None:
+        if now < _OWNER_GRACE_UNTIL:
+            for idx, item in enumerate(_QUEUE_ITEMS):
+                if item.user_id == _ACTIVE_OWNER_USER_ID:
+                    selected = _QUEUE_ITEMS.pop(idx)
+                    _QUEUED_SESSION_IDS.discard(selected.session_id)
+                    _RUNNING_SESSION_ID = selected.session_id
+                    return selected, None, None
+
+            wait_seconds = max(0.0, (_OWNER_GRACE_UNTIL - now).total_seconds())
+            return None, None, wait_seconds
+        else:
+            expired_owner = _ACTIVE_OWNER_USER_ID
+            _ACTIVE_OWNER_USER_ID = None
+            _OWNER_GRACE_UNTIL = None
+            return None, expired_owner, None
+
+    if not _QUEUE_ITEMS:
+        return None, None, None
+
+    selected = _QUEUE_ITEMS.pop(0)
+    _QUEUED_SESSION_IDS.discard(selected.session_id)
+    _RUNNING_SESSION_ID = selected.session_id
+    _ACTIVE_OWNER_USER_ID = selected.user_id
+    return selected, None, None
+
+
 def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[str, Any]]) -> None:
-    if not AGENT_RUN_LOCK.acquire(blocking=False):
-        _append_system_error(session_id, '当前代理繁忙，请稍后重试。')
-        return
+    AGENT_RUN_LOCK.acquire()
 
     try:
         with SessionLocal() as db:
             session = db.get(AgentSession, session_id)
             if not session:
                 return
+            task = db.get(Task, session.task_id)
+            if _task_is_terminal(task):
+                session.status = 'idle'
+                session.last_error = None
+                session.last_activity_at = utcnow()
+                db.add(session)
+                create_agent_message(
+                    db,
+                    session_id=session_id,
+                    role='system',
+                    content='任务已结束，已取消排队请求。',
+                )
+                db.commit()
+                return
+
             session.status = 'running'
             session.last_error = None
             session.last_activity_at = utcnow()
@@ -562,6 +751,12 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
                         role='system',
                         content='代理执行失败，请稍后重试。',
                     )
+
+            if session.interaction_count >= session.max_interactions and session.container_id:
+                _stop_container(session.container_id)
+                cleanup_workspace_keep_deliverables(session.user_id, session.id)
+                session.container_id = None
+
             db.add(session)
             db.commit()
     except Exception as exc:
@@ -584,14 +779,68 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
         AGENT_RUN_LOCK.release()
 
 
-def spawn_agent_run(session_id: str, user_prompt: str, attachments: list[dict[str, Any]]) -> None:
-    thread = threading.Thread(
-        target=_run_agent_once,
-        args=(session_id, user_prompt, attachments),
-        daemon=True,
-        name=f'agent-run-{session_id}',
-    )
+def _agent_queue_loop() -> None:
+    global _RUNNING_SESSION_ID, _OWNER_GRACE_UNTIL
+
+    while True:
+        next_run: QueuedAgentRun | None = None
+        expired_owner: int | None = None
+        wait_seconds: float | None = None
+
+        with _QUEUE_COND:
+            next_run, expired_owner, wait_seconds = _dequeue_next_run_locked()
+            if next_run is None and expired_owner is None:
+                if wait_seconds is None:
+                    _QUEUE_COND.wait()
+                else:
+                    _QUEUE_COND.wait(timeout=wait_seconds)
+                continue
+
+        if expired_owner is not None:
+            cleaned = _cleanup_user_idle_containers(expired_owner)
+            if cleaned:
+                logger.info('cleaned %s idle container(s) for expired owner user=%s', cleaned, expired_owner)
+            continue
+
+        if not next_run:
+            continue
+
+        _run_agent_once(
+            session_id=next_run.session_id,
+            user_prompt=next_run.user_prompt,
+            attachments=next_run.attachments,
+        )
+
+        with _QUEUE_COND:
+            _RUNNING_SESSION_ID = None
+            if _ACTIVE_OWNER_USER_ID == next_run.user_id:
+                _OWNER_GRACE_UNTIL = utcnow() + timedelta(seconds=AGENT_QUEUE_GRACE_SECONDS)
+            _QUEUE_COND.notify_all()
+
+
+def start_agent_queue_daemon() -> None:
+    global _QUEUE_WORKER_STARTED
+    with _QUEUE_LOCK:
+        if _QUEUE_WORKER_STARTED:
+            return
+        _QUEUE_WORKER_STARTED = True
+    thread = threading.Thread(target=_agent_queue_loop, daemon=True, name='agent-queue-worker')
     thread.start()
+
+
+def spawn_agent_run(
+    session_id: str,
+    user_id: int,
+    user_prompt: str,
+    attachments: list[dict[str, Any]],
+) -> int:
+    start_agent_queue_daemon()
+    return enqueue_agent_run(
+        session_id=session_id,
+        user_id=user_id,
+        user_prompt=user_prompt,
+        attachments=attachments,
+    )
 
 
 def list_deliverables(user_id: int, session_id: str) -> list[dict[str, Any]]:
@@ -674,7 +923,8 @@ def cleanup_idle_agent_containers(idle_minutes: int = AGENT_IDLE_TTL_MINUTES) ->
             _stop_container(session.container_id)
             cleanup_workspace_keep_deliverables(session.user_id, session.id)
             session.container_id = None
-            session.status = 'idle'
+            if session.status != 'queued':
+                session.status = 'idle'
             session.last_error = None
             db.add(session)
             cleaned += 1
@@ -696,6 +946,7 @@ def _cleanup_loop() -> None:
 
 def start_agent_cleanup_daemon() -> None:
     global _CLEANER_STARTED
+    start_agent_queue_daemon()
     with _CLEANER_LOCK:
         if _CLEANER_STARTED:
             return

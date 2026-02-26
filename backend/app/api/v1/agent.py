@@ -39,11 +39,13 @@ from app.services.agent_service import (
     create_agent_message,
     delete_deliverables,
     ensure_session_workspace,
-    is_agent_busy,
+    get_agent_queue_info,
     interrupt_agent_session,
     list_deliverables,
+    release_session_container_now,
     resolve_deliverable_path,
-    safe_filename,
+    resolve_unique_upload_name,
+    sanitize_cli_risky_prompt,
     spawn_agent_run,
     uploads_dir,
     zip_deliverables,
@@ -57,13 +59,29 @@ router = APIRouter(prefix='/agent', tags=['agent'])
 _TERMINAL_TASK_STATUSES = {'completed', 'canceled'}
 
 
+def _normalize_queued_status(db: Session, session: AgentSession) -> AgentSession:
+    if session.status != 'queued':
+        return session
+    queued, _ = get_agent_queue_info(session.id, session.user_id)
+    if queued:
+        return session
+    session.status = 'idle'
+    session.last_error = None
+    session.last_activity_at = datetime.utcnow()
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
 def _can_send(session: AgentSession, task: Task) -> bool:
     if task.status in _TERMINAL_TASK_STATUSES:
         return False
-    return session.interaction_count < session.max_interactions and session.status != 'running'
+    return session.interaction_count < session.max_interactions and session.status not in {'running', 'queued'}
 
 
 def _session_to_start_out(session: AgentSession, task: Task, remaining_count: int) -> AgentStartOut:
+    queue_waiting, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
     return AgentStartOut(
         session_id=session.id,
         task_id=task.id,
@@ -74,12 +92,15 @@ def _session_to_start_out(session: AgentSession, task: Task, remaining_count: in
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
         can_send=_can_send(session, task),
+        queue_waiting=queue_waiting,
+        queue_ahead_users=queue_ahead_users,
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
 
 
 def _session_to_detail_out(session: AgentSession, task: Task, remaining_count: int) -> AgentSessionDetailOut:
+    queue_waiting, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
     return AgentSessionDetailOut(
         session_id=session.id,
         task_id=task.id,
@@ -90,6 +111,8 @@ def _session_to_detail_out(session: AgentSession, task: Task, remaining_count: i
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
         can_send=_can_send(session, task),
+        queue_waiting=queue_waiting,
+        queue_ahead_users=queue_ahead_users,
         created_at=session.created_at,
         updated_at=session.updated_at,
         deliverables=[AgentDeliverableOut(**item) for item in list_deliverables(session.user_id, session.id)],
@@ -263,7 +286,7 @@ def get_agent_session(
     user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
 ) -> AgentSessionDetailOut:
-    session = _get_owned_session(db, user.id, session_id)
+    session = _normalize_queued_status(db, _get_owned_session(db, user.id, session_id))
     task = db.get(Task, session.task_id)
     if not task:
         raise HTTPException(status_code=404, detail='关联任务不存在')
@@ -299,20 +322,20 @@ async def send_agent_message(
     if not get_agent_enabled(db):
         raise HTTPException(status_code=403, detail='AI 代理功能当前已关闭')
 
-    session = _get_owned_session(db, user.id, session_id)
+    session = _normalize_queued_status(db, _get_owned_session(db, user.id, session_id))
     task = db.get(Task, session.task_id)
     if not task:
         raise HTTPException(status_code=404, detail='关联任务不存在')
     if task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
         raise HTTPException(status_code=400, detail='任务已结束，无法继续发送')
-    if session.status == 'running':
+    if session.status in {'running', 'queued'}:
         raise HTTPException(status_code=409, detail='代理正在处理中，请稍后再发送')
     if session.interaction_count >= session.max_interactions:
+        if release_session_container_now(db, session):
+            db.commit()
         raise HTTPException(status_code=400, detail='当前代理会话交互次数已达上限，请重新开启代理')
-    if is_agent_busy():
-        raise HTTPException(status_code=409, detail='当前系统仅支持单代理运行，请稍后重试')
 
-    text = content.strip()
+    text = sanitize_cli_risky_prompt(content)
     if not text and not files:
         raise HTTPException(status_code=422, detail='请输入需求描述或上传文件')
     if len(files) > MAX_AGENT_FILES_PER_MESSAGE:
@@ -323,6 +346,7 @@ async def send_agent_message(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     attachment_items: list[dict] = []
+    seen_names: set[str] = set()
     for upload in files:
         raw = await upload.read(MAX_AGENT_FILE_SIZE + 1)
         if len(raw) > MAX_AGENT_FILE_SIZE:
@@ -331,7 +355,7 @@ async def send_agent_message(
                 detail=f'文件「{upload.filename or "未命名文件"}」超过 50 MB 限制',
             )
         original = upload.filename or 'unnamed'
-        stored = f'{uuid.uuid4().hex}_{safe_filename(original)}'
+        stored = resolve_unique_upload_name(target_dir, original, seen_names)
         (target_dir / stored).write_bytes(raw)
         attachment_items.append({
             'name': original,
@@ -350,18 +374,21 @@ async def send_agent_message(
     )
 
     session.interaction_count = int(session.interaction_count or 0) + 1
+    session.status = 'queued'
     session.last_activity_at = datetime.utcnow()
     db.add(session)
     db.commit()
 
-    spawn_agent_run(
+    queue_ahead_users = spawn_agent_run(
         session.id,
+        session.user_id,
         user_prompt=text or '请先查看我上传的文件，然后继续完成任务。',
         attachments=attachment_items,
     )
 
     return AgentSendOut(
         queued=True,
+        queue_ahead_users=queue_ahead_users,
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
     )

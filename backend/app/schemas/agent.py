@@ -23,6 +23,8 @@ class AgentStartOut(BaseModel):
     max_interactions: int
     remaining_count: int
     can_send: bool
+    queue_waiting: bool = False
+    queue_ahead_users: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -76,6 +78,8 @@ class AgentSessionDetailOut(BaseModel):
     max_interactions: int
     remaining_count: int
     can_send: bool
+    queue_waiting: bool = False
+    queue_ahead_users: int = 0
     created_at: datetime
     updated_at: datetime
     deliverables: list[AgentDeliverableOut] = Field(default_factory=list)
@@ -104,6 +108,7 @@ class AgentMySessionListOut(BaseModel):
 
 class AgentSendOut(BaseModel):
     queued: bool
+    queue_ahead_users: int = 0
     interaction_count: int
     max_interactions: int
 

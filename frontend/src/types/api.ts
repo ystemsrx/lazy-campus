@@ -591,6 +591,8 @@ export interface AgentSessionStart {
   max_interactions: number
   remaining_count: number
   can_send: boolean
+  queue_waiting: boolean
+  queue_ahead_users: number
   created_at: string
   updated_at: string
 }
@@ -601,6 +603,7 @@ export interface AgentSessionDetail extends AgentSessionStart {
 
 export interface AgentSendResult {
   queued: boolean
+  queue_ahead_users: number
   interaction_count: number
   max_interactions: number
 }
