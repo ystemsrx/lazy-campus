@@ -83,7 +83,22 @@ const inputText = ref('')
 const pendingFiles = ref<File[]>([])
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const agentTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const chatScrollRef = ref<HTMLDivElement | null>(null)
+const terminalStickToBottomMap = ref(new Map<number, boolean>())
+
+function autoResizeTextarea() {
+  nextTick(() => {
+    const el = agentTextareaRef.value
+    if (!el) return
+    el.style.height = '0px'
+    const height = Math.min(Math.max(el.scrollHeight, 38), 160)
+    el.style.height = `${height}px`
+    el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
+  })
+}
+
+watch(inputText, () => { autoResizeTextarea() }, { immediate: true })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollBusy = false
@@ -106,6 +121,25 @@ const sendDisabled = computed(() => {
   if (!session.value.can_send) return true
   if (session.value.interaction_count >= session.value.max_interactions) return true
   return false
+})
+
+const useDisabledComposeStyle = computed(() => {
+  if (!session.value) return false
+  if (session.value.status === 'running') return true
+  if (isTaskTerminal.value) return true
+  if (!session.value.can_send) return true
+  if (session.value.interaction_count >= session.value.max_interactions) return true
+  return false
+})
+
+const composePlaceholder = computed(() => {
+  if (!session.value) return '描述你的目标、预期产物和约束条件...'
+  if (session.value.task_status === 'canceled') return '任务已取消，会话已关闭。'
+  if (session.value.task_status === 'completed') return '任务已完成，会话已关闭。'
+  if (session.value.status === 'running') return '代理正在执行中，可中断后继续输入。'
+  if (!session.value.can_send) return '当前会话不可继续发送。'
+  if (session.value.interaction_count >= session.value.max_interactions) return '交互次数已用尽。'
+  return '描述你的目标、预期产物和约束条件...'
 })
 
 const canSendNow = computed(() => {
@@ -316,7 +350,7 @@ function extractToolOutputText(raw: string): { systemLines: string[], text: stri
 // ── Terminal ──
 
 const terminalHostname = computed(() => {
-  return appTitle.replace(/\s+/g, '-').replace(/[A-Za-z]/g, c => c.toLowerCase()) + '@agent'
+  return appTitle.replace(/\s+/g, '-').replace(/[A-Za-z]/g, (c: string) => c.toLowerCase()) + '@agent'
 })
 
 interface TerminalEntry {
@@ -339,6 +373,38 @@ function handleSnapScroll(event: Event, roundId: number, total: number) {
   const el = event.target as HTMLElement
   const idx = Math.min(Math.round(el.scrollTop / 64), total - 1)
   snapIndices.value = new Map(snapIndices.value.set(roundId, idx))
+}
+
+function isNearBottom(el: HTMLElement, threshold = 28): boolean {
+  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
+  return distance <= threshold
+}
+
+function handleTerminalScroll(event: Event, roundId: number) {
+  const el = event.target as HTMLElement
+  const shouldStick = isNearBottom(el)
+  terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, shouldStick))
+}
+
+function scrollToBottomOnEnter() {
+  nextTick(() => {
+    const root = chatScrollRef.value
+    if (!root) return
+
+    root.scrollTo({ top: root.scrollHeight, behavior: 'auto' })
+
+    root.querySelectorAll('.chat-ai-snap').forEach((el) => {
+      const snapEl = el as HTMLElement
+      snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: 'auto' })
+    })
+
+    root.querySelectorAll('.terminal-body').forEach((el) => {
+      const terminalEl = el as HTMLElement
+      const roundId = Number(terminalEl.dataset.roundId || '0')
+      terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: 'auto' })
+      terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, true))
+    })
+  })
 }
 
 interface ConversationRound {
@@ -465,12 +531,17 @@ const conversationRounds = computed<ConversationRound[]>(() => {
 
 // ── Skeleton & Braille ──
 
-const showSetupSkeleton = computed(() => {
+const showPendingRoundSkeleton = computed(() => {
   if (!session.value || session.value.status !== 'running') return false
   const rounds = conversationRounds.value
   if (rounds.length === 0) return false
   const last = rounds[rounds.length - 1]
   return !!last.userMessage && last.aiIntermediate.length === 0 && last.entries.length === 0 && !last.aiFinal
+})
+
+const showSetupSkeleton = computed(() => {
+  if (!showPendingRoundSkeleton.value) return false
+  return conversationRounds.value.length === 1
 })
 
 const brailleFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -561,6 +632,7 @@ async function bootstrap() {
     router.push('/agent')
   } finally {
     loading.value = false
+    scrollToBottomOnEnter()
   }
 }
 
@@ -626,9 +698,9 @@ async function handleCancel() {
   if (!session.value || canceling.value) return
   canceling.value = true
   try {
-    await cancelAgentSession(session.value.session_id)
+    const result = await cancelAgentSession(session.value.session_id)
     await pollSession()
-    showToast('已请求中断', 'success')
+    showToast(result.canceled ? '已请求中断' : '当前没有可中断的运行任务', result.canceled ? 'success' : 'warning')
   } catch (error: any) {
     const status = error?.response?.status
     if (status === 404 || status === 405) {
@@ -719,15 +791,23 @@ watch(
   () => messages.value.length,
   () => {
     nextTick(() => {
-      if (chatScrollRef.value) {
-        chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
-        chatScrollRef.value.querySelectorAll('.chat-ai-snap').forEach(el => {
-          el.scrollTop = el.scrollHeight
-        })
-        chatScrollRef.value.querySelectorAll('.terminal-body').forEach(el => {
-          el.scrollTop = el.scrollHeight
-        })
-      }
+      if (!chatScrollRef.value) return
+
+      // Process area should always animate to the newest generation snippet.
+      chatScrollRef.value.querySelectorAll('.chat-ai-snap').forEach((el) => {
+        const snapEl = el as HTMLElement
+        snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: 'smooth' })
+      })
+
+      // Terminal follows only when user is already near the bottom.
+      chatScrollRef.value.querySelectorAll('.terminal-body').forEach((el) => {
+        const terminalEl = el as HTMLElement
+        const roundId = Number(terminalEl.dataset.roundId || '0')
+        const shouldStick = terminalStickToBottomMap.value.get(roundId) ?? isNearBottom(terminalEl)
+        if (!shouldStick) return
+        terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: 'smooth' })
+        terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, true))
+      })
     })
   },
 )
@@ -870,7 +950,7 @@ onUnmounted(() => {
               </div>
 
               <!-- Skeleton: shown only on last round when waiting for first AI response -->
-              <template v-if="showSetupSkeleton && roundIndex === conversationRounds.length - 1">
+              <template v-if="showPendingRoundSkeleton && roundIndex === conversationRounds.length - 1">
                 <div class="chat-ai-snap-wrap">
                   <div class="chat-ai-snap-outer chat-ai-snap-outer--glow">
                     <div class="chat-ai-snap skeleton-snap">
@@ -882,7 +962,7 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="terminal">
+                <div v-if="showSetupSkeleton" class="terminal">
                   <div class="terminal-titlebar">
                     <div class="terminal-dots">
                       <span class="terminal-dot terminal-dot--red"></span>
@@ -925,7 +1005,7 @@ onUnmounted(() => {
                   </div>
                   <span class="terminal-hostname">{{ terminalHostname }}</span>
                 </div>
-                <div class="terminal-body">
+                <div class="terminal-body" :data-round-id="round.id" @scroll="handleTerminalScroll($event, round.id)">
                   <template v-for="entry in round.entries" :key="entry.id">
                     <div v-if="entry.toolType === 'shell'" class="terminal-entry">
                       <div class="terminal-prompt-line">
@@ -973,10 +1053,16 @@ onUnmounted(() => {
                         <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-write-ok">
                           <i class="fa-solid fa-check"></i> {{ line }}
                         </div>
-                      </div>
-                      <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
-                        <span class="terminal-blink">█</span>
+                        <div v-if="entry.outputText" class="terminal-readfile-output">
+                          <div class="terminal-readfile-output-label">
+                            <i class="fa-solid fa-align-left"></i>
+                            <span>文件内容</span>
+                          </div>
+                          <pre class="terminal-readfile-pre">{{ entry.outputText }}</pre>
+                        </div>
+                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
+                          <span class="terminal-blink">█</span>
+                        </div>
                       </div>
                     </div>
 
@@ -1231,57 +1317,60 @@ onUnmounted(() => {
 
           <!-- Input -->
           <div class="agent-input">
-            <div v-if="pendingFiles.length" class="agent-pending">
-              <div v-for="(file, index) in pendingFiles" :key="`${file.name}-${index}`" class="agent-pending__item">
-                <span>{{ file.name }}</span>
-                <small>{{ formatFileSize(file.size) }}</small>
-                <button type="button" @click="removePendingFile(index)"><i class="fa-solid fa-xmark"></i></button>
+            <div class="agent-input-inner">
+              <div v-if="pendingFiles.length" class="agent-pending">
+                <div v-for="(file, index) in pendingFiles" :key="`${file.name}-${index}`" class="agent-pending__item">
+                  <span>{{ file.name }}</span>
+                  <small>{{ formatFileSize(file.size) }}</small>
+                  <button type="button" @click="removePendingFile(index)"><i class="fa-solid fa-xmark"></i></button>
+                </div>
               </div>
-            </div>
 
-            <div class="agent-compose">
-              <label class="agent-upload-btn" :class="{ disabled: sendDisabled }">
-                <i class="fa-solid fa-paperclip"></i>
-                <input
-                  ref="fileInputRef"
-                  type="file"
-                  multiple
+              <div class="agent-compose" :class="{ 'agent-compose--disabled': useDisabledComposeStyle }">
+                <label class="agent-upload-btn" :class="{ disabled: sendDisabled }">
+                  <i class="fa-solid fa-paperclip"></i>
+                  <input
+                    ref="fileInputRef"
+                    type="file"
+                    multiple
+                    :disabled="sendDisabled"
+                    @change="pickFiles"
+                  />
+                </label>
+
+                <textarea
+                  ref="agentTextareaRef"
+                  v-model="inputText"
+                  class="agent-textarea"
                   :disabled="sendDisabled"
-                  @change="pickFiles"
+                  :placeholder="composePlaceholder"
                 />
-              </label>
 
-              <textarea
-                v-model="inputText"
-                class="agent-textarea"
-                :disabled="sendDisabled"
-                placeholder="描述你的目标、预期产物和约束条件..."
-              />
+                <button
+                  v-if="session?.status === 'running'"
+                  class="agent-cancel-btn"
+                  :disabled="canceling"
+                  :title="canceling ? '中断中...' : '中断'"
+                  @click="handleCancel"
+                >
+                  <i :class="canceling ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-stop'"></i>
+                </button>
+                <button v-else class="agent-send-btn" :class="{ active: canSendNow }" :disabled="!canSendNow" :title="sending ? '发送中...' : '发送'" @click="handleSend">
+                  <i :class="sending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-arrow-up'"></i>
+                </button>
+              </div>
 
-              <button
-                v-if="session?.status === 'running'"
-                class="agent-cancel-btn"
-                :disabled="canceling"
-                @click="handleCancel"
-              >
-                <i :class="canceling ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-stop'"></i>
-                {{ canceling ? '中断中...' : '中断' }}
-              </button>
-              <button v-else class="agent-send-btn" :disabled="!canSendNow" @click="handleSend">
-                {{ sending ? '发送中...' : '发送' }}
-              </button>
-            </div>
-
-            <div class="agent-hint-row">
-              <p class="agent-hint">
-                <span v-if="isTaskTerminal">任务已{{ session?.task_status === 'completed' ? '完成' : '取消' }}，会话已关闭。</span>
-                <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
-                <span v-else-if="interactionLeft <= 0">交互次数已用尽。</span>
-                <span v-else>单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。</span>
-              </p>
-              <div class="agent-hint-badges">
-                <span class="badge badge-blue">已用 {{ session?.interaction_count ?? 0 }}/{{ session?.max_interactions ?? 8 }}</span>
-                <span class="badge" :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'">剩余 {{ interactionLeft }}</span>
+              <div class="agent-hint-row">
+                <p class="agent-hint">
+                  <span v-if="session?.task_status === 'completed'">任务已完成，会话已关闭。</span>
+                  <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
+                  <span v-else-if="interactionLeft <= 0">交互次数已用尽。</span>
+                  <span v-else>单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。</span>
+                </p>
+                <div class="agent-hint-badges">
+                  <span class="badge badge-blue">已用 {{ session?.interaction_count ?? 0 }}/{{ session?.max_interactions ?? 8 }}</span>
+                  <span class="badge" :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'">剩余 {{ interactionLeft }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1734,7 +1823,7 @@ onUnmounted(() => {
 .chat-ai-snap-wrap,
 .terminal,
 .chat-ai-final {
-  width: min(66.6667%, 980px);
+  width: min(60%, 980px);
   margin-left: auto;
   margin-right: auto;
 }
@@ -1745,7 +1834,7 @@ onUnmounted(() => {
 .chat-bubble-row--right { justify-content: flex-end; }
 
 .chat-bubble-row--right {
-  width: min(66.6667%, 980px);
+  width: min(60%, 980px);
   margin-left: auto;
   margin-right: auto;
 }
@@ -2361,6 +2450,14 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.agent-input-inner {
+  width: min(60%, 980px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 .agent-pending {
   display: flex;
   flex-wrap: wrap;
@@ -2385,75 +2482,127 @@ onUnmounted(() => {
 
 .agent-compose {
   display: flex;
-  gap: 8px;
   align-items: flex-end;
+  background: var(--c-bg, #f1f5f9);
+  border: 1.5px solid var(--c-border, #e2e8f0);
+  border-radius: 24px;
+  padding: 4px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.agent-compose:focus-within {
+  background: #fff;
+  border-color: var(--c-accent, #2563eb);
+}
+
+.agent-compose--disabled {
+  background: #fff5f5;
+  border-color: #fca5a5;
+}
+
+.agent-compose--disabled:focus-within {
+  background: #fff5f5;
+  border-color: #fca5a5;
+}
+
+.agent-compose--disabled .agent-textarea {
+  color: #ef4444;
+}
+
+.agent-compose--disabled .agent-textarea::placeholder {
+  color: #ef4444;
+  opacity: 0.8;
+}
+
+.agent-compose--disabled .agent-upload-btn,
+.agent-compose--disabled .agent-send-btn {
+  opacity: 0.4;
 }
 
 .agent-upload-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  display: grid;
-  place-items: center;
-  color: #475569;
-  background: #fff;
+  width: 38px;
+  height: 38px;
   flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary, #64748b);
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-size: 15px;
 }
 
+.agent-upload-btn:hover { background: var(--c-border, #e2e8f0); }
 .agent-upload-btn.disabled { opacity: 0.5; cursor: not-allowed; }
 .agent-upload-btn input { display: none; }
 
 .agent-textarea {
   flex: 1;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  min-height: 72px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  height: 38px;
   max-height: 160px;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
   font-size: 14px;
-  padding: 10px 12px;
+  padding: 9px 8px;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s ease;
+  color: var(--c-text, #1e293b);
+  line-height: 20px;
 }
 
-.agent-textarea:focus { border-color: var(--c-accent, #2563eb); }
+.agent-textarea::placeholder { color: var(--c-text-muted, #94a3b8); }
 
 .agent-send-btn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
   border: none;
-  background: #2563eb;
-  color: #fff;
-  border-radius: 10px;
-  min-width: 72px;
-  height: 36px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.agent-send-btn:hover:not(:disabled) { background: #1d4ed8; }
-.agent-send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
-
-.agent-cancel-btn {
-  border: 1px solid #fca5a5;
-  background: #fff5f5;
-  color: #dc2626;
-  border-radius: 10px;
-  min-width: 72px;
-  height: 36px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  font-size: 16px;
+  background: var(--c-border, #e2e8f0);
+  color: var(--c-text-muted, #94a3b8);
+  cursor: not-allowed;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  min-width: unset;
 }
 
-.agent-cancel-btn:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
+.agent-send-btn.active {
+  background: var(--c-accent, #2563eb);
+  color: #fff;
+  cursor: pointer;
+}
+
+.agent-send-btn.active:hover { background: #1d4ed8; transform: scale(1.05); }
+.agent-send-btn.active:active { transform: scale(0.95); }
+
+.agent-cancel-btn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  min-width: unset;
+}
+
+.agent-cancel-btn:hover:not(:disabled) { background: #fecaca; }
 .agent-cancel-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .agent-hint-row {
@@ -2945,6 +3094,41 @@ onUnmounted(() => {
 .terminal-todo-badge--pending { background: rgba(210, 153, 34, 0.12); color: #d29922; }
 .terminal-todo-badge--canceled { background: rgba(248, 81, 73, 0.15); color: #f85149; }
 
+/* --- ReadFile output --- */
+
+.terminal-readfile-output {
+  border-top: 1px solid #21262d;
+}
+
+.terminal-readfile-output-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  color: #8b949e;
+  font-weight: 600;
+}
+
+.terminal-readfile-output-label i { color: #58a6ff; font-size: 10px; }
+
+.terminal-readfile-pre {
+  margin: 0;
+  padding: 4px 12px 10px;
+  font-size: 12px;
+  color: #8b949e;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+}
+
+.terminal-readfile-pre::-webkit-scrollbar { width: 4px; }
+.terminal-readfile-pre::-webkit-scrollbar-track { background: #0d1117; }
+.terminal-readfile-pre::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
 /* --- Task badge + output --- */
 
 .terminal-task-badge {
@@ -3086,6 +3270,7 @@ onUnmounted(() => {
   .agent-header { padding: 12px 16px; }
   .chat-scroll { padding: 16px; }
   .agent-input { padding: 12px 16px; }
+  .agent-input-inner { width: 100%; }
 
   .chat-ai-snap-wrap,
   .terminal,

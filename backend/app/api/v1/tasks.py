@@ -35,6 +35,7 @@ from app.schemas.task import (
     TaskReviewOut,
     TaskUpdate,
 )
+from app.services.agent_service import release_task_agent_resources
 from app.services.captcha_service import require_captcha_or_raise
 from app.utils.user_display import display_name
 
@@ -636,6 +637,7 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
 
     task.status = TaskStatus.COMPLETED
     db.add(task)
+    release_task_agent_resources(db, task.id)
     if task.assignee_id:
         db.add(Notification(
             user_id=task.assignee_id,
@@ -706,6 +708,7 @@ def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: 
     task.status = TaskStatus.CANCELED
     task.assignee_id = None
     db.add(task)
+    release_task_agent_resources(db, task.id)
 
     if assignee_id:
         db.add(Notification(

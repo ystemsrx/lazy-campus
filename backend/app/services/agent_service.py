@@ -4,6 +4,7 @@ import logging
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.agent import AgentMessage, AgentSession
+from app.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,11 @@ AGENT_SESSIONS_ROOT = PROJECT_ROOT / 'backend' / 'agent_sessions'
 AGENT_RUN_LOCK = threading.Lock()
 _CLEANER_LOCK = threading.Lock()
 _CLEANER_STARTED = False
+_RUNTIME_LOCK = threading.Lock()
+_RUNNING_EXEC: dict[str, subprocess.Popen] = {}
+_RUNNING_CONTAINER: dict[str, str] = {}
+_CANCEL_REQUESTED_SESSIONS: set[str] = set()
+_TERMINAL_TASK_STATUSES = {'completed', 'canceled'}
 
 
 def utcnow() -> datetime:
@@ -344,6 +351,115 @@ def _append_system_error(session_id: str, error_text: str) -> None:
         db.commit()
 
 
+def _register_running_exec(session_id: str, container_id: str, process: subprocess.Popen) -> None:
+    with _RUNTIME_LOCK:
+        _RUNNING_EXEC[session_id] = process
+        _RUNNING_CONTAINER[session_id] = container_id
+
+
+def _unregister_running_exec(session_id: str) -> None:
+    with _RUNTIME_LOCK:
+        _RUNNING_EXEC.pop(session_id, None)
+        _RUNNING_CONTAINER.pop(session_id, None)
+
+
+def _take_cancel_requested(session_id: str) -> bool:
+    with _RUNTIME_LOCK:
+        if session_id not in _CANCEL_REQUESTED_SESSIONS:
+            return False
+        _CANCEL_REQUESTED_SESSIONS.discard(session_id)
+        return True
+
+
+def _try_interrupt_container_process(container_id: str | None) -> bool:
+    if not container_id:
+        return False
+    try:
+        subprocess.run(
+            [
+                'docker',
+                'exec',
+                container_id,
+                'bash',
+                '-lc',
+                'pkill -INT -f "kimi|kimi-code" >/dev/null 2>&1 || true',
+            ],
+            capture_output=True,
+            text=True,
+            encoding=PROCESS_ENCODING,
+            errors='replace',
+            timeout=20,
+        )
+        return True
+    except Exception:
+        logger.warning('failed to send INT into container %s', container_id, exc_info=True)
+        return False
+
+
+def interrupt_agent_session(db: Session, session: AgentSession) -> bool:
+    process: subprocess.Popen | None = None
+    container_id = session.container_id
+    with _RUNTIME_LOCK:
+        process = _RUNNING_EXEC.get(session.id)
+        container_id = _RUNNING_CONTAINER.get(session.id) or container_id
+        if process:
+            _CANCEL_REQUESTED_SESSIONS.add(session.id)
+
+    requested = False
+    if process:
+        try:
+            if process.stdin and not process.stdin.closed:
+                process.stdin.write('\x03')
+                process.stdin.flush()
+                requested = True
+        except Exception:
+            logger.warning('failed to write Ctrl+C to session=%s', session.id, exc_info=True)
+
+        try:
+            process.send_signal(signal.SIGINT)
+            requested = True
+        except Exception:
+            logger.warning('failed to send SIGINT to session=%s', session.id, exc_info=True)
+
+    if _try_interrupt_container_process(container_id):
+        requested = True
+
+    if requested:
+        session.last_activity_at = utcnow()
+        session.last_error = None
+        db.add(session)
+    return requested
+
+
+def release_task_agent_resources(db: Session, task_id: int) -> int:
+    sessions = db.query(AgentSession).filter(AgentSession.task_id == task_id).all()
+    if not sessions:
+        return 0
+
+    released = 0
+    for session in sessions:
+        if session.status == 'running' or session.container_id:
+            interrupt_agent_session(db, session)
+        if session.container_id:
+            _stop_container(session.container_id)
+            cleanup_workspace_keep_deliverables(session.user_id, session.id)
+            released += 1
+        session.container_id = None
+        if session.status == 'running':
+            session.status = 'idle'
+        session.last_error = None
+        session.last_activity_at = utcnow()
+        db.add(session)
+    return released
+
+
+def _task_is_terminal(task: Task | None) -> bool:
+    if not task:
+        return False
+    status = getattr(task.status, 'value', task.status)
+    return str(status) in _TERMINAL_TASK_STATUSES
+
+
 def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[str, Any]]) -> None:
     if not AGENT_RUN_LOCK.acquire(blocking=False):
         _append_system_error(session_id, '当前代理繁忙，请稍后重试。')
@@ -390,6 +506,7 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
 
             process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -397,26 +514,42 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
                 errors='replace',
                 bufsize=1,
             )
+            _register_running_exec(session.id, str(session.container_id or ''), process)
 
             has_explicit_agent_error = False
-            if process.stdout:
-                for raw in process.stdout:
-                    line = raw.strip()
-                    if not line:
-                        continue
-                    if line.startswith(AGENT_ERROR_PREFIX):
-                        has_explicit_agent_error = True
-                    _persist_stream_line(db, session_id, line)
+            return_code = -1
+            try:
+                if process.stdout:
+                    for raw in process.stdout:
+                        line = raw.strip()
+                        if not line:
+                            continue
+                        if line.startswith(AGENT_ERROR_PREFIX):
+                            has_explicit_agent_error = True
+                        _persist_stream_line(db, session_id, line)
 
-            return_code = process.wait()
+                return_code = process.wait()
+            finally:
+                _unregister_running_exec(session.id)
+
             session = db.get(AgentSession, session_id)
             if not session:
                 return
 
+            cancel_requested = _take_cancel_requested(session_id)
+            task = db.get(Task, session.task_id)
+            task_terminal = _task_is_terminal(task)
             session.last_activity_at = utcnow()
-            if return_code == 0:
+            if return_code == 0 or cancel_requested or task_terminal:
                 session.status = 'idle'
                 session.last_error = None
+                if cancel_requested:
+                    create_agent_message(
+                        db,
+                        session_id=session_id,
+                        role='system',
+                        content='已中断当前执行。',
+                    )
             else:
                 session.status = 'error'
                 if has_explicit_agent_error:
@@ -433,8 +566,21 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
             db.commit()
     except Exception as exc:
         logger.exception('agent run failed session=%s', session_id)
-        _append_system_error(session_id, f'代理执行失败：{exc}')
+        _unregister_running_exec(session_id)
+        if _take_cancel_requested(session_id):
+            with SessionLocal() as db:
+                session = db.get(AgentSession, session_id)
+                if session:
+                    session.status = 'idle'
+                    session.last_error = None
+                    session.last_activity_at = utcnow()
+                    db.add(session)
+                create_agent_message(db, session_id=session_id, role='system', content='已中断当前执行。')
+                db.commit()
+        else:
+            _append_system_error(session_id, f'代理执行失败：{exc}')
     finally:
+        _take_cancel_requested(session_id)
         AGENT_RUN_LOCK.release()
 
 

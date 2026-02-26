@@ -40,6 +40,7 @@ from app.services.agent_service import (
     delete_deliverables,
     ensure_session_workspace,
     is_agent_busy,
+    interrupt_agent_session,
     list_deliverables,
     resolve_deliverable_path,
     safe_filename,
@@ -192,6 +193,8 @@ def start_task_agent(
         raise HTTPException(status_code=404, detail='任务不存在')
     if task.publisher_id != user.id:
         raise HTTPException(status_code=403, detail='仅发布者可开启 AI 代理')
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
+        raise HTTPException(status_code=400, detail='任务已结束，无法开启 AI 代理')
 
     category = db.get(TaskCategory, task.category_id) if task.category_id else None
     if not category or not category.ai_agent_enabled:
@@ -200,14 +203,30 @@ def start_task_agent(
     if task.assignee_id and task.assignee_id != user.id:
         raise HTTPException(status_code=400, detail='任务已有接单者，无法开启 AI 代理')
 
+    existing: AgentSession | None = None
     if task.agent_session_id:
-        existing = db.get(AgentSession, task.agent_session_id)
-        if existing and existing.user_id == user.id and existing.interaction_count < existing.max_interactions:
-            if task.status == TaskStatus.OPEN:
-                task.status = TaskStatus.IN_PROGRESS
-                db.add(task)
-                db.commit()
-            return _session_to_start_out(existing, task, int(user.agent_usage_remaining or 0))
+        linked = db.get(AgentSession, task.agent_session_id)
+        if linked and linked.user_id == user.id:
+            existing = linked
+    if not existing:
+        existing = (
+            db.query(AgentSession)
+            .filter(AgentSession.task_id == task.id, AgentSession.user_id == user.id)
+            .order_by(desc(AgentSession.created_at))
+            .first()
+        )
+
+    if existing:
+        if task.status == TaskStatus.OPEN:
+            task.status = TaskStatus.IN_PROGRESS
+        task.assignee_id = None
+        if task.agent_session_id != existing.id:
+            task.agent_session_id = existing.id
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        ensure_session_workspace(user.id, existing.id)
+        return _session_to_start_out(existing, task, int(user.agent_usage_remaining or 0))
 
     if int(user.agent_usage_remaining or 0) <= 0:
         raise HTTPException(status_code=403, detail='AI 代理次数不足，请联系管理员发放')
@@ -281,6 +300,11 @@ async def send_agent_message(
         raise HTTPException(status_code=403, detail='AI 代理功能当前已关闭')
 
     session = _get_owned_session(db, user.id, session_id)
+    task = db.get(Task, session.task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail='关联任务不存在')
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
+        raise HTTPException(status_code=400, detail='任务已结束，无法继续发送')
     if session.status == 'running':
         raise HTTPException(status_code=409, detail='代理正在处理中，请稍后再发送')
     if session.interaction_count >= session.max_interactions:
@@ -341,6 +365,27 @@ async def send_agent_message(
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
     )
+
+
+@router.post('/sessions/{session_id}/cancel')
+def cancel_running_agent_session(
+    session_id: str,
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    session = _get_owned_session(db, user.id, session_id)
+    task = db.get(Task, session.task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail='关联任务不存在')
+    if task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
+        return {'canceled': False}
+    if session.status != 'running':
+        return {'canceled': False}
+
+    canceled = interrupt_agent_session(db, session)
+    if canceled:
+        db.commit()
+    return {'canceled': canceled}
 
 
 @router.get('/sessions/{session_id}/deliverables', response_model=list[AgentDeliverableOut])
