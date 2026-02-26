@@ -17,6 +17,7 @@ class AgentStartOut(BaseModel):
     session_id: str
     task_id: int
     task_title: str
+    task_status: str
     status: str
     interaction_count: int
     max_interactions: int
@@ -69,6 +70,7 @@ class AgentSessionDetailOut(BaseModel):
     session_id: str
     task_id: int
     task_title: str
+    task_status: str
     status: str
     interaction_count: int
     max_interactions: int
@@ -79,10 +81,39 @@ class AgentSessionDetailOut(BaseModel):
     deliverables: list[AgentDeliverableOut] = Field(default_factory=list)
 
 
+class AgentMySessionItem(BaseModel):
+    session_id: str
+    task_id: int
+    task_title: str
+    task_status: str
+    status: str
+    interaction_count: int
+    max_interactions: int
+    can_send: bool
+    last_activity_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentMySessionListOut(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[AgentMySessionItem]
+
+
 class AgentSendOut(BaseModel):
     queued: bool
     interaction_count: int
     max_interactions: int
+
+
+class AgentDeliverableDeleteBody(BaseModel):
+    names: list[str] = Field(min_length=1)
+
+
+class AgentDeliverableDeleteOut(BaseModel):
+    deleted: list[str]
 
 
 class AgentAdminConfigOut(BaseModel):

@@ -223,6 +223,10 @@ function openChat() {
   router.push('/chat')
 }
 
+function openAgentTasks() {
+  router.push('/agent-tasks')
+}
+
 watch(() => [route.path, route.query.task, loading.value] as const, ([path, taskQuery, isLoading]) => {
   if (path !== '/' || !taskQuery || isLoading) return
   consumeTaskQuery()
@@ -266,6 +270,7 @@ onDeactivated(() => {
     @open-settings="openSettings"
     @open-reports="openReports"
     @open-chat="openChat"
+    @open-agent-tasks="openAgentTasks"
     @login="router.push('/login')"
     @logout="logout"
   />

@@ -5,6 +5,7 @@ import type {
   AgentAvailability,
   AgentDeliverable,
   AgentMessage,
+  AgentMySessionList,
   AgentSendResult,
   AgentSessionDetail,
   AgentSessionStart,
@@ -12,6 +13,11 @@ import type {
 
 export async function fetchAgentAvailability() {
   const { data } = await api.get<AgentAvailability>('/agent/me/availability')
+  return data
+}
+
+export async function fetchMyAgentSessions(params: { page?: number; page_size?: number } = {}) {
+  const { data } = await api.get<AgentMySessionList>('/agent/me/sessions', { params })
   return data
 }
 
@@ -51,6 +57,25 @@ export async function downloadAgentDeliverable(sessionId: string, name: string) 
   const { data } = await api.get<Blob>(`/agent/sessions/${sessionId}/deliverables/file`, {
     params: { name },
     responseType: 'blob',
+  })
+  return data
+}
+
+export async function downloadDeliverableZip(sessionId: string, names: string[] = []) {
+  const params = new URLSearchParams()
+  for (const name of names) {
+    params.append('names', name)
+  }
+  const { data } = await api.get<Blob>(`/agent/sessions/${sessionId}/deliverables/zip`, {
+    params,
+    responseType: 'blob',
+  })
+  return data
+}
+
+export async function deleteAgentDeliverables(sessionId: string, names: string[]) {
+  const { data } = await api.delete<{ deleted: string[] }>(`/agent/sessions/${sessionId}/deliverables`, {
+    data: { names },
   })
   return data
 }

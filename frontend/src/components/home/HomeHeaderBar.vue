@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: 'openSettings'): void
   (e: 'openReports'): void
   (e: 'openChat'): void
+  (e: 'openAgentTasks'): void
   (e: 'login'): void
   (e: 'logout'): void
 }>()
@@ -83,6 +84,11 @@ function onOpenReports() {
 function onOpenChat() {
   showUserMenu.value = false
   emit('openChat')
+}
+
+function onOpenAgentTasks() {
+  showUserMenu.value = false
+  emit('openAgentTasks')
 }
 
 function onLogout() {
@@ -175,6 +181,9 @@ onUnmounted(() => {
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenChat">
                 <i class="fa-regular fa-comment-dots"></i> 我的消息
+              </button>
+              <button class="hv-user-dropdown__item" @click="onOpenAgentTasks">
+                <span class="hv-ai-star">✨</span> 代理任务
               </button>
               <div class="hv-user-dropdown__divider"></div>
               <button class="hv-user-dropdown__item hv-user-dropdown__item--danger" @click="onLogout">
@@ -326,10 +335,21 @@ onUnmounted(() => {
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
-.hv-user-dropdown__item i {
+.hv-user-dropdown__item i,
+.hv-user-dropdown__item .hv-ai-star {
   width: 16px;
   text-align: center;
   color: var(--c-text-muted);
+}
+
+.hv-ai-star {
+  font-style: normal;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 @media (hover: hover) {

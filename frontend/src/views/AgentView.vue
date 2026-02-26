@@ -6,7 +6,7 @@ import AppToast from '../components/AppToast.vue'
 import AgentToolCallCard from '../components/agent/AgentToolCallCard.vue'
 import ChatRichTextRenderer from '../components/chat/ChatRichTextRenderer.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
-import { downloadAgentDeliverable, fetchAgentAvailability, fetchAgentMessages, fetchAgentSession, sendAgentMessage } from '../api/agent'
+import { deleteAgentDeliverables, downloadAgentDeliverable, downloadDeliverableZip, fetchAgentAvailability, fetchAgentMessages, fetchAgentSession, sendAgentMessage } from '../api/agent'
 import { useAppToast } from '../composables/useAppToast'
 import { useAuthStore } from '../stores/auth'
 import type { AgentAvailability, AgentDeliverable, AgentMessage, AgentSessionDetail } from '../types/api'
@@ -28,6 +28,10 @@ const messages = ref<AgentMessage[]>([])
 const loading = ref(true)
 const sending = ref(false)
 const downloadingName = ref<string | null>(null)
+const zippingAll = ref(false)
+const deletingSelected = ref(false)
+const selectMode = ref(false)
+const selectedNames = ref<Set<string>>(new Set())
 const inputText = ref('')
 const pendingFiles = ref<File[]>([])
 
@@ -43,9 +47,15 @@ const interactionLeft = computed(() => {
   return Math.max(0, session.value.max_interactions - session.value.interaction_count)
 })
 
+const isTaskTerminal = computed(() => {
+  const status = session.value?.task_status
+  return status === 'completed' || status === 'canceled'
+})
+
 const sendDisabled = computed(() => {
   if (!session.value) return true
   if (sending.value) return true
+  if (isTaskTerminal.value) return true
   if (!session.value.can_send) return true
   if (session.value.interaction_count >= session.value.max_interactions) return true
   return false
@@ -210,6 +220,61 @@ async function handleDownload(item: AgentDeliverable) {
   }
 }
 
+async function handleDownloadZip() {
+  if (!session.value) return
+  zippingAll.value = true
+  try {
+    const names = selectMode.value && selectedNames.value.size > 0
+      ? [...selectedNames.value]
+      : []
+    const blob = await downloadDeliverableZip(session.value.session_id, names)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'deliverables.zip'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    showToast(extractError(error, '打包下载失败'), 'error')
+  } finally {
+    zippingAll.value = false
+  }
+}
+
+async function handleDeleteSelected() {
+  if (!session.value || selectedNames.value.size === 0) return
+  deletingSelected.value = true
+  try {
+    await deleteAgentDeliverables(session.value.session_id, [...selectedNames.value])
+    selectedNames.value = new Set()
+    await refreshSession()
+  } catch (error) {
+    showToast(extractError(error, '删除失败'), 'error')
+  } finally {
+    deletingSelected.value = false
+  }
+}
+
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value
+  if (!selectMode.value) selectedNames.value = new Set()
+}
+
+function toggleSelect(name: string) {
+  const next = new Set(selectedNames.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  selectedNames.value = next
+}
+
+function handleDeliverableClick(item: AgentDeliverable) {
+  if (selectMode.value) {
+    toggleSelect(item.name)
+  } else {
+    handleDownload(item)
+  }
+}
+
 watch(
   () => messages.value.length,
   () => {
@@ -252,6 +317,7 @@ onUnmounted(() => {
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
       @open-chat="router.push('/chat')"
+      @open-agent-tasks="router.push('/agent-tasks')"
       @login="router.push('/login')"
       @logout="auth.logout(); router.push('/login')"
       @update:active-tab="(tab) => router.push(tab === 'workers' ? '/?tab=workers' : '/')"
@@ -354,30 +420,81 @@ onUnmounted(() => {
 
               <p class="agent-hint">
                 单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。
-                <span v-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
+                <span v-if="isTaskTerminal">任务已{{ session?.task_status === 'completed' ? '完成' : '取消' }}，会话已关闭。</span>
+                <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
                 <span v-else-if="interactionLeft <= 0">交互次数已用尽，需重新开启代理会话。</span>
               </p>
             </div>
           </section>
 
           <aside class="agent-side">
-            <h3>交付文件</h3>
-            <p class="agent-side__hint">来自 /workspace/deliverables</p>
+            <div class="agent-side__header">
+              <div>
+                <h3>交付文件</h3>
+                <p class="agent-side__hint">来自 /workspace/deliverables</p>
+              </div>
+              <button
+                v-if="session?.deliverables.length"
+                class="agent-side-btn"
+                :class="{ 'agent-side-btn--active': selectMode }"
+                @click="toggleSelectMode"
+              >
+                <i :class="selectMode ? 'fa-solid fa-xmark' : 'fa-solid fa-list-check'"></i>
+                {{ selectMode ? '取消' : '多选' }}
+              </button>
+            </div>
 
-            <div v-if="!(session?.deliverables.length)" class="agent-side__empty">暂无交付文件</div>
+            <div v-if="selectMode && session?.deliverables.length" class="agent-side__select-bar">
+              <span>已选 {{ selectedNames.size }} / {{ session?.deliverables.length }} 项</span>
+              <button
+                class="agent-side-delete-btn"
+                :disabled="selectedNames.size === 0 || deletingSelected"
+                @click="handleDeleteSelected"
+              >
+                <i class="fa-solid fa-trash"></i>
+                {{ deletingSelected ? '删除中...' : '删除选中' }}
+              </button>
+            </div>
+
+            <div class="agent-side__list">
+              <div v-if="!(session?.deliverables.length)" class="agent-side__empty">暂无交付文件</div>
+
+              <div
+                v-for="item in session?.deliverables || []"
+                :key="item.name"
+                class="agent-deliverable"
+                :class="{
+                  'agent-deliverable--selected': selectMode && selectedNames.has(item.name),
+                  'agent-deliverable--selectable': selectMode,
+                  'agent-deliverable--loading': !selectMode && downloadingName === item.name,
+                }"
+                @click="handleDeliverableClick(item)"
+              >
+                <div v-if="selectMode" class="agent-deliverable__check">
+                  <i :class="selectedNames.has(item.name) ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>
+                </div>
+                <div class="agent-deliverable__body">
+                  <div class="agent-deliverable__meta">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ formatFileSize(item.size) }}</span>
+                  </div>
+                  <small>{{ formatFull(item.updated_at) }}</small>
+                </div>
+                <div v-if="!selectMode" class="agent-deliverable__action">
+                  <i v-if="downloadingName === item.name" class="fa-solid fa-spinner fa-spin"></i>
+                  <i v-else class="fa-solid fa-download"></i>
+                </div>
+              </div>
+            </div>
 
             <button
-              v-for="item in session?.deliverables || []"
-              :key="item.name"
-              class="agent-deliverable"
-              :disabled="downloadingName === item.name"
-              @click="handleDownload(item)"
+              v-if="session?.deliverables.length"
+              class="agent-side-zip-btn"
+              :disabled="zippingAll"
+              @click="handleDownloadZip"
             >
-              <div class="agent-deliverable__meta">
-                <strong>{{ item.name }}</strong>
-                <span>{{ formatFileSize(item.size) }}</span>
-              </div>
-              <small>{{ formatFull(item.updated_at) }}</small>
+              <i class="fa-solid fa-file-zipper"></i>
+              {{ zippingAll ? '打包中...' : (selectMode && selectedNames.size > 0 ? `打包下载（${selectedNames.size} 个）` : '打包下载全部') }}
             </button>
           </aside>
         </div>
@@ -674,7 +791,23 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  overflow: hidden;
+}
+
+.agent-side__list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-side__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .agent-side h3 {
@@ -683,9 +816,106 @@ onUnmounted(() => {
 }
 
 .agent-side__hint {
-  margin: 0;
+  margin: 4px 0 0;
   font-size: 12px;
   color: #64748b;
+}
+
+.agent-side-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.agent-side-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.agent-side-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-side-btn--active {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.agent-side-btn--active:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.agent-side-zip-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.agent-side-zip-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.agent-side-zip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-side__select-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  font-size: 12px;
+  color: #475569;
+}
+
+.agent-side-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #fca5a5;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.agent-side-delete-btn:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.agent-side-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .agent-side__empty {
@@ -699,9 +929,44 @@ onUnmounted(() => {
   padding: 8px 10px;
   background: #f8fafc;
   display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.agent-deliverable:hover:not(.agent-deliverable--loading) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.agent-deliverable--selectable {
+  cursor: pointer;
+}
+
+.agent-deliverable--selected {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.agent-deliverable--loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.agent-deliverable__check {
+  color: #2563eb;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.agent-deliverable__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: 4px;
-  text-align: left;
 }
 
 .agent-deliverable__meta {
@@ -711,9 +976,21 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+.agent-deliverable__meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-deliverable small {
   color: #64748b;
   font-size: 11px;
+}
+
+.agent-deliverable__action {
+  color: #94a3b8;
+  font-size: 13px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 1000px) {

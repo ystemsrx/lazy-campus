@@ -81,6 +81,7 @@ function logout() {
       @open-settings="router.push('/settings')"
       @open-reports="loadReports"
       @open-chat="router.push('/chat')"
+      @open-agent-tasks="router.push('/agent-tasks')"
       @login="router.push('/login')"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"

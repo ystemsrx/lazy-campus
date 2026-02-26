@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import re
@@ -6,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -474,6 +476,39 @@ def resolve_deliverable_path(user_id: int, session_id: str, relative_name: str) 
     if not target.is_file():
         raise FileNotFoundError('file not found')
     return target
+
+
+def delete_deliverables(user_id: int, session_id: str, names: list[str]) -> list[str]:
+    """Delete named deliverables. Returns list of successfully deleted names."""
+    deleted: list[str] = []
+    for name in names:
+        try:
+            path = resolve_deliverable_path(user_id, session_id, name)
+            path.unlink()
+            deleted.append(name)
+        except (ValueError, FileNotFoundError):
+            pass
+    return deleted
+
+
+def zip_deliverables(user_id: int, session_id: str, names: list[str] | None = None) -> bytes:
+    """Create a zip archive of deliverables. If names is None/empty, zip all files."""
+    root = deliverables_dir(user_id, session_id)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        if names:
+            for name in names:
+                try:
+                    path = resolve_deliverable_path(user_id, session_id, name)
+                    zf.write(path, name)
+                except (ValueError, FileNotFoundError):
+                    pass
+        elif root.exists():
+            for file in root.rglob('*'):
+                if file.is_file():
+                    rel = file.relative_to(root).as_posix()
+                    zf.write(file, rel)
+    return buf.getvalue()
 
 
 def cleanup_idle_agent_containers(idle_minutes: int = AGENT_IDLE_TTL_MINUTES) -> int:

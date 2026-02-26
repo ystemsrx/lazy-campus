@@ -22,8 +22,12 @@ from app.schemas.agent import (
     AgentAvailabilityOut,
     AgentBatchGrantOut,
     AgentBatchGrantRequest,
+    AgentDeliverableDeleteBody,
+    AgentDeliverableDeleteOut,
     AgentDeliverableOut,
     AgentMessageOut,
+    AgentMySessionItem,
+    AgentMySessionListOut,
     AgentSendOut,
     AgentSessionDetailOut,
     AgentStartOut,
@@ -33,6 +37,7 @@ from app.services.agent_service import (
     MAX_AGENT_FILES_PER_MESSAGE,
     MAX_AGENT_INTERACTIONS,
     create_agent_message,
+    delete_deliverables,
     ensure_session_workspace,
     is_agent_busy,
     list_deliverables,
@@ -40,6 +45,7 @@ from app.services.agent_service import (
     safe_filename,
     spawn_agent_run,
     uploads_dir,
+    zip_deliverables,
 )
 from app.services.auth_service import get_agent_enabled, set_agent_enabled
 from app.utils.user_display import display_name
@@ -47,16 +53,26 @@ from app.utils.user_display import display_name
 router = APIRouter(prefix='/agent', tags=['agent'])
 
 
+_TERMINAL_TASK_STATUSES = {'completed', 'canceled'}
+
+
+def _can_send(session: AgentSession, task: Task) -> bool:
+    if task.status in _TERMINAL_TASK_STATUSES:
+        return False
+    return session.interaction_count < session.max_interactions and session.status != 'running'
+
+
 def _session_to_start_out(session: AgentSession, task: Task, remaining_count: int) -> AgentStartOut:
     return AgentStartOut(
         session_id=session.id,
         task_id=task.id,
         task_title=task.title,
+        task_status=task.status,
         status=session.status,
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
-        can_send=session.interaction_count < session.max_interactions and session.status != 'running',
+        can_send=_can_send(session, task),
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
@@ -67,11 +83,12 @@ def _session_to_detail_out(session: AgentSession, task: Task, remaining_count: i
         session_id=session.id,
         task_id=task.id,
         task_title=task.title,
+        task_status=task.status,
         status=session.status,
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
-        can_send=session.interaction_count < session.max_interactions and session.status != 'running',
+        can_send=_can_send(session, task),
         created_at=session.created_at,
         updated_at=session.updated_at,
         deliverables=[AgentDeliverableOut(**item) for item in list_deliverables(session.user_id, session.id)],
@@ -120,6 +137,45 @@ def get_my_agent_availability(
         max_files=MAX_AGENT_FILES_PER_MESSAGE,
         max_file_size_mb=MAX_AGENT_FILE_SIZE // (1024 * 1024),
     )
+
+
+@router.get('/me/sessions', response_model=AgentMySessionListOut)
+def list_my_agent_sessions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> AgentMySessionListOut:
+    query = (
+        db.query(AgentSession, Task)
+        .join(Task, Task.id == AgentSession.task_id)
+        .filter(AgentSession.user_id == user.id)
+    )
+    total = query.count()
+    rows = (
+        query
+        .order_by(desc(AgentSession.updated_at), desc(AgentSession.created_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [
+        AgentMySessionItem(
+            session_id=s.id,
+            task_id=t.id,
+            task_title=t.title,
+            task_status=t.status,
+            status=s.status,
+            interaction_count=s.interaction_count,
+            max_interactions=s.max_interactions,
+            can_send=_can_send(s, t),
+            last_activity_at=s.last_activity_at,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        )
+        for s, t in rows
+    ]
+    return AgentMySessionListOut(total=total, page=page, page_size=page_size, items=items)
 
 
 @router.post('/tasks/{task_id}/start', response_model=AgentStartOut)
@@ -312,6 +368,35 @@ def download_deliverable(
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail='文件不存在')
     return FileResponse(path=str(target), filename=target.name)
+
+
+@router.get('/sessions/{session_id}/deliverables/zip')
+def download_deliverables_zip(
+    session_id: str,
+    names: list[str] = Query(default=[]),
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+    _get_owned_session(db, user.id, session_id)
+    data = zip_deliverables(user.id, session_id, names or None)
+    return Response(
+        content=data,
+        media_type='application/zip',
+        headers={'Content-Disposition': 'attachment; filename="deliverables.zip"'},
+    )
+
+
+@router.delete('/sessions/{session_id}/deliverables', response_model=AgentDeliverableDeleteOut)
+def delete_session_deliverables(
+    session_id: str,
+    payload: AgentDeliverableDeleteBody,
+    user: User = Depends(require_completed_user),
+    db: Session = Depends(get_db),
+) -> AgentDeliverableDeleteOut:
+    _get_owned_session(db, user.id, session_id)
+    deleted = delete_deliverables(user.id, session_id, payload.names)
+    return AgentDeliverableDeleteOut(deleted=deleted)
 
 
 @router.get('/admin/config', response_model=AgentAdminConfigOut)

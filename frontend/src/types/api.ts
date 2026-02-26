@@ -585,6 +585,7 @@ export interface AgentSessionStart {
   session_id: string
   task_id: number
   task_title: string
+  task_status: string
   status: string
   interaction_count: number
   max_interactions: number
@@ -602,6 +603,27 @@ export interface AgentSendResult {
   queued: boolean
   interaction_count: number
   max_interactions: number
+}
+
+export interface AgentMySessionItem {
+  session_id: string
+  task_id: number
+  task_title: string
+  task_status: string
+  status: string
+  interaction_count: number
+  max_interactions: number
+  can_send: boolean
+  last_activity_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentMySessionList {
+  total: number
+  page: number
+  page_size: number
+  items: AgentMySessionItem[]
 }
 
 export interface AgentAdminConfig {

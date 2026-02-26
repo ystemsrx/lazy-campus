@@ -224,6 +224,7 @@ onUnmounted(() => {
       @open-settings="router.push('/settings')"
       @open-reports="router.push('/reports')"
       @open-chat="router.push('/chat')"
+      @open-agent-tasks="router.push('/agent-tasks')"
       @login="router.push('/login')"
       @logout="auth.logout(); router.push('/login')"
       @update:active-tab="(tab) => router.push(tab === 'workers' ? '/?tab=workers' : '/')"

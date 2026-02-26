@@ -118,6 +118,7 @@ const {
       @open-settings="openSettings"
       @open-reports="openReports"
       @open-chat="$router.push('/chat')"
+      @open-agent-tasks="$router.push('/agent-tasks')"
       @login="goLogin"
       @logout="logout"
       @update:active-tab="handleHeaderTabChange"
