@@ -439,13 +439,13 @@ def create_task(
     if payload.deadline and payload.deadline <= datetime.utcnow():
         raise HTTPException(status_code=422, detail='截止时间不能早于当前时间')
 
-    if _published_count_today(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
+    if _published_count_in_window(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
         require_captcha_or_raise(
             db=db,
             user_id=user.id,
             scene='task_publish',
             token=payload.captcha_token.strip() if payload.captcha_token else None,
-            message='今日发布任务已超过 5 条，请先完成滑块验证',
+            message='24小时内发布任务已超过 5 条，请先完成滑块验证',
         )
 
     task = Task(
@@ -523,30 +523,24 @@ _ABANDON_LIMIT = 5
 _CANCEL_WINDOW_H = 24
 _CANCEL_LIMIT = 5
 _DAILY_CAPTCHA_FREE_LIMIT = 5
+_PUBLISH_ACCEPT_CAPTCHA_WINDOW_H = 24
 
 
-def _utc_today_range() -> tuple[datetime, datetime]:
-    now = datetime.utcnow()
-    start = datetime(now.year, now.month, now.day)
-    end = start + timedelta(days=1)
-    return start, end
-
-
-def _published_count_today(db: Session, user_id: int) -> int:
-    day_start, day_end = _utc_today_range()
+def _published_count_in_window(db: Session, user_id: int) -> int:
+    window_start = datetime.utcnow() - timedelta(hours=_PUBLISH_ACCEPT_CAPTCHA_WINDOW_H)
     return (
-        db.query(func.count(Task.id))
-        .filter(Task.publisher_id == user_id, Task.created_at >= day_start, Task.created_at < day_end)
+        db.query(func.count(TaskPublishLog.id))
+        .filter(TaskPublishLog.user_id == user_id, TaskPublishLog.published_at >= window_start)
         .scalar()
         or 0
     )
 
 
-def _accepted_count_today(db: Session, user_id: int) -> int:
-    day_start, day_end = _utc_today_range()
+def _accepted_count_in_window(db: Session, user_id: int) -> int:
+    window_start = datetime.utcnow() - timedelta(hours=_PUBLISH_ACCEPT_CAPTCHA_WINDOW_H)
     return (
         db.query(func.count(TaskAcceptLog.id))
-        .filter(TaskAcceptLog.user_id == user_id, TaskAcceptLog.accepted_at >= day_start, TaskAcceptLog.accepted_at < day_end)
+        .filter(TaskAcceptLog.user_id == user_id, TaskAcceptLog.accepted_at >= window_start)
         .scalar()
         or 0
     )
@@ -594,13 +588,13 @@ def accept_task(
         raise HTTPException(status_code=400, detail='您的性别不满足该任务要求')
     if _abandon_count_in_window(db, user.id) >= _ABANDON_LIMIT:
         raise HTTPException(status_code=429, detail='您在24小时内取消接取次数已达上限，暂时无法接取新任务')
-    if _accepted_count_today(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
+    if _accepted_count_in_window(db, user.id) >= _DAILY_CAPTCHA_FREE_LIMIT:
         require_captcha_or_raise(
             db=db,
             user_id=user.id,
             scene='task_accept',
             token=captcha_token.strip() if captcha_token else None,
-            message='今日接取任务已超过 5 条，请先完成滑块验证',
+            message='24小时内接取任务已超过 5 条，请先完成滑块验证',
         )
 
     task.assignee_id = user.id
