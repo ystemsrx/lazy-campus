@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppToast from '../components/AppToast.vue'
-import AgentToolCallCard from '../components/agent/AgentToolCallCard.vue'
 import ChatRichTextRenderer from '../components/chat/ChatRichTextRenderer.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
 import { deleteAgentDeliverables, downloadAgentDeliverable, downloadDeliverableZip, fetchAgentAvailability, fetchAgentMessages, fetchAgentSession, sendAgentMessage } from '../api/agent'
@@ -36,7 +35,7 @@ const inputText = ref('')
 const pendingFiles = ref<File[]>([])
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const messageContainerRef = ref<HTMLDivElement | null>(null)
+const chatScrollRef = ref<HTMLDivElement | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollBusy = false
@@ -69,12 +68,27 @@ const canSendNow = computed(() => {
 const maxFileCount = computed(() => availability.value?.max_files ?? 5)
 const maxFileSizeMb = computed(() => availability.value?.max_file_size_mb ?? 50)
 
-function roleLabel(role: AgentMessage['role']) {
-  if (role === 'user') return '我'
-  if (role === 'assistant') return 'AI 代理'
-  if (role === 'tool_call') return '工具调用'
-  if (role === 'tool') return '工具输出'
-  return '系统'
+function parseToolArgs(raw: string | null): Record<string, any> {
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+function isShellTool(name: string | null): boolean {
+  if (!name) return false
+  const n = name.toLowerCase()
+  return n === 'shell' || n === 'execute_command' || n === 'bash'
+}
+
+function isWriteFileTool(name: string | null): boolean {
+  if (!name) return false
+  const n = name.toLowerCase()
+  return n === 'writefile' || n === 'write_file'
+}
+
+function isReadFileTool(name: string | null): boolean {
+  if (!name) return false
+  const n = name.toLowerCase()
+  return n === 'readfile' || n === 'read_file'
 }
 
 function resetViewState() {
@@ -275,13 +289,210 @@ function handleDeliverableClick(item: AgentDeliverable) {
   }
 }
 
+// --- Terminal ---
+
+const terminalHostname = computed(() => {
+  return appTitle.replace(/\s+/g, '-').replace(/[A-Za-z]/g, c => c.toLowerCase()) + '@agent'
+})
+
+function findClosingQuote(s: string, start: number): number {
+  let i = start
+  while (i < s.length) {
+    if (s[i] === '\\') { i += 2; continue }
+    if (s[i] === "'") return i
+    i++
+  }
+  return -1
+}
+
+function unescapePythonStr(s: string): string {
+  return s
+    .replace(/\\\\/g, '\x00BS\x00')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\'/g, "'")
+    .replace(/\x00BS\x00/g, '\\')
+}
+
+function extractToolOutputText(raw: string): { systemLines: string[], text: string } {
+  if (!raw) return { systemLines: [], text: '' }
+  let content = raw.trim()
+
+  try {
+    const parsed = JSON.parse(content)
+    if (Array.isArray(parsed)) {
+      content = parsed
+        .filter((x: any) => x?.text != null)
+        .map((x: any) => String(x.text))
+        .join('\n')
+    }
+  } catch {
+    if (content.startsWith("[{") || content.startsWith("[{'")) {
+      const texts: string[] = []
+      const marker = "'text': '"
+      let pos = 0
+      while (true) {
+        const idx = content.indexOf(marker, pos)
+        if (idx === -1) break
+        const vStart = idx + marker.length
+        const vEnd = findClosingQuote(content, vStart)
+        if (vEnd === -1) break
+        texts.push(unescapePythonStr(content.substring(vStart, vEnd)))
+        pos = vEnd + 1
+      }
+      if (texts.length > 0) content = texts.join('\n')
+    }
+  }
+
+  const systemLines: string[] = []
+  const cleaned = content.replace(/<system>([\s\S]*?)<\/system>/g, (_, inner) => {
+    systemLines.push(inner.trim())
+    return ''
+  })
+  return { systemLines, text: cleaned.trim() }
+}
+
+interface TerminalEntry {
+  id: number
+  toolType: 'shell' | 'write-file' | 'read-file' | 'other'
+  toolName: string
+  command?: string
+  filePath?: string
+  rawArgs?: string
+  systemLines: string[]
+  outputText: string
+  pending: boolean
+  success: boolean | null
+}
+
+const snapIndices = ref(new Map<number, number>())
+
+function handleSnapScroll(event: Event, roundId: number, total: number) {
+  const el = event.target as HTMLElement
+  const idx = Math.min(Math.round(el.scrollTop / 64), total - 1)
+  snapIndices.value = new Map(snapIndices.value.set(roundId, idx))
+}
+
+interface ConversationRound {
+  id: number
+  userMessage: AgentMessage | null
+  aiIntermediate: AgentMessage[]
+  entries: TerminalEntry[]
+  aiFinal: AgentMessage | null
+}
+
+const conversationRounds = computed<ConversationRound[]>(() => {
+  const rounds: ConversationRound[] = []
+  const msgs = messages.value
+
+  const groups: AgentMessage[][] = []
+  let cur: AgentMessage[] = []
+  for (const msg of msgs) {
+    if (msg.role === 'user') {
+      if (cur.length > 0) groups.push(cur)
+      cur = [msg]
+    } else {
+      cur.push(msg)
+    }
+  }
+  if (cur.length > 0) groups.push(cur)
+
+  for (const group of groups) {
+    const round: ConversationRound = {
+      id: group[0].id,
+      userMessage: group[0].role === 'user' ? group[0] : null,
+      aiIntermediate: [],
+      entries: [],
+      aiFinal: null,
+    }
+
+    for (let i = 0; i < group.length; i++) {
+      const msg = group[i]
+      if (msg.role !== 'assistant' && msg.role !== 'system') continue
+      if (!msg.content?.trim()) continue
+      const rest = group.slice(i + 1)
+      const hasToolAfter = rest.some(m => m.role === 'tool_call')
+      const hasLaterText = rest.some(m => m.role === 'assistant' && m.content?.trim())
+      if (hasToolAfter || hasLaterText) {
+        round.aiIntermediate.push(msg)
+      } else {
+        round.aiFinal = msg
+      }
+    }
+
+    for (let i = 0; i < group.length; i++) {
+      const msg = group[i]
+      if (msg.role !== 'tool_call') continue
+      const args = parseToolArgs(msg.tool_arguments)
+      const toolName = msg.tool_name || 'Tool'
+      let entry: TerminalEntry
+
+      if (isShellTool(msg.tool_name)) {
+        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', systemLines: [], outputText: '', pending: true, success: null }
+      } else if (isWriteFileTool(msg.tool_name)) {
+        entry = { id: msg.id, toolType: 'write-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', pending: true, success: null }
+      } else if (isReadFileTool(msg.tool_name)) {
+        entry = { id: msg.id, toolType: 'read-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', pending: true, success: null }
+      } else {
+        let pretty = msg.tool_arguments || ''
+        try { pretty = JSON.stringify(JSON.parse(pretty), null, 2) } catch {}
+        entry = { id: msg.id, toolType: 'other', toolName, rawArgs: pretty, systemLines: [], outputText: '', pending: true, success: null }
+      }
+
+      let outputMsg: AgentMessage | undefined
+      if (msg.tool_call_id) {
+        outputMsg = msgs.find(m => m.role === 'tool' && m.tool_call_id === msg.tool_call_id)
+      }
+      if (!outputMsg) {
+        for (let j = i + 1; j < group.length; j++) {
+          if (group[j].role === 'tool') { outputMsg = group[j]; break }
+          if (group[j].role === 'tool_call') break
+        }
+      }
+      if (outputMsg?.content) {
+        const { systemLines, text } = extractToolOutputText(outputMsg.content)
+        if (entry.toolType === 'shell') {
+          const kept: string[] = []
+          for (const line of systemLines) {
+            if (/command executed successfully/i.test(line)) {
+              entry.success = true
+            } else if (/\berror\b/i.test(line)) {
+              entry.success = false
+              kept.push(line)
+            } else {
+              kept.push(line)
+            }
+          }
+          entry.systemLines = kept
+          if (entry.success === null) entry.success = true
+        } else {
+          entry.systemLines = systemLines
+        }
+        entry.outputText = text
+        entry.pending = false
+      }
+      round.entries.push(entry)
+    }
+
+    rounds.push(round)
+  }
+  return rounds
+})
+
 watch(
   () => messages.value.length,
   () => {
     nextTick(() => {
-      const container = messageContainerRef.value
-      if (!container) return
-      container.scrollTop = container.scrollHeight
+      if (chatScrollRef.value) {
+        chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+        chatScrollRef.value.querySelectorAll('.chat-ai-snap').forEach(el => {
+          el.scrollTop = el.scrollHeight
+        })
+        chatScrollRef.value.querySelectorAll('.terminal-body').forEach(el => {
+          el.scrollTop = el.scrollHeight
+        })
+      }
     })
   },
 )
@@ -327,60 +538,128 @@ onUnmounted(() => {
       <AppToast :toast="toast" @dismiss="clearToast" />
 
       <div class="agent-shell">
-        <header class="agent-header">
-          <div>
-            <h1>{{ session?.task_title || 'AI 代理会话' }}</h1>
-            <p>请上传必要文件并描述需求。文件不会在选择时上传，点击发送后才会提交。</p>
-          </div>
-          <div class="agent-header__meta">
-            <span class="badge badge-blue">已用 {{ session?.interaction_count ?? 0 }}/{{ session?.max_interactions ?? 8 }}</span>
-            <span class="badge" :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'">剩余 {{ interactionLeft }} 次</span>
-          </div>
-        </header>
-
         <div class="agent-layout">
           <section class="agent-chat">
-            <div ref="messageContainerRef" class="agent-messages">
-              <div v-if="loading" class="agent-empty">加载中...</div>
-              <div v-else-if="messages.length === 0" class="agent-empty">还没有消息，先发送你的需求吧。</div>
+            <div ref="chatScrollRef" class="chat-scroll">
+              <div v-if="loading" class="chat-empty">加载中...</div>
+              <div v-else-if="conversationRounds.length === 0" class="chat-empty">还没有消息，先发送你的需求吧。</div>
 
-              <div
-                v-for="msg in messages"
-                :key="msg.id"
-                class="agent-message"
-                :class="{
-                  'agent-message--user': msg.role === 'user',
-                  'agent-message--assistant': msg.role === 'assistant',
-                  'agent-message--tool': msg.role === 'tool' || msg.role === 'tool_call',
-                  'agent-message--system': msg.role === 'system',
-                }"
-              >
-                <div class="agent-message__meta">
-                  <strong>{{ roleLabel(msg.role) }}</strong>
-                  <span>{{ formatFull(msg.created_at) }}</span>
+              <div v-for="round in conversationRounds" :key="round.id" class="chat-round">
+                <div v-if="round.userMessage" class="chat-bubble-row chat-bubble-row--right">
+                  <div class="chat-bubble chat-bubble--user">
+                    <ChatRichTextRenderer :content="round.userMessage.content || ''" />
+                    <div v-if="round.userMessage.attachments?.length" class="chat-bubble-files">
+                      <span v-for="att in round.userMessage.attachments" :key="att.stored_name" class="chat-file-chip">
+                        <i class="fa-solid fa-file"></i> {{ att.name }}
+                        <small>({{ formatFileSize(att.size) }})</small>
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <AgentToolCallCard
-                  v-if="msg.role === 'tool_call'"
-                  :tool-name="msg.tool_name"
-                  :tool-arguments="msg.tool_arguments"
-                  :tool-call-id="msg.tool_call_id"
-                />
-
-                <pre v-else-if="msg.role === 'tool'" class="agent-tool-output">{{ msg.content }}</pre>
-
-                <div v-else-if="msg.role === 'system'" class="agent-system">{{ msg.content }}</div>
-
-                <div v-else class="agent-bubble">
-                  <ChatRichTextRenderer :content="msg.content || ''" />
+                <div v-if="round.aiIntermediate.length" class="chat-ai-snap-wrap">
+                  <div class="chat-ai-snap-head">
+                    <i class="fa-solid fa-robot"></i>
+                    <span>AI 代理</span>
+                  </div>
+                  <div class="chat-ai-snap-outer" :class="{ 'chat-ai-snap-outer--glow': session?.status === 'running' }">
+                    <div class="chat-ai-snap" @scroll="handleSnapScroll($event, round.id, round.aiIntermediate.length)">
+                      <div v-for="msg in round.aiIntermediate" :key="msg.id" class="chat-ai-snap-item">
+                        <span>{{ msg.content }}</span>
+                      </div>
+                    </div>
+                    <span class="chat-ai-snap-idx">{{ (snapIndices.get(round.id) ?? (round.aiIntermediate.length - 1)) + 1 }}/{{ round.aiIntermediate.length }}</span>
+                  </div>
                 </div>
 
-                <div v-if="msg.attachments.length" class="agent-attachments">
-                  <span v-for="attachment in msg.attachments" :key="attachment.stored_name" class="agent-attachment-chip">
-                    <i class="fa-solid fa-file"></i>
-                    {{ attachment.name }}
-                    <small>({{ formatFileSize(attachment.size) }})</small>
-                  </span>
+                <div v-if="round.entries.length" class="terminal">
+                  <div class="terminal-titlebar">
+                    <div class="terminal-dots">
+                      <span class="terminal-dot terminal-dot--red"></span>
+                      <span class="terminal-dot terminal-dot--yellow"></span>
+                      <span class="terminal-dot terminal-dot--green"></span>
+                    </div>
+                    <span class="terminal-hostname">{{ terminalHostname }}</span>
+                  </div>
+                  <div class="terminal-body">
+                    <template v-for="entry in round.entries" :key="entry.id">
+                      <div v-if="entry.toolType === 'shell'" class="terminal-entry">
+                        <div class="terminal-prompt-line">
+                          <span v-if="entry.success === true" class="terminal-status-dot terminal-status-dot--ok"></span>
+                          <span v-else-if="entry.success === false" class="terminal-status-dot terminal-status-dot--err"></span>
+                          <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">/workspace</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
+                        </div>
+                        <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
+                        <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                          <span class="terminal-blink">█</span>
+                        </div>
+                      </div>
+
+                      <div v-else-if="entry.toolType === 'write-file'" class="terminal-entry">
+                        <div class="terminal-write-box">
+                          <div class="terminal-write-head">
+                            <i class="fa-solid fa-file-pen"></i>
+                            <span>WriteFile</span>
+                          </div>
+                          <div class="terminal-write-detail">
+                            <span class="terminal-write-key">path</span>
+                            <span class="terminal-write-val">{{ entry.filePath }}</span>
+                          </div>
+                          <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-write-ok">
+                            <i class="fa-solid fa-check"></i> {{ line }}
+                          </div>
+                        </div>
+                        <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                          <span class="terminal-blink">█</span>
+                        </div>
+                      </div>
+
+                      <div v-else-if="entry.toolType === 'read-file'" class="terminal-entry">
+                        <div class="terminal-write-box terminal-write-box--read">
+                          <div class="terminal-write-head terminal-write-head--read">
+                            <i class="fa-solid fa-file-lines"></i>
+                            <span>ReadFile</span>
+                          </div>
+                          <div class="terminal-write-detail">
+                            <span class="terminal-write-key">path</span>
+                            <span class="terminal-write-val">{{ entry.filePath }}</span>
+                          </div>
+                          <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-write-ok">
+                            <i class="fa-solid fa-check"></i> {{ line }}
+                          </div>
+                        </div>
+                        <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                          <span class="terminal-blink">█</span>
+                        </div>
+                      </div>
+
+                      <div v-else class="terminal-entry">
+                        <div class="terminal-other-line">
+                          <span class="terminal-other-icon">⚙</span>
+                          <span class="terminal-other-name">{{ entry.toolName }}</span>
+                        </div>
+                        <pre v-if="entry.rawArgs" class="terminal-pre terminal-pre--args">{{ entry.rawArgs }}</pre>
+                        <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
+                        <pre v-if="entry.outputText" class="terminal-pre">{{ entry.outputText }}</pre>
+                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                          <span class="terminal-blink">█</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <div v-if="round.aiFinal" class="chat-ai-final">
+                  <div class="chat-ai-final-head">
+                    <i class="fa-solid fa-robot"></i>
+                    <span>AI 代理</span>
+                  </div>
+                  <div class="chat-ai-final-body">
+                    <ChatRichTextRenderer :content="round.aiFinal.content || ''" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -418,12 +697,18 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <p class="agent-hint">
-                单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。
-                <span v-if="isTaskTerminal">任务已{{ session?.task_status === 'completed' ? '完成' : '取消' }}，会话已关闭。</span>
-                <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
-                <span v-else-if="interactionLeft <= 0">交互次数已用尽，需重新开启代理会话。</span>
-              </p>
+              <div class="agent-hint-row">
+                <p class="agent-hint">
+                  <span v-if="isTaskTerminal">任务已{{ session?.task_status === 'completed' ? '完成' : '取消' }}，会话已关闭。</span>
+                  <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
+                  <span v-else-if="interactionLeft <= 0">交互次数已用尽。</span>
+                  <span v-else>单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。</span>
+                </p>
+                <div class="agent-hint-badges">
+                  <span class="badge badge-blue">已用 {{ session?.interaction_count ?? 0 }}/{{ session?.max_interactions ?? 8 }}</span>
+                  <span class="badge" :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'">剩余 {{ interactionLeft }}</span>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -529,37 +814,7 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   overflow: hidden;
-}
-
-.agent-header {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 16px 18px;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.agent-header h1 {
-  margin: 0;
-  font-size: 20px;
-  color: #0f172a;
-}
-
-.agent-header p {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.agent-header__meta {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .agent-layout {
@@ -571,120 +826,452 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* ===== Chat Column ===== */
+
 .agent-chat {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  gap: 12px;
 }
 
-.agent-messages {
+.chat-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 4px 2px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
-.agent-empty {
+.chat-scroll::-webkit-scrollbar { width: 6px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+.chat-empty {
   color: #94a3b8;
   font-size: 13px;
   text-align: center;
-  margin-top: 24px;
+  margin-top: 40px;
 }
 
-.agent-message {
+.chat-round {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 90%;
+  gap: 12px;
 }
 
-.agent-message--user {
-  align-self: flex-end;
-}
+/* --- User Bubble --- */
 
-.agent-message--assistant,
-.agent-message--tool,
-.agent-message--system {
-  align-self: flex-start;
-}
-
-.agent-message__meta {
+.chat-bubble-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #94a3b8;
 }
 
-.agent-message__meta strong {
-  color: #334155;
+.chat-bubble-row--right {
+  justify-content: flex-end;
 }
 
-.agent-bubble {
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: #f1f5f9;
-  color: #0f172a;
+.chat-bubble {
+  max-width: 80%;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.agent-message--user .agent-bubble {
+.chat-bubble--user {
   background: #2563eb;
   color: #fff;
 }
 
-.agent-message--user .agent-bubble :deep(*) {
-  color: #fff;
+.chat-bubble--user :deep(*) {
+  color: #fff !important;
 }
 
-.agent-system {
-  border-radius: 12px;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
-  color: #92400e;
-  padding: 10px 12px;
-  font-size: 13px;
-}
-
-.agent-tool-output {
-  margin: 0;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 12px;
-  max-height: 220px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.agent-attachments {
+.chat-bubble-files {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
 }
 
-.agent-attachment-chip {
+.chat-file-chip {
   font-size: 11px;
-  color: #334155;
-  border: 1px solid #e2e8f0;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 999px;
-  padding: 4px 8px;
-  display: flex;
+  padding: 3px 10px;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #fff;
 }
 
+.chat-file-chip small {
+  opacity: 0.7;
+}
+
+/* --- AI Intermediate (snap-scroll) --- */
+
+.chat-ai-snap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-ai-snap-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+  padding-left: 2px;
+}
+
+.chat-ai-snap-head i {
+  color: #2563eb;
+  font-size: 13px;
+}
+
+.chat-ai-snap-outer {
+  position: relative;
+  border-radius: 12px;
+}
+
+.chat-ai-snap-outer--glow {
+  padding: 2px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.chat-ai-snap-outer--glow::before {
+  content: '';
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  background: conic-gradient(#3b82f6, #8b5cf6, #ec4899, #f59e0b, #10b981, #3b82f6);
+  animation: glowSpin 3s linear infinite;
+}
+
+.chat-ai-snap-outer--glow .chat-ai-snap {
+  border: none;
+  border-radius: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes glowSpin {
+  to { transform: rotate(360deg); }
+}
+
+.chat-ai-snap-idx {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(241, 245, 249, 0.92);
+  padding: 1px 8px;
+  border-radius: 4px;
+  z-index: 2;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.chat-ai-snap-outer--glow .chat-ai-snap-idx {
+  bottom: 10px;
+  right: 14px;
+}
+
+.chat-ai-snap {
+  height: 64px;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.chat-ai-snap::-webkit-scrollbar { width: 0; }
+
+.chat-ai-snap-item {
+  min-height: 64px;
+  height: 64px;
+  scroll-snap-align: start;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.chat-ai-snap-item span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ===== Terminal ===== */
+
+.terminal {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.terminal-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #1c2028;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.terminal-dots { display: flex; gap: 7px; }
+
+.terminal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.terminal-dot--red    { background: #ff5f56; }
+.terminal-dot--yellow { background: #ffbd2e; }
+.terminal-dot--green  { background: #27c93f; }
+
+.terminal-hostname {
+  font-size: 12px;
+  color: #8b949e;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-weight: 500;
+}
+
+.terminal-body {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+}
+
+.terminal-body::-webkit-scrollbar { width: 6px; }
+.terminal-body::-webkit-scrollbar-track { background: #0d1117; }
+.terminal-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+.terminal-body::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+.terminal-status {
+  color: #8b949e;
+  font-size: 13px;
+}
+
+@keyframes termBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.terminal-blink {
+  animation: termBlink 1s step-end infinite;
+  color: #58a6ff;
+}
+
+.terminal-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: termFade 0.25s ease;
+}
+
+@keyframes termFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Shell prompt */
+
+.terminal-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.terminal-status-dot--ok { background: #3fb950; }
+.terminal-status-dot--err { background: #f85149; }
+
+.terminal-prompt-line {
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.terminal-user {
+  color: #3fb950;
+  font-weight: 600;
+}
+
+.terminal-path {
+  color: #58a6ff;
+}
+
+.terminal-dollar {
+  color: #3fb950;
+}
+
+.terminal-cmd {
+  color: #f0f6fc;
+}
+
+.terminal-sys-line {
+  color: #d29922;
+  font-size: 12px;
+  padding-left: 2px;
+  line-height: 1.5;
+}
+
+.terminal-pre {
+  margin: 0;
+  font-size: 12px;
+  color: #8b949e;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  padding-left: 2px;
+}
+
+.terminal-pre--args {
+  color: #79c0ff;
+  font-size: 11px;
+}
+
+/* WriteFile card inside terminal */
+
+.terminal-write-box {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #161b22;
+  overflow: hidden;
+}
+
+.terminal-write-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #30363d;
+  font-size: 12px;
+  color: #d2a8ff;
+  font-weight: 600;
+}
+
+.terminal-write-head i {
+  font-size: 13px;
+}
+
+.terminal-write-head--read {
+  color: #58a6ff;
+}
+
+.terminal-write-box--read {
+  border-color: #1f3a5f;
+}
+
+.terminal-write-detail {
+  padding: 6px 12px;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.terminal-write-key {
+  color: #8b949e;
+  flex-shrink: 0;
+}
+
+.terminal-write-val {
+  color: #79c0ff;
+  word-break: break-all;
+}
+
+.terminal-write-ok {
+  padding: 4px 12px 6px;
+  font-size: 12px;
+  color: #3fb950;
+}
+
+.terminal-write-ok i {
+  margin-right: 4px;
+}
+
+/* Other tool */
+
+.terminal-other-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.terminal-other-icon { color: #d29922; }
+.terminal-other-name { color: #d29922; font-weight: 600; }
+
+/* --- AI Final Output (below terminal) --- */
+
+.chat-ai-final {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-ai-final-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+  padding-left: 2px;
+}
+
+.chat-ai-final-head i {
+  color: #2563eb;
+  font-size: 13px;
+}
+
+.chat-ai-final-body {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: #1e293b;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ===== Input ===== */
+
 .agent-input {
-  border-top: 1px solid #e2e8f0;
-  padding: 10px 12px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
   flex-shrink: 0;
 }
 
@@ -707,16 +1294,8 @@ onUnmounted(() => {
   background: #f8fafc;
 }
 
-.agent-pending__item small {
-  color: #64748b;
-}
-
-.agent-pending__item button {
-  border: none;
-  background: transparent;
-  color: #64748b;
-  padding: 0;
-}
+.agent-pending__item small { color: #64748b; }
+.agent-pending__item button { border: none; background: transparent; color: #64748b; padding: 0; }
 
 .agent-compose {
   display: flex;
@@ -737,14 +1316,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.agent-upload-btn.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.agent-upload-btn input {
-  display: none;
-}
+.agent-upload-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+.agent-upload-btn input { display: none; }
 
 .agent-textarea {
   flex: 1;
@@ -768,19 +1341,29 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.agent-send-btn:disabled {
-  background: #cbd5e1;
-  cursor: not-allowed;
+.agent-send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+.agent-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .agent-hint {
-  margin: 8px 2px 0;
+  margin: 0;
   font-size: 11px;
   color: #64748b;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
+
+.agent-hint-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ===== Sidebar ===== */
 
 .agent-side {
   background: #fff;
@@ -810,10 +1393,7 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.agent-side h3 {
-  margin: 0;
-  font-size: 16px;
-}
+.agent-side h3 { margin: 0; font-size: 16px; }
 
 .agent-side__hint {
   margin: 4px 0 0;
@@ -837,15 +1417,8 @@ onUnmounted(() => {
   transition: background 0.15s, border-color 0.15s;
 }
 
-.agent-side-btn:hover:not(:disabled) {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-}
-
-.agent-side-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.agent-side-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
+.agent-side-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .agent-side-btn--active {
   background: #fee2e2;
@@ -853,9 +1426,7 @@ onUnmounted(() => {
   color: #dc2626;
 }
 
-.agent-side-btn--active:hover:not(:disabled) {
-  background: #fecaca;
-}
+.agent-side-btn--active:hover:not(:disabled) { background: #fecaca; }
 
 .agent-side-zip-btn {
   display: flex;
@@ -874,15 +1445,8 @@ onUnmounted(() => {
   transition: background 0.15s, border-color 0.15s;
 }
 
-.agent-side-zip-btn:hover:not(:disabled) {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-}
-
-.agent-side-zip-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.agent-side-zip-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
+.agent-side-zip-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .agent-side__select-bar {
   display: flex;
@@ -909,19 +1473,10 @@ onUnmounted(() => {
   transition: background 0.15s;
 }
 
-.agent-side-delete-btn:hover:not(:disabled) {
-  background: #fecaca;
-}
+.agent-side-delete-btn:hover:not(:disabled) { background: #fecaca; }
+.agent-side-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.agent-side-delete-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.agent-side__empty {
-  font-size: 13px;
-  color: #94a3b8;
-}
+.agent-side__empty { font-size: 13px; color: #94a3b8; }
 
 .agent-deliverable {
   border: 1px solid #e2e8f0;
@@ -936,30 +1491,12 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.agent-deliverable:hover:not(.agent-deliverable--loading) {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-}
+.agent-deliverable:hover:not(.agent-deliverable--loading) { background: #f1f5f9; border-color: #94a3b8; }
+.agent-deliverable--selectable { cursor: pointer; }
+.agent-deliverable--selected { background: #eff6ff; border-color: #93c5fd; }
+.agent-deliverable--loading { opacity: 0.7; cursor: wait; }
 
-.agent-deliverable--selectable {
-  cursor: pointer;
-}
-
-.agent-deliverable--selected {
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-.agent-deliverable--loading {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.agent-deliverable__check {
-  color: #2563eb;
-  font-size: 15px;
-  flex-shrink: 0;
-}
+.agent-deliverable__check { color: #2563eb; font-size: 15px; flex-shrink: 0; }
 
 .agent-deliverable__body {
   flex: 1;
@@ -982,16 +1519,8 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.agent-deliverable small {
-  color: #64748b;
-  font-size: 11px;
-}
-
-.agent-deliverable__action {
-  color: #94a3b8;
-  font-size: 13px;
-  flex-shrink: 0;
-}
+.agent-deliverable small { color: #64748b; font-size: 11px; }
+.agent-deliverable__action { color: #94a3b8; font-size: 13px; flex-shrink: 0; }
 
 @media (max-width: 1000px) {
   .agent-layout {
