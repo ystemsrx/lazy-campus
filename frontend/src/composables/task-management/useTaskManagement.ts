@@ -664,7 +664,11 @@ export function useTaskManagement() {
   const republishSourceId = ref<number | null>(null)
 
   watch(showCreateModal, (open) => {
-    if (!open) republishSourceId.value = null
+    if (!open) {
+      republishSourceId.value = null
+      return
+    }
+    refreshAgentAvailability().catch(() => {})
   })
 
   function handleRepublishTask() {

@@ -66,14 +66,19 @@ export function useQuickTaskPublish(options: {
     return createCategorySupportsAgent.value
   })
 
+  async function refreshAgentAvailability() {
+    if (!auth.isAuthenticated) {
+      agentAvailability.value = null
+      return
+    }
+    agentAvailability.value = await fetchAgentAvailability().catch(() => null)
+  }
+
   async function bootstrap() {
     if (bootstrapped.value || loadingBootstrap.value) return
     loadingBootstrap.value = true
     try {
-      const [cats, availability] = await Promise.all([
-        fetchCategories(),
-        fetchAgentAvailability().catch(() => null),
-      ])
+      const [cats, availability] = await Promise.all([fetchCategories(), fetchAgentAvailability().catch(() => null)])
       publishCategories.value = cats
       agentAvailability.value = availability
       bootstrapped.value = true
@@ -90,6 +95,7 @@ export function useQuickTaskPublish(options: {
       return
     }
     await bootstrap()
+    await refreshAgentAvailability()
     showCreateModal.value = true
   }
 
@@ -127,7 +133,7 @@ export function useQuickTaskPublish(options: {
         try {
           const started = await startTaskAgent(created.id)
           startedSessionId = started.session_id
-          agentAvailability.value = await fetchAgentAvailability().catch(() => agentAvailability.value)
+          await refreshAgentAvailability()
         } catch (error) {
           options.showToast(extractError(error, '委托已发布，但启动 AI 代理失败'), 'error')
         }

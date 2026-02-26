@@ -417,7 +417,11 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
   )
 
   watch(showPostModal, (open) => {
-    if (!open) republishSourceId.value = null
+    if (!open) {
+      republishSourceId.value = null
+      return
+    }
+    refreshAgentAvailability().catch(() => {})
   })
 
   function handleRepublishTask() {
