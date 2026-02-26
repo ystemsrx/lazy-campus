@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, proxyRefs } from 'vue'
+import { computed, proxyRefs, ref } from "vue";
 import {
   AlertTriangle,
   Ban,
@@ -16,39 +16,81 @@ import {
   User,
   Users,
   X,
-} from 'lucide-vue-next'
-import maleAvatar from '../../assets/avatars/default-male.svg'
-import femaleAvatar from '../../assets/avatars/default-female.svg'
+} from "lucide-vue-next";
+import maleAvatar from "../../assets/avatars/default-male.svg";
+import femaleAvatar from "../../assets/avatars/default-female.svg";
+import ChatRichTextRenderer from "../chat/ChatRichTextRenderer.vue";
 
-import type { AdminNotificationsModel } from '../../composables/admin/useAdminNotifications'
-import type { AdminUserItem } from '../../types/api'
-import { parseUTC } from '../../utils/time'
+import type { AdminNotificationsModel } from "../../composables/admin/useAdminNotifications";
+import type { AdminUserItem } from "../../types/api";
+import { parseUTC } from "../../utils/time";
 
 const props = defineProps<{
-  model: AdminNotificationsModel
-}>()
+  model: AdminNotificationsModel;
+}>();
 
-const vm = proxyRefs(props.model)
+const vm = proxyRefs(props.model);
+const richEditorRef = ref<HTMLTextAreaElement | null>(null);
+
+const pushKindOptions = [
+  { id: "notification" as const, label: "通知推送", icon: Bell },
+  { id: "announcement" as const, label: "公告推送", icon: Megaphone },
+];
 
 const targetOptions = [
-  { id: 'all' as const, label: '全体用户', icon: Users },
-  { id: 'active' as const, label: '近3天活跃', icon: Clock },
-  { id: 'banned' as const, label: '受限用户', icon: Ban },
-  { id: 'custom' as const, label: '指定用户', icon: User },
-]
+  { id: "all" as const, label: "全体用户", icon: Users },
+  { id: "active" as const, label: "近3天活跃", icon: Clock },
+  { id: "banned" as const, label: "受限用户", icon: Ban },
+  { id: "custom" as const, label: "指定用户", icon: User },
+];
 
 const dismissOptions = [
-  { id: 'read' as const, label: '常规通知 (阅后即焚)', desc: '用户阅读后自动消失' },
-  { id: 'persistent' as const, label: '强制置顶 (需手动撤下)', desc: '用户端无法删除，需在已发送列表中管理' },
-]
+  {
+    id: "read" as const,
+    label: "常规通知 (阅后即焚)",
+    desc: "用户阅读后自动消失",
+  },
+  {
+    id: "persistent" as const,
+    label: "强制置顶 (需手动撤下)",
+    desc: "用户端无法删除，需在已发送列表中管理",
+  },
+];
 
 const iconOptions = [
-  { type: 'admin_notice', icon: Bell, label: '默认通知', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.3)' },
-  { type: 'admin_warning', icon: AlertTriangle, label: '警告', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)' },
-  { type: 'admin_success', icon: CheckCircle, label: '成功', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.3)' },
-  { type: 'admin_info', icon: Info, label: '信息', color: '#06b6d4', bg: 'rgba(6,182,212,0.08)', border: 'rgba(6,182,212,0.3)' },
-  { type: 'admin_announcement', icon: Megaphone, label: '公告', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.3)' },
-]
+  {
+    type: "admin_notice",
+    icon: Bell,
+    label: "默认通知",
+    color: "#3b82f6",
+    bg: "rgba(59,130,246,0.08)",
+    border: "rgba(59,130,246,0.3)",
+  },
+  {
+    type: "admin_warning",
+    icon: AlertTriangle,
+    label: "警告",
+    color: "#f59e0b",
+    bg: "rgba(245,158,11,0.08)",
+    border: "rgba(245,158,11,0.3)",
+  },
+  {
+    type: "admin_success",
+    icon: CheckCircle,
+    label: "成功",
+    color: "#22c55e",
+    bg: "rgba(34,197,94,0.08)",
+    border: "rgba(34,197,94,0.3)",
+  },
+  {
+    type: "admin_info",
+    icon: Info,
+    label: "信息",
+    color: "#06b6d4",
+    bg: "rgba(6,182,212,0.08)",
+    border: "rgba(6,182,212,0.3)",
+  },
+];
 
 const iconMap: Record<string, any> = {
   admin_notice: Bell,
@@ -56,33 +98,88 @@ const iconMap: Record<string, any> = {
   admin_success: CheckCircle,
   admin_info: Info,
   admin_announcement: Megaphone,
-}
+};
 
 function getIconForType(type: string) {
-  return iconMap[type] || Bell
+  return iconMap[type] || Bell;
 }
 
-const dismissActiveIndex = computed(() => dismissOptions.findIndex(o => o.id === vm.dismissType))
+const pushKindActiveIndex = computed(() =>
+  pushKindOptions.findIndex((o) => o.id === vm.pushKind),
+);
+const dismissActiveIndex = computed(() =>
+  dismissOptions.findIndex((o) => o.id === vm.dismissType),
+);
+const isAnnouncementMode = computed(() => vm.pushKind === "announcement");
+const titleLabel = computed(() =>
+  isAnnouncementMode.value ? "公告标题" : "通知标题",
+);
+const titlePlaceholder = computed(() =>
+  isAnnouncementMode.value ? "输入公告标题..." : "输入简明扼要的标题...",
+);
+const descriptionLabel = computed(() =>
+  isAnnouncementMode.value ? "公告正文" : "通知详情",
+);
+const descriptionPlaceholder = computed(() =>
+  isAnnouncementMode.value
+    ? "支持 Markdown：如 **加粗**、- 列表、[链接](https://...)"
+    : "详细说明通知内容...",
+);
 
 const canSend = computed(() => {
-  if (!vm.title.trim()) return false
-  if (vm.targetMode === 'custom' && vm.selectedUsers.length === 0) return false
-  return true
-})
+  if (!vm.title.trim()) return false;
+  if (isAnnouncementMode.value && !vm.description.trim()) return false;
+  if (vm.targetMode === "custom" && vm.selectedUsers.length === 0) return false;
+  return true;
+});
 
 const targetLabel = computed(() => {
-  const opt = targetOptions.find(o => o.id === vm.targetMode)
-  return opt?.label || ''
-})
+  const opt = targetOptions.find((o) => o.id === vm.targetMode);
+  return opt?.label || "";
+});
 
 function formatSentAt(iso: string): string {
-  const d = parseUTC(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const d = parseUTC(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function onSelectUser(user: AdminUserItem) {
-  vm.addUser(user)
+  vm.addUser(user);
+}
+
+function setPushKind(kind: "notification" | "announcement") {
+  vm.setPushKind(kind);
+}
+
+function insertAround(prefix: string, suffix = "", placeholder = "文本") {
+  const el = richEditorRef.value;
+  const start = el?.selectionStart ?? vm.description.length;
+  const end = el?.selectionEnd ?? vm.description.length;
+  const selected = vm.description.slice(start, end) || placeholder;
+  vm.description = `${vm.description.slice(0, start)}${prefix}${selected}${suffix}${vm.description.slice(end)}`;
+  requestAnimationFrame(() => {
+    if (!el) return;
+    const cursor = start + prefix.length + selected.length + suffix.length;
+    el.focus();
+    el.setSelectionRange(cursor, cursor);
+  });
+}
+
+function insertLine(prefix: string, placeholder = "内容") {
+  const el = richEditorRef.value;
+  const start = el?.selectionStart ?? vm.description.length;
+  const end = el?.selectionEnd ?? vm.description.length;
+  const selected = vm.description.slice(start, end) || placeholder;
+  const lead = start > 0 && vm.description[start - 1] !== "\n" ? "\n" : "";
+  const next = `${lead}${prefix}${selected}\n`;
+  vm.description = `${vm.description.slice(0, start)}${next}${vm.description.slice(end)}`;
+  requestAnimationFrame(() => {
+    if (!el) return;
+    const cursor = start + next.length;
+    el.focus();
+    el.setSelectionRange(cursor, cursor);
+  });
 }
 </script>
 
@@ -94,25 +191,79 @@ function onSelectUser(user: AdminUserItem) {
         <form class="an__card" @submit.prevent="vm.send">
           <div class="an__card-head">
             <h2>新建推送</h2>
-            <p>创建并向站内用户发送即时通知</p>
+            <p>创建并向站内用户发送通知或公告</p>
           </div>
 
           <div class="an__card-body">
-            <!-- 1. Target -->
+            <!-- 1. Push kind -->
             <div class="an__section">
-              <label class="an__label">推送目标 <span class="an__required">*</span></label>
+              <label class="an__label"
+                >推送类型 <span class="an__required">*</span></label
+              >
+              <div class="an__toggle-group an__toggle-group--kind">
+                <span
+                  class="an__toggle-indicator"
+                  :style="{
+                    transform: `translateX(${pushKindActiveIndex * 100}%)`,
+                  }"
+                />
+                <button
+                  v-for="opt in pushKindOptions"
+                  :key="opt.id"
+                  type="button"
+                  class="an__toggle-btn an__toggle-btn--kind"
+                  :class="{ 'an__toggle-btn--active': vm.pushKind === opt.id }"
+                  @click="setPushKind(opt.id)"
+                >
+                  <component :is="opt.icon" :size="15" :stroke-width="1.8" />
+                  <span>{{ opt.label }}</span>
+                </button>
+              </div>
+              <p class="an__hint an__hint--inline">
+                <template v-if="isAnnouncementMode">
+                  公告会以弹窗形式触达用户，支持富文本正文。
+                </template>
+                <template v-else>
+                  通知用于常规运营触达，支持多种图标样式。
+                </template>
+              </p>
+            </div>
+
+            <!-- 2. Target -->
+            <div class="an__section">
+              <label class="an__label"
+                >推送目标 <span class="an__required">*</span></label
+              >
               <div class="an__target-grid">
                 <div
                   v-for="opt in targetOptions"
                   :key="opt.id"
                   class="an__target-card"
-                  :class="{ 'an__target-card--active': vm.targetMode === opt.id }"
+                  :class="{
+                    'an__target-card--active': vm.targetMode === opt.id,
+                  }"
                   @click="vm.targetMode = opt.id"
                 >
-                  <component :is="opt.icon" :size="20" :stroke-width="1.5" class="an__target-icon" />
+                  <component
+                    :is="opt.icon"
+                    :size="20"
+                    :stroke-width="1.5"
+                    class="an__target-icon"
+                  />
                   <span class="an__target-label">{{ opt.label }}</span>
-                  <span v-if="vm.targetMode === opt.id" class="an__target-check">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span
+                    v-if="vm.targetMode === opt.id"
+                    class="an__target-check"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path
+                        d="M3 7L6 10L11 4"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
                   </span>
                 </div>
               </div>
@@ -130,22 +281,37 @@ function onSelectUser(user: AdminUserItem) {
 
                   <!-- Search results dropdown (inside search-box for correct overlay positioning) -->
                   <Transition name="an__search-anim">
-                  <div v-if="vm.userSearchResults.length > 0" class="an__search-results">
                     <div
-                      v-for="user in vm.userSearchResults"
-                      :key="user.id"
-                      class="an__search-item"
-                      @click="onSelectUser(user)"
+                      v-if="vm.userSearchResults.length > 0"
+                      class="an__search-results"
                     >
-                      <div class="an__search-item-avatar">
-                        <img :src="user.avatar_url ?? (user.gender === 'female' ? femaleAvatar : maleAvatar)" alt="" />
-                      </div>
-                      <div class="an__search-item-info">
-                        <span class="an__search-item-name">{{ user.display_name }}</span>
-                        <span class="an__search-item-account">@{{ user.account }}</span>
+                      <div
+                        v-for="user in vm.userSearchResults"
+                        :key="user.id"
+                        class="an__search-item"
+                        @click="onSelectUser(user)"
+                      >
+                        <div class="an__search-item-avatar">
+                          <img
+                            :src="
+                              user.avatar_url ??
+                              (user.gender === 'female'
+                                ? femaleAvatar
+                                : maleAvatar)
+                            "
+                            alt=""
+                          />
+                        </div>
+                        <div class="an__search-item-info">
+                          <span class="an__search-item-name">{{
+                            user.display_name
+                          }}</span>
+                          <span class="an__search-item-account"
+                            >@{{ user.account }}</span
+                          >
+                        </div>
                       </div>
                     </div>
-                  </div>
                   </Transition>
                 </div>
 
@@ -157,7 +323,11 @@ function onSelectUser(user: AdminUserItem) {
                     class="an__user-tag"
                   >
                     {{ vm.formatUserLabel(user) }}
-                    <button type="button" class="an__user-tag-close" @click="vm.removeUser(user.id)">
+                    <button
+                      type="button"
+                      class="an__user-tag-close"
+                      @click="vm.removeUser(user.id)"
+                    >
                       <X :size="12" />
                     </button>
                   </span>
@@ -165,35 +335,124 @@ function onSelectUser(user: AdminUserItem) {
               </div>
             </div>
 
-            <!-- 2. Content -->
+            <!-- 3. Content -->
             <div class="an__section an__section--gap">
-              <label class="an__label" for="an-title">通知标题 <span class="an__required">*</span></label>
+              <label class="an__label" for="an-title"
+                >{{ titleLabel }} <span class="an__required">*</span></label
+              >
               <input
                 id="an-title"
                 v-model="vm.title"
                 class="form-input"
                 maxlength="200"
-                placeholder="输入简明扼要的标题..."
+                :placeholder="titlePlaceholder"
               />
 
-              <label class="an__label" for="an-desc">通知详情</label>
-              <textarea
-                id="an-desc"
-                v-model="vm.description"
-                class="form-textarea"
-                maxlength="2000"
-                placeholder="详细说明通知内容..."
-                rows="4"
-              />
+              <label class="an__label" for="an-desc">{{
+                descriptionLabel
+              }}</label>
+
+              <Transition name="an__mode-fade" mode="out-in">
+                <div
+                  v-if="isAnnouncementMode"
+                  key="announce-editor"
+                  class="an__rich-wrap"
+                >
+                  <div class="an__rich-toolbar">
+                    <button
+                      type="button"
+                      class="an__rich-tool"
+                      @click="insertAround('**', '**', '加粗文本')"
+                    >
+                      <strong>B</strong>
+                    </button>
+                    <button
+                      type="button"
+                      class="an__rich-tool an__rich-tool--italic"
+                      @click="insertAround('*', '*', '斜体文本')"
+                    >
+                      I
+                    </button>
+                    <button
+                      type="button"
+                      class="an__rich-tool"
+                      @click="insertLine('## ', '二级标题')"
+                    >
+                      H2
+                    </button>
+                    <button
+                      type="button"
+                      class="an__rich-tool"
+                      @click="insertLine('- ', '列表项')"
+                    >
+                      • 列表
+                    </button>
+                    <button
+                      type="button"
+                      class="an__rich-tool"
+                      @click="
+                        insertAround('[', '](https://example.com)', '链接标题')
+                      "
+                    >
+                      链接
+                    </button>
+                    <button
+                      type="button"
+                      class="an__rich-tool"
+                      @click="insertLine('> ', '引用内容')"
+                    >
+                      引用
+                    </button>
+                  </div>
+                  <textarea
+                    id="an-desc"
+                    ref="richEditorRef"
+                    v-model="vm.description"
+                    class="form-textarea an__rich-textarea"
+                    maxlength="2000"
+                    :placeholder="descriptionPlaceholder"
+                    rows="8"
+                  />
+                  <div class="an__preview">
+                    <div class="an__preview-head">
+                      <Eye :size="14" />
+                      <span>实时预览</span>
+                    </div>
+                    <div class="an__preview-body">
+                      <ChatRichTextRenderer
+                        :content="
+                          vm.description ||
+                          '在上方输入公告正文后，这里会实时显示效果。'
+                        "
+                      />
+                    </div>
+                  </div>
+                </div>
+                <textarea
+                  v-else
+                  id="an-desc"
+                  key="notice-editor"
+                  v-model="vm.description"
+                  class="form-textarea"
+                  maxlength="2000"
+                  :placeholder="descriptionPlaceholder"
+                  rows="4"
+                />
+              </Transition>
             </div>
 
-            <!-- 3. Dismiss type + Icon selection -->
+            <!-- 4. Dismiss type + Icon selection -->
             <div class="an__row">
               <div class="an__section">
                 <div class="an__label-row">
-                  <label class="an__label">通知展示类型</label>
+                  <label class="an__label">{{
+                    isAnnouncementMode ? "公告展示类型" : "通知展示类型"
+                  }}</label>
                   <Transition name="an__hint-anim">
-                    <p v-if="vm.dismissType === 'persistent'" class="an__hint an__hint--warning an__hint--inline">
+                    <p
+                      v-if="vm.dismissType === 'persistent'"
+                      class="an__hint an__hint--warning an__hint--inline"
+                    >
                       <Info :size="12" />
                       置顶消息需管理员手动删除
                     </p>
@@ -202,14 +461,18 @@ function onSelectUser(user: AdminUserItem) {
                 <div class="an__toggle-group">
                   <span
                     class="an__toggle-indicator"
-                    :style="{ transform: `translateX(${dismissActiveIndex * 100}%)` }"
+                    :style="{
+                      transform: `translateX(${dismissActiveIndex * 100}%)`,
+                    }"
                   />
                   <button
                     v-for="opt in dismissOptions"
                     :key="opt.id"
                     type="button"
                     class="an__toggle-btn"
-                    :class="{ 'an__toggle-btn--active': vm.dismissType === opt.id }"
+                    :class="{
+                      'an__toggle-btn--active': vm.dismissType === opt.id,
+                    }"
                     @click="vm.dismissType = opt.id"
                   >
                     {{ opt.label }}
@@ -218,17 +481,41 @@ function onSelectUser(user: AdminUserItem) {
               </div>
 
               <div class="an__section">
-                <label class="an__label">显示图标</label>
-                <div class="an__icon-grid">
+                <label class="an__label">{{
+                  isAnnouncementMode ? "公告图标" : "显示图标"
+                }}</label>
+                <div v-if="isAnnouncementMode" class="an__announcement-icon">
+                  <div class="an__announcement-icon__badge">
+                    <Megaphone :size="20" :stroke-width="1.6" />
+                  </div>
+                  <div>
+                    <p class="an__announcement-icon__title">
+                      公告固定使用喇叭图标
+                    </p>
+                    <p class="an__announcement-icon__desc">
+                      用户点击置顶公告可再次弹出公告弹窗
+                    </p>
+                  </div>
+                </div>
+                <div v-else class="an__icon-grid">
                   <button
                     v-for="opt in iconOptions"
                     :key="opt.type"
                     type="button"
                     class="an__icon-btn"
-                    :class="{ 'an__icon-btn--active': vm.notificationType === opt.type }"
-                    :style="vm.notificationType === opt.type
-                      ? { color: opt.color, background: opt.bg, borderColor: opt.border, boxShadow: `0 0 0 1px ${opt.border}` }
-                      : { color: opt.color }"
+                    :class="{
+                      'an__icon-btn--active': vm.notificationType === opt.type,
+                    }"
+                    :style="
+                      vm.notificationType === opt.type
+                        ? {
+                            color: opt.color,
+                            background: opt.bg,
+                            borderColor: opt.border,
+                            boxShadow: `0 0 0 1px ${opt.border}`,
+                          }
+                        : { color: opt.color }
+                    "
                     :title="opt.label"
                     @click="vm.notificationType = opt.type"
                   >
@@ -243,7 +530,9 @@ function onSelectUser(user: AdminUserItem) {
           <div class="an__card-foot">
             <span class="an__foot-info">
               即将发送给：<strong>{{ targetLabel }}</strong>
-              <template v-if="vm.targetMode === 'custom' && vm.selectedUsers.length > 0">
+              <template
+                v-if="vm.targetMode === 'custom' && vm.selectedUsers.length > 0"
+              >
                 （{{ vm.selectedUsers.length }} 人）
               </template>
             </span>
@@ -254,7 +543,13 @@ function onSelectUser(user: AdminUserItem) {
             >
               <div v-if="vm.sending" class="an__spinner" />
               <Send v-else :size="16" />
-              {{ vm.sending ? '发送中...' : '立即推送' }}
+              {{
+                vm.sending
+                  ? "发送中..."
+                  : isAnnouncementMode
+                    ? "立即推送公告"
+                    : "立即推送通知"
+              }}
             </button>
           </div>
         </form>
@@ -266,9 +561,11 @@ function onSelectUser(user: AdminUserItem) {
           <div class="an__sent-head">
             <div class="an__sent-title-row">
               <Star :size="16" class="an__sent-star" />
-              <h2>已发送通知</h2>
+              <h2>已发送通知公告</h2>
             </div>
-            <span class="an__sent-count">{{ vm.sentNotifications.length }}</span>
+            <span class="an__sent-count">{{
+              vm.sentNotifications.length
+            }}</span>
           </div>
 
           <div class="an__sent-body">
@@ -277,9 +574,12 @@ function onSelectUser(user: AdminUserItem) {
               <p>加载中...</p>
             </div>
 
-            <div v-else-if="vm.sentNotifications.length === 0" class="an__sent-empty">
+            <div
+              v-else-if="vm.sentNotifications.length === 0"
+              class="an__sent-empty"
+            >
               <Bell :size="32" class="an__sent-empty-icon" />
-              <p>暂无已发送的通知</p>
+              <p>暂无已发送的通知公告</p>
             </div>
 
             <div
@@ -291,12 +591,19 @@ function onSelectUser(user: AdminUserItem) {
               <div class="an__sent-item-top">
                 <div class="an__sent-item-left">
                   <div class="an__sent-item-icon">
-                    <component :is="getIconForType(msg.type)" :size="16" :stroke-width="1.5" />
+                    <component
+                      :is="getIconForType(msg.type)"
+                      :size="16"
+                      :stroke-width="1.5"
+                    />
                   </div>
                   <div class="an__sent-item-info">
                     <h3>{{ msg.title }}</h3>
                     <p class="an__sent-item-meta">
-                      {{ msg.dismiss_type === 'persistent' ? '置顶' : '常规' }} · {{ formatSentAt(msg.sent_at) }}
+                      {{
+                        msg.dismiss_type === "persistent" ? "置顶" : "常规"
+                      }}
+                      · {{ formatSentAt(msg.sent_at) }}
                     </p>
                   </div>
                 </div>
@@ -323,9 +630,10 @@ function onSelectUser(user: AdminUserItem) {
                   <div
                     class="an__stat-bar-fill"
                     :style="{
-                      width: msg.remaining_count > 0
-                        ? `${Math.round((msg.read_count / msg.remaining_count) * 100)}%`
-                        : '0%'
+                      width:
+                        msg.remaining_count > 0
+                          ? `${Math.round((msg.read_count / msg.remaining_count) * 100)}%`
+                          : '0%',
                     }"
                   />
                 </div>
@@ -410,6 +718,18 @@ function onSelectUser(user: AdminUserItem) {
 
 .an__required {
   color: var(--c-danger);
+}
+
+/* ── Mode Switch ── */
+.an__toggle-group--kind {
+  max-width: 340px;
+}
+
+.an__toggle-btn--kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 /* ── Target Cards ── */
@@ -501,7 +821,10 @@ function onSelectUser(user: AdminUserItem) {
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   background: #f8fafc;
-  transition: border-color 200ms var(--ease), background 200ms var(--ease), box-shadow 200ms var(--ease);
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease),
+    box-shadow 200ms var(--ease);
 }
 
 .an__search-input:focus {
@@ -538,11 +861,15 @@ function onSelectUser(user: AdminUserItem) {
 }
 
 .an__search-anim-enter-active {
-  transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+  transition:
+    opacity 200ms var(--ease),
+    transform 200ms var(--ease);
 }
 
 .an__search-anim-leave-active {
-  transition: opacity 150ms var(--ease), transform 150ms var(--ease);
+  transition:
+    opacity 150ms var(--ease),
+    transform 150ms var(--ease);
 }
 
 .an__search-anim-enter-from {
@@ -637,12 +964,182 @@ function onSelectUser(user: AdminUserItem) {
   color: var(--c-accent);
   border-radius: 50%;
   padding: 0;
-  transition: background 150ms var(--ease), color 150ms var(--ease);
+  transition:
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .an__user-tag-close:hover {
   background: var(--c-accent-soft);
   color: var(--c-accent-hover);
+}
+
+/* ── Rich Text ── */
+.an__mode-fade-enter-active,
+.an__mode-fade-leave-active {
+  transition:
+    opacity 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+
+.an__mode-fade-enter-from,
+.an__mode-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.an__rich-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.an__rich-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: #f8fafc;
+}
+
+.an__rich-tool {
+  border: 1px solid var(--c-border);
+  background: #fff;
+  color: var(--c-text-secondary);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 36px;
+  height: 30px;
+  padding: 0 10px;
+  transition: all 180ms var(--ease);
+}
+
+.an__rich-tool--italic {
+  font-style: italic;
+}
+
+.an__rich-tool:hover {
+  border-color: var(--c-accent-soft);
+  color: var(--c-accent);
+  background: #eff6ff;
+}
+
+.an__rich-textarea {
+  min-height: 150px;
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  line-height: 1.6;
+}
+
+.an__preview {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #fff;
+}
+
+.an__preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  background: #f8fafc;
+  border-bottom: 1px solid var(--c-border-light);
+}
+
+.an__preview-body {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.an__preview-body :deep(.rich-text) {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--c-text);
+}
+
+.an__preview-body :deep(.rich-text p) {
+  margin: 0 0 8px;
+}
+
+.an__preview-body :deep(.rich-text p:last-child) {
+  margin-bottom: 0;
+}
+
+.an__preview-body :deep(.rich-text ul),
+.an__preview-body :deep(.rich-text ol) {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.an__preview-body :deep(.rich-text blockquote) {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.07);
+}
+
+.an__preview-body :deep(.rich-text pre) {
+  margin: 8px 0;
+  border-radius: 10px;
+}
+
+.an__preview-body :deep(.rich-text code) {
+  font-family:
+    "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+}
+
+.an__preview-body :deep(.rich-text img) {
+  display: block;
+  width: 40%;
+  max-width: 40%;
+  height: auto;
+  margin: 10px auto;
+  border-radius: 10px;
+}
+
+/* ── Announcement icon card ── */
+.an__announcement-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.08);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.an__announcement-icon__badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #7c3aed;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.an__announcement-icon__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #6d28d9;
+}
+
+.an__announcement-icon__desc {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: #7c3aed;
 }
 
 /* ── Row layout ── */
@@ -725,11 +1222,15 @@ function onSelectUser(user: AdminUserItem) {
 }
 
 .an__hint-anim-enter-active {
-  transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+  transition:
+    opacity 200ms var(--ease),
+    transform 200ms var(--ease);
 }
 
 .an__hint-anim-leave-active {
-  transition: opacity 150ms var(--ease), transform 150ms var(--ease);
+  transition:
+    opacity 150ms var(--ease),
+    transform 150ms var(--ease);
 }
 
 .an__hint-anim-enter-from {
@@ -795,14 +1296,21 @@ function onSelectUser(user: AdminUserItem) {
 .an__spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
+  border: 2px solid var(--c-border);
+  border-top-color: var(--c-accent);
   border-radius: 50%;
   animation: an-spin 0.6s linear infinite;
 }
 
+.an__send-btn .an__spinner {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+}
+
 @keyframes an-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Sent Panel ── */
@@ -1052,6 +1560,19 @@ function onSelectUser(user: AdminUserItem) {
     flex-direction: column;
     align-items: stretch;
     text-align: center;
+  }
+
+  .an__toggle-group--kind {
+    max-width: none;
+  }
+
+  .an__rich-tool {
+    flex: 1;
+    min-width: 64px;
+  }
+
+  .an__preview-body {
+    max-height: 220px;
   }
 }
 </style>

@@ -16,7 +16,7 @@ const ACTION_LABELS: Record<string, string> = {
   admin_remove_blacklist: '移除黑名单',
   admin_delete_task: '删除任务',
   admin_update_task: '修改任务属性',
-  push_notification: '推送通知',
+  push_notification: '推送通知/公告',
   delete_notification_batch: '批量删除通知',
   registration_toggle: '注册开关切换',
 }

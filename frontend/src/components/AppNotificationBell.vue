@@ -69,6 +69,11 @@ async function markAllRead() {
 function handleClick(n: AppNotification) {
   isOpen.value = false
 
+  if (n.type === 'admin_announcement') {
+    notifStore.openAnnouncement(n, { markRead: true })
+    return
+  }
+
   if (!n.is_read && n.id > 0) {
     notifStore.markRead(n.id).catch(() => {})
   }

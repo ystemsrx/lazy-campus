@@ -22,6 +22,7 @@ function countBadge(list: AppNotification[]): number {
 export const useNotificationStore = defineStore('notifications', () => {
   const notifications = ref<AppNotification[]>([])
   const unreadCount = ref(0)
+  const activeAnnouncement = ref<AppNotification | null>(null)
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let pollSuppressedUntil = 0
   const pendingReads = new Set<number>()
@@ -36,6 +37,10 @@ export const useNotificationStore = defineStore('notifications', () => {
         }
       }
       notifications.value = items
+      if (activeAnnouncement.value) {
+        const fresh = items.find(item => item.id === activeAnnouncement.value?.id)
+        activeAnnouncement.value = fresh ?? null
+      }
       unreadCount.value = countBadge(items)
     } catch { /* silent */ }
   }
@@ -65,6 +70,18 @@ export const useNotificationStore = defineStore('notifications', () => {
     stopPolling()
     notifications.value = []
     unreadCount.value = 0
+    activeAnnouncement.value = null
+  }
+
+  function openAnnouncement(notification: AppNotification, options: { markRead?: boolean } = {}) {
+    activeAnnouncement.value = notification
+    if ((options.markRead ?? true) && !notification.is_read && notification.id > 0) {
+      markRead(notification.id).catch(() => {})
+    }
+  }
+
+  function closeAnnouncement() {
+    activeAnnouncement.value = null
   }
 
   async function markRead(id: number) {
@@ -128,6 +145,9 @@ export const useNotificationStore = defineStore('notifications', () => {
     try {
       await deleteNotification(id)
       notifications.value = notifications.value.filter(n => n.id !== id)
+      if (activeAnnouncement.value?.id === id) {
+        activeAnnouncement.value = null
+      }
       unreadCount.value = countBadge(notifications.value)
     } catch { /* silent */ }
   }
@@ -138,11 +158,14 @@ export const useNotificationStore = defineStore('notifications', () => {
     notifications,
     unreadCount,
     trueUnreadCount,
+    activeAnnouncement,
     load,
     pollCount,
     startPolling,
     stopPolling,
     reset,
+    openAnnouncement,
+    closeAnnouncement,
     markRead,
     markAllRead,
     dismissChat,

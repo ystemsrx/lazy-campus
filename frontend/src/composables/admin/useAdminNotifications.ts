@@ -18,11 +18,13 @@ export interface SelectedUser {
 }
 
 export function useAdminNotifications(showToast: AppToastNotifier) {
+  const pushKind = ref<'notification' | 'announcement'>('notification')
   const title = ref('')
   const description = ref('')
   const targetMode = ref<'all' | 'banned' | 'active' | 'custom'>('all')
   const dismissType = ref<'read' | 'action' | 'persistent'>('read')
   const notificationType = ref('admin_notice')
+  const lastNotificationType = ref('admin_notice')
   const sending = ref(false)
 
   const userSearchQuery = ref('')
@@ -43,6 +45,12 @@ export function useAdminNotifications(showToast: AppToastNotifier) {
       return
     }
     searchTimer = setTimeout(() => searchUsers(trimmed), 300)
+  })
+
+  watch(notificationType, (type) => {
+    if (type !== 'admin_announcement') {
+      lastNotificationType.value = type
+    }
   })
 
   async function searchUsers(q: string) {
@@ -80,10 +88,29 @@ export function useAdminNotifications(showToast: AppToastNotifier) {
     return u.name
   }
 
+  function setPushKind(kind: 'notification' | 'announcement') {
+    pushKind.value = kind
+    if (kind === 'announcement') {
+      if (notificationType.value !== 'admin_announcement') {
+        lastNotificationType.value = notificationType.value
+      }
+      notificationType.value = 'admin_announcement'
+      return
+    }
+    if (notificationType.value === 'admin_announcement') {
+      notificationType.value = lastNotificationType.value || 'admin_notice'
+    }
+  }
+
   async function send() {
     const heading = title.value.trim()
     if (!heading) {
       showToast('请填写通知标题', 'error')
+      return
+    }
+    const body = description.value.trim()
+    if (pushKind.value === 'announcement' && !body) {
+      showToast('请填写公告正文', 'error')
       return
     }
 
@@ -99,13 +126,13 @@ export function useAdminNotifications(showToast: AppToastNotifier) {
     try {
       const result = await pushAdminNotification({
         title: heading,
-        description: description.value.trim(),
+        description: body,
         user_ids: userIds,
         include_all: targetMode.value === 'all',
         include_banned: targetMode.value === 'banned',
         include_recent_active: targetMode.value === 'active',
         dismiss_type: dismissType.value,
-        type: notificationType.value,
+        type: pushKind.value === 'announcement' ? 'admin_announcement' : notificationType.value,
       })
       showToast(`推送成功，已发送给 ${result.sent_count} 位用户`, 'success')
       title.value = ''
@@ -145,6 +172,7 @@ export function useAdminNotifications(showToast: AppToastNotifier) {
   }
 
   return {
+    pushKind,
     title,
     description,
     targetMode,
@@ -161,6 +189,7 @@ export function useAdminNotifications(showToast: AppToastNotifier) {
     addUser,
     removeUser,
     formatUserLabel,
+    setPushKind,
     send,
     loadSentNotifications,
     deleteSentNotification,

@@ -74,7 +74,7 @@ const tabTitleMap: Record<AdminTabKey, string> = {
   users: '用户管理',
   tasks: '任务处置',
   chats: '聊天审计',
-  notifications: '通知推送',
+  notifications: '通知公告',
   categories: '类别管理',
   agents: '代理管理',
   logs: '操作日志',
