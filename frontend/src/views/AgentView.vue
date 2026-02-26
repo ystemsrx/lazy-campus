@@ -389,6 +389,7 @@ interface TerminalEntry {
   toolType: 'shell' | 'write-file' | 'read-file' | 'glob' | 'grep' | 'search-web' | 'fetch-url' | 'set-todo' | 'task' | 'str-replace' | 'read-media' | 'other'
   toolName: string
   command?: string
+  promptPath?: string
   filePath?: string
   rawArgs?: string
   args?: Record<string, any>
@@ -447,9 +448,174 @@ interface ConversationRound {
   aiFinal: AgentMessage | null
 }
 
+const TERMINAL_DEFAULT_CWD = '/workspace'
+const TERMINAL_HOME_CWD = '/root'
+
+function extractCdParseScope(command: string): string {
+  let inSingle = false
+  let inDouble = false
+  let inBacktick = false
+  let escaped = false
+
+  for (let i = 0; i < command.length - 1; i++) {
+    const ch = command[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (!inDouble && !inBacktick && ch === "'") {
+      inSingle = !inSingle
+      continue
+    }
+    if (!inSingle && !inBacktick && ch === '"') {
+      inDouble = !inDouble
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '`') {
+      inBacktick = !inBacktick
+      continue
+    }
+    if (inSingle || inDouble || inBacktick) continue
+
+    if (ch === '<' && command[i + 1] === '<') {
+      return command.slice(0, i)
+    }
+  }
+  return command
+}
+
+function splitShellCommands(command: string): string[] {
+  const source = extractCdParseScope(command)
+  const parts: string[] = []
+  let start = 0
+  let inSingle = false
+  let inDouble = false
+  let inBacktick = false
+  let escaped = false
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (ch === '\\') {
+      escaped = true
+      continue
+    }
+    if (!inDouble && !inBacktick && ch === "'") {
+      inSingle = !inSingle
+      continue
+    }
+    if (!inSingle && !inBacktick && ch === '"') {
+      inDouble = !inDouble
+      continue
+    }
+    if (!inSingle && !inDouble && ch === '`') {
+      inBacktick = !inBacktick
+      continue
+    }
+    if (inSingle || inDouble || inBacktick) continue
+
+    const next = source[i + 1] || ''
+    if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) {
+      const piece = source.slice(start, i).trim()
+      if (piece) parts.push(piece)
+      i++
+      start = i + 1
+      continue
+    }
+    if (ch === ';') {
+      const piece = source.slice(start, i).trim()
+      if (piece) parts.push(piece)
+      start = i + 1
+    }
+  }
+
+  const last = source.slice(start).trim()
+  if (last) parts.push(last)
+  return parts
+}
+
+function parseCdTarget(commandPart: string): string | null {
+  const trimmed = commandPart.trim()
+  const match = trimmed.match(/^(?:builtin\s+)?cd(?:\s+--)?(?:\s+([\s\S]*))?$/)
+  if (!match) return null
+  const raw = (match[1] || '').trim()
+  if (!raw) return ''
+
+  const first = raw.match(/^("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+)/)
+  if (!first) return ''
+  let token = first[1]
+
+  if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
+    token = token.slice(1, -1)
+  }
+
+  return token
+}
+
+function normalizePosixPath(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  const out: string[] = []
+  for (const part of parts) {
+    if (part === '.') continue
+    if (part === '..') {
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  return '/' + out.join('/')
+}
+
+function resolveCdTarget(cwd: string, prevCwd: string, rawTarget: string): { cwd: string, prevCwd: string } {
+  let target = rawTarget.trim()
+  if (!target) target = TERMINAL_HOME_CWD
+  else if (target === '~') target = TERMINAL_HOME_CWD
+  else if (target.startsWith('~/')) target = `${TERMINAL_HOME_CWD}/${target.slice(2)}`
+  else if (target === '-') target = prevCwd
+  else if (!target.startsWith('/')) target = `${cwd}/${target}`
+
+  return {
+    cwd: normalizePosixPath(target),
+    prevCwd: cwd,
+  }
+}
+
+function hasCdFailure(entry: TerminalEntry): boolean {
+  const combined = [entry.outputText, ...entry.systemLines].join('\n')
+  return /(?:^|\n)\s*(?:bash:\s*)?cd:\s.*(?:no such file|not a directory|can't cd|too many arguments|permission denied)/i.test(combined)
+}
+
+function inferNextCwd(entry: TerminalEntry, cwd: string, prevCwd: string): { cwd: string, prevCwd: string } {
+  if (entry.toolType !== 'shell' || !entry.command) return { cwd, prevCwd }
+  if (hasCdFailure(entry)) return { cwd, prevCwd }
+
+  const parts = splitShellCommands(entry.command)
+  if (!parts.length) return { cwd, prevCwd }
+
+  let nextCwd = cwd
+  let nextPrevCwd = prevCwd
+  for (const part of parts) {
+    const target = parseCdTarget(part)
+    if (target === null) continue
+    const next = resolveCdTarget(nextCwd, nextPrevCwd, target)
+    nextCwd = next.cwd
+    nextPrevCwd = next.prevCwd
+  }
+  return { cwd: nextCwd, prevCwd: nextPrevCwd }
+}
+
 const conversationRounds = computed<ConversationRound[]>(() => {
   const rounds: ConversationRound[] = []
   const msgs = messages.value
+  let runningCwd = TERMINAL_DEFAULT_CWD
+  let runningPrevCwd = TERMINAL_DEFAULT_CWD
 
   const groups: AgentMessage[][] = []
   let cur: AgentMessage[] = []
@@ -494,7 +660,7 @@ const conversationRounds = computed<ConversationRound[]>(() => {
       let entry: TerminalEntry
 
       if (isShellTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', promptPath: runningCwd, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isWriteFileTool(msg.tool_name)) {
         entry = { id: msg.id, toolType: 'write-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
       } else if (isReadFileTool(msg.tool_name)) {
@@ -559,6 +725,9 @@ const conversationRounds = computed<ConversationRound[]>(() => {
         entry.outputText = text
         entry.pending = false
       }
+      const nextState = inferNextCwd(entry, runningCwd, runningPrevCwd)
+      runningCwd = nextState.cwd
+      runningPrevCwd = nextState.prevCwd
       round.entries.push(entry)
     }
 
@@ -1034,7 +1203,7 @@ onUnmounted(() => {
                       <div class="terminal-prompt-line">
                         <span v-if="entry.success === true" class="terminal-status-icon terminal-status-icon--ok"><i class="fa-solid fa-check"></i></span>
                         <span v-else-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
-                        <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">/workspace</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
+                        <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">{{ entry.promptPath || TERMINAL_DEFAULT_CWD }}</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
                       </div>
                       <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
                       <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
@@ -1295,10 +1464,17 @@ onUnmounted(() => {
                             <span>ReadMediaFile</span>
                           </div>
                           <div class="terminal-tool-detail">
+                            <i
+                              v-if="!entry.pending && !entry.hasErrorOutput && entry.outputText"
+                              class="fa-solid fa-check terminal-readmedia-path-ok"
+                            ></i>
                             <span class="terminal-tool-key">path</span>
                             <span class="terminal-tool-val">{{ entry.filePath }}</span>
                           </div>
-                          <div v-if="!entry.pending && entry.outputText" class="terminal-media-preview">
+                          <div
+                            v-if="!entry.pending && entry.outputText && (media.dimensions || media.format || media.size)"
+                            class="terminal-media-preview"
+                          >
                             <div class="terminal-media-meta">
                               <div v-if="media.dimensions" class="terminal-media-chip">
                                 <i class="fa-solid fa-expand"></i>
@@ -1311,10 +1487,6 @@ onUnmounted(() => {
                               <div v-if="media.size" class="terminal-media-chip">
                                 <i class="fa-solid fa-weight-hanging"></i>
                                 <span>{{ media.size }}</span>
-                              </div>
-                              <div v-if="!media.dimensions && !media.format && !media.size" class="terminal-media-chip terminal-media-chip--muted">
-                                <i class="fa-solid fa-circle-check"></i>
-                                <span>已加载</span>
                               </div>
                             </div>
                           </div>
@@ -3331,9 +3503,12 @@ onUnmounted(() => {
   color: #c9d1d9;
 }
 
+.terminal-readmedia-path-ok {
+  color: #3fb950;
+  font-size: 12px;
+}
+
 .terminal-media-chip i { color: #fb7185; font-size: 10px; }
-.terminal-media-chip--muted i { color: #3fb950; }
-.terminal-media-chip--muted { color: #8b949e; }
 
 /* ===== Responsive ===== */
 
