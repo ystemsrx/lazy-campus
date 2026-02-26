@@ -16,6 +16,7 @@ class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     sort_order: int = 0
+    ai_agent_enabled: bool = False
 
 
 class CategoryOut(BaseModel):
@@ -25,6 +26,7 @@ class CategoryOut(BaseModel):
     name: str
     description: str | None
     sort_order: int
+    ai_agent_enabled: bool = False
     task_count: int = 0
     worker_count: int = 0
 

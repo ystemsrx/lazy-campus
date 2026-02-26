@@ -131,6 +131,7 @@ def get_me(user: User = Depends(require_user)) -> UserMe:
         ban_publish=user.ban_publish,
         ban_accept=user.ban_accept,
         ban_contact=user.ban_contact,
+        agent_usage_remaining=int(user.agent_usage_remaining or 0),
         role=user.role.value,
         created_at=user.created_at,
     )

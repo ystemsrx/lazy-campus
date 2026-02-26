@@ -1,5 +1,6 @@
 import { computed, ref, watch, type ComputedRef } from 'vue'
 import { appConfirm } from '../../components/AppConfirm.vue'
+import { fetchAgentAvailability, startTaskAgent } from '../../api/agent'
 import { blockUser } from '../../api/moderation'
 import {
   abandonTask,
@@ -15,7 +16,7 @@ import {
   updateTask,
 } from '../../api/tasks'
 import { fetchUserReviews } from '../../api/users'
-import type { Task, TaskMessage, TaskReview, UserMe, UserReview } from '../../types/api'
+import type { AgentAvailability, Category, Task, TaskMessage, TaskReview, UserMe, UserReview } from '../../types/api'
 import type { AppToastNotifier } from '../useAppToast'
 import { CaptchaCancelledError, type CaptchaScene, withCaptchaRetry } from '../../utils/captcha'
 import { extractError } from '../../utils/error'
@@ -25,6 +26,7 @@ import { createReviewForm, createTaskEditorForm } from './model'
 interface UseHomeTaskDrawerOptions {
   me: ComputedRef<UserMe | null>
   isAuthenticated: ComputedRef<boolean>
+  categories: ComputedRef<Category[]>
   showToast: AppToastNotifier
   pollNotificationCount: () => void
   dismissTaskChatNotification: (taskId: number) => Promise<unknown>
@@ -32,6 +34,7 @@ interface UseHomeTaskDrawerOptions {
   loadMyTasks: () => Promise<void>
   loadCategories: () => Promise<void>
   loadWorkers: () => Promise<void>
+  goToAgentSession: (sessionId: string) => void
   requestCaptcha: (scene: CaptchaScene) => Promise<string | null>
 }
 
@@ -50,6 +53,9 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
   const chatContent = ref('')
   const reviewForm = ref(createReviewForm())
   const showReportModal = ref(false)
+  const agentAvailability = ref<AgentAvailability | null>(null)
+  const createWithAgentSubmitting = ref(false)
+  const startingAgent = ref(false)
 
   const isParticipant = computed(() => {
     if (!options.me.value || !selectedTask.value) return false
@@ -181,8 +187,50 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
       : selectedTask.value.publisher_id
   })
 
+  const selectedCategorySupportsAgent = computed(() => {
+    if (!newTask.value.category_id) return false
+    return options.categories.value.some(
+      (category) => category.id === newTask.value.category_id && category.ai_agent_enabled,
+    )
+  })
+
+  const canCreateWithAgent = computed(() => {
+    if (!options.isAuthenticated.value) return false
+    if (!agentAvailability.value?.agent_enabled) return false
+    if ((agentAvailability.value.remaining_count ?? 0) <= 0) return false
+    return selectedCategorySupportsAgent.value
+  })
+
+  const selectedTaskCategorySupportsAgent = computed(() => {
+    if (!selectedTask.value?.category_id) return false
+    return options.categories.value.some(
+      (category) => category.id === selectedTask.value!.category_id && category.ai_agent_enabled,
+    )
+  })
+
+  const canUseAgentOnSelectedTask = computed(() => {
+    if (!isPublisher.value || !selectedTask.value) return false
+    if (!selectedTaskCategorySupportsAgent.value) return false
+    if (!agentAvailability.value?.agent_enabled) return false
+    const likelyExistingSession = selectedTask.value.status === 'in_progress' && !selectedTask.value.assignee_id
+    if (likelyExistingSession) return true
+    return selectedTask.value.status === 'open' && (agentAvailability.value.remaining_count ?? 0) > 0
+  })
+
   async function refreshTaskBoardData() {
     await Promise.all([options.loadTasks(), options.loadMyTasks(), options.loadCategories()])
+  }
+
+  async function refreshAgentAvailability() {
+    if (!options.isAuthenticated.value) {
+      agentAvailability.value = null
+      return
+    }
+    try {
+      agentAvailability.value = await fetchAgentAvailability()
+    } catch {
+      agentAvailability.value = null
+    }
   }
 
   function openDrawer(task: Task) {
@@ -224,13 +272,20 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     }
   }
 
-  async function submitCreateTask() {
+  async function submitCreateTask(mode: 'normal' | 'agent' = 'normal') {
     if (!newTask.value.category_id) {
       options.showToast('请选择所属类目', 'error')
       return
     }
+    if (mode === 'agent' && !canCreateWithAgent.value) {
+      options.showToast('当前任务不满足 AI 代理开启条件', 'error')
+      return
+    }
+    if (mode === 'agent') {
+      createWithAgentSubmitting.value = true
+    }
     try {
-      await withCaptchaRetry(
+      const createdTask = await withCaptchaRetry(
         (captchaToken) =>
           createTask({
             title: newTask.value.title,
@@ -254,14 +309,31 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
         await deleteTask(republishSourceId.value).catch(() => {})
         republishSourceId.value = null
       }
-      options.showToast('委托发布成功', 'success')
+      options.showToast(mode === 'agent' ? '委托已发布，正在启动 AI 代理' : '委托发布成功', 'success')
+
+      let startedSessionId: string | null = null
+      if (mode === 'agent') {
+        try {
+          const started = await startTaskAgent(createdTask.id)
+          startedSessionId = started.session_id
+          await refreshAgentAvailability()
+        } catch (error) {
+          options.showToast(extractError(error, '委托已发布，但启动 AI 代理失败'), 'error')
+        }
+      }
+
       newTask.value = createTaskEditorForm()
       showPostModal.value = false
       await refreshTaskBoardData()
       options.pollNotificationCount()
+      if (startedSessionId) {
+        options.goToAgentSession(startedSessionId)
+      }
     } catch (error) {
       if (error instanceof CaptchaCancelledError) return
       options.showToast(extractError(error, '发布失败'), 'error')
+    } finally {
+      createWithAgentSubmitting.value = false
     }
   }
 
@@ -336,6 +408,14 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
 
   const republishSourceId = ref<number | null>(null)
 
+  watch(
+    () => options.isAuthenticated.value,
+    () => {
+      refreshAgentAvailability().catch(() => {})
+    },
+    { immediate: true },
+  )
+
   watch(showPostModal, (open) => {
     if (!open) republishSourceId.value = null
   })
@@ -358,6 +438,22 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     }
     closeDrawer()
     showPostModal.value = true
+  }
+
+  async function handleStartAgentFromSelectedTask() {
+    if (!selectedTask.value) return
+    startingAgent.value = true
+    try {
+      const started = await startTaskAgent(selectedTask.value.id)
+      await refreshAgentAvailability()
+      await refreshTaskBoardData()
+      closeDrawer()
+      options.goToAgentSession(started.session_id)
+    } catch (error) {
+      options.showToast(extractError(error, '启动 AI 代理失败'), 'error')
+    } finally {
+      startingAgent.value = false
+    }
   }
 
   async function submitMessage() {
@@ -497,6 +593,9 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     chatContent,
     reviewForm,
     showReportModal,
+    agentAvailability,
+    createWithAgentSubmitting,
+    startingAgent,
     isParticipant,
     isPublisher,
     canAccept,
@@ -512,11 +611,14 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     canDeleteTask,
     canRepublish,
     canEditTask,
+    canCreateWithAgent,
+    canUseAgentOnSelectedTask,
     deleteBlockedByAssignee,
     canReport,
     reportTargetId,
     openDrawer,
     closeDrawer,
+    refreshAgentAvailability,
     refreshTaskMeta,
     refreshPublisherReviews,
     submitCreateTask,
@@ -525,6 +627,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     handleAbandonTask,
     handleCancelTask,
     handleRepublishTask,
+    handleStartAgentFromSelectedTask,
     submitMessage,
     submitReview,
     handleDeleteTask,

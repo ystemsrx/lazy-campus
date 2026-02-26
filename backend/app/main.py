@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.init_db import init_db
+from app.services.agent_service import start_agent_cleanup_daemon
 
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / 'uploads'
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -41,6 +42,7 @@ app.add_middleware(
 def on_startup() -> None:
     logger.info('Starting app in env=%s, debug=%s, log_level=%s', settings.env, settings.debug, settings.log_level)
     init_db()
+    start_agent_cleanup_daemon()
 
 
 @app.get('/healthz')

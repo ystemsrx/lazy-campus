@@ -34,6 +34,8 @@ const props = defineProps<{
   canRepublish: boolean
   canEditTask: boolean
   canDeleteTask: boolean
+  canUseAgent: boolean
+  agentStarting: boolean
   deleteBlockedByAssignee: boolean
   taskMessages: TaskMessage[]
   taskReviews: TaskReview[]
@@ -63,6 +65,7 @@ const emit = defineEmits<{
   (e: 'republish-task'): void
   (e: 'edit-task'): void
   (e: 'delete-task'): void
+  (e: 'start-agent'): void
   (e: 'update:chatContent', value: string): void
   (e: 'submit-message'): void
   (e: 'update:showReviewForm', value: boolean): void
@@ -326,6 +329,9 @@ onUnmounted(() => {
                 <button v-if="canCancelTask" class="btn btn-danger btn-sm" @click="emit('cancel-task')"><i class="fa-solid fa-xmark"></i> 取消任务</button>
                 <button v-if="canRepublish" class="btn btn-primary btn-sm" @click="emit('republish-task')"><i class="fa-solid fa-rotate-right"></i> 重新发布</button>
                 <button v-if="canEditTask" class="btn btn-outline btn-sm" @click="emit('edit-task')"><i class="fa-solid fa-pen-to-square"></i> 编辑</button>
+                <button v-if="canUseAgent" class="btn btn-outline btn-sm" :disabled="agentStarting" @click="emit('start-agent')">
+                  <i class="fa-solid fa-robot"></i> {{ agentStarting ? '启动中...' : 'AI 代理' }}
+                </button>
                 <button v-if="canDeleteTask" class="btn btn-danger btn-sm" @click="emit('delete-task')"><i class="fa-solid fa-trash"></i> 删除任务</button>
                 <span v-if="genderMismatch" class="hv-delete-hint">
                   <i class="fa-solid fa-ban"></i>

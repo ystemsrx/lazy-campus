@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/complete-profile', component: () => import('../views/CompleteProfileView.vue') },
     { path: '/admin', component: () => import('../views/AdminView.vue') },
     { path: '/tasks', component: () => import('../views/TaskManagementView.vue') },
+    { path: '/agent/:sessionId', component: () => import('../views/AgentView.vue') },
     { path: '/settings', component: () => import('../views/SettingsView.vue') },
     { path: '/chat', component: () => import('../views/ChatView.vue') },
     { path: '/reports', component: () => import('../views/MyReportsView.vue') },

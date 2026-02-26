@@ -26,11 +26,14 @@ const props = defineProps<{
   form: TaskEditorForm
   categories: Category[]
   nowLocal: () => string
+  showAgentAction: boolean
+  agentSubmitting?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'submit'): void
+  (e: 'submit-agent'): void
 }>()
 
 const title = computed(() => (props.mode === 'create' ? '发布新委托' : '编辑委托'))
@@ -168,7 +171,19 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block hv-submit-btn" type="submit">{{ submitText }}</button>
+      <div class="hv-submit-row">
+        <button
+          v-if="props.mode === 'create' && props.showAgentAction"
+          class="btn btn-outline hv-ai-btn"
+          type="button"
+          :disabled="props.agentSubmitting"
+          @click="emit('submit-agent')"
+        >
+          <i class="fa-solid fa-robot"></i>
+          AI 代理
+        </button>
+        <button class="btn btn-primary hv-submit-btn" type="submit">{{ submitText }}</button>
+      </div>
     </form>
   </HomeModal>
 </template>
@@ -193,6 +208,17 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
 
 .hv-submit-btn {
   margin-top: 4px;
+  flex: 1;
+}
+
+.hv-submit-row {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.hv-ai-btn {
+  min-width: 120px;
 }
 
 .hv-description-textarea {

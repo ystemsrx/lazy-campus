@@ -91,6 +91,20 @@ def set_registration_enabled(db: Session, enabled: bool) -> bool:
     return setting.registration_enabled
 
 
+def get_agent_enabled(db: Session) -> bool:
+    setting = _get_or_create_platform_setting(db)
+    return setting.agent_enabled
+
+
+def set_agent_enabled(db: Session, enabled: bool) -> bool:
+    setting = _get_or_create_platform_setting(db)
+    setting.agent_enabled = enabled
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting.agent_enabled
+
+
 def register_local_user(db: Session, account: str, password: str, name: str) -> User:
     normalized_account = account.strip()
     normalized_name = name.strip()

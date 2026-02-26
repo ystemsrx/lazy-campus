@@ -332,6 +332,9 @@ onBeforeUnmount(() => {
           <div class="av-cat-col av-cat-col--stats">
             <span class="badge badge-blue">{{ category.task_count }} 个任务</span>
             <span class="badge badge-green">{{ category.worker_count }} 位接单者</span>
+            <span class="badge" :class="category.ai_agent_enabled ? 'badge-green' : 'badge-default'">
+              AI 代理{{ category.ai_agent_enabled ? '已开启' : '已关闭' }}
+            </span>
           </div>
 
           <!-- 操作 -->
@@ -359,9 +362,11 @@ onBeforeUnmount(() => {
     :is-editing="Boolean(vm.editingCategory)"
     :name="vm.categoryForm.name"
     :description="vm.categoryForm.description"
+    :ai-agent-enabled="vm.categoryForm.ai_agent_enabled"
     :submitting="vm.categorySubmitting"
     @update:name="vm.categoryForm.name = $event"
     @update:description="vm.categoryForm.description = $event"
+    @update:ai-agent-enabled="vm.categoryForm.ai_agent_enabled = $event"
     @close="vm.closeCategoryModal"
     @confirm="vm.submitCategory"
   />

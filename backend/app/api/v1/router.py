@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.agent import router as agent_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.captcha import router as captcha_router
 from app.api.v1.chat import router as chat_router
@@ -14,6 +15,7 @@ api_router.include_router(auth_router)
 api_router.include_router(captcha_router)
 api_router.include_router(user_router)
 api_router.include_router(task_router)
+api_router.include_router(agent_router)
 api_router.include_router(moderation_router)
 api_router.include_router(notifications_router)
 api_router.include_router(uploads_router)

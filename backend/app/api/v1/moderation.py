@@ -479,6 +479,7 @@ def _assemble_admin_user_profile(user: User, db: Session) -> AdminUserProfileOut
         ban_publish=bool(user.ban_publish),
         ban_accept=bool(user.ban_accept),
         ban_contact=bool(user.ban_contact),
+        agent_usage_remaining=int(user.agent_usage_remaining or 0),
         blocked_by_count=user.blocked_by_count or 0,
         last_active=user.last_active,
         created_at=user.created_at,
@@ -1299,6 +1300,7 @@ def admin_list_users(
                     ban_publish=u.ban_publish or False,
                     ban_accept=u.ban_accept or False,
                     ban_contact=u.ban_contact or False,
+                    agent_usage_remaining=int(u.agent_usage_remaining or 0),
                     blocked_by_count=u.blocked_by_count or 0,
                     worker_enabled=bool(profile.enabled) if profile else False,
                     worker_skill_count=skill_count_by_profile.get(profile.id, 0) if profile else 0,
@@ -1378,6 +1380,8 @@ def admin_update_user_profile(
         user.ban_count = data.get('ban_count') or 0
     if 'blocked_by_count' in data:
         user.blocked_by_count = data.get('blocked_by_count') or 0
+    if 'agent_usage_remaining' in data:
+        user.agent_usage_remaining = max(0, int(data.get('agent_usage_remaining') or 0))
 
     if 'abandon_count_24h' in data:
         _adjust_log_count(

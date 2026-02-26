@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppToast from '../components/AppToast.vue'
 import AdminActionLogsSection from '../components/admin/AdminActionLogsSection.vue'
+import AdminAgentsSection from '../components/admin/AdminAgentsSection.vue'
 import AdminCategoriesSection from '../components/admin/AdminCategoriesSection.vue'
 import AdminChatsSection from '../components/admin/AdminChatsSection.vue'
 import AdminDashboardSection from '../components/admin/AdminDashboardSection.vue'
@@ -15,6 +16,7 @@ import type { AdminTabKey } from '../components/admin/AdminSidebar.vue'
 import AdminTasksSection from '../components/admin/AdminTasksSection.vue'
 import AdminUsersSection from '../components/admin/AdminUsersSection.vue'
 import { useAdminActionLogs } from '../composables/admin/useAdminActionLogs'
+import { useAdminAgents } from '../composables/admin/useAdminAgents'
 import { useAdminCategories } from '../composables/admin/useAdminCategories'
 import { useAdminChats } from '../composables/admin/useAdminChats'
 import { useAdminDashboard } from '../composables/admin/useAdminDashboard'
@@ -30,7 +32,7 @@ const router = useRouter()
 const route = useRoute()
 
 const validTabs = new Set<AdminTabKey>([
-  'dashboard', 'reports', 'users', 'tasks', 'chats', 'notifications', 'categories', 'logs',
+  'dashboard', 'reports', 'users', 'tasks', 'chats', 'notifications', 'categories', 'agents', 'logs',
 ])
 
 function resolveTabFromQuery(): AdminTabKey {
@@ -51,6 +53,7 @@ const tasksModel = useAdminTasks(toastModel.showToast)
 const chatsModel = useAdminChats(toastModel.showToast)
 const notificationsModel = useAdminNotifications(toastModel.showToast)
 const categoriesModel = useAdminCategories(toastModel.showToast)
+const agentsModel = useAdminAgents(toastModel.showToast)
 const actionLogsModel = useAdminActionLogs(toastModel.showToast)
 
 const loaded = reactive<Record<AdminTabKey, boolean>>({
@@ -61,6 +64,7 @@ const loaded = reactive<Record<AdminTabKey, boolean>>({
   chats: false,
   notifications: false,
   categories: false,
+  agents: false,
   logs: false,
 })
 
@@ -72,6 +76,7 @@ const tabTitleMap: Record<AdminTabKey, string> = {
   chats: '聊天审计',
   notifications: '通知推送',
   categories: '类别管理',
+  agents: '代理管理',
   logs: '操作日志',
 }
 
@@ -83,6 +88,7 @@ const tabIconMap: Record<AdminTabKey, string> = {
   chats: 'fa-solid fa-comments',
   notifications: 'fa-solid fa-bullhorn',
   categories: 'fa-solid fa-tags',
+  agents: 'fa-solid fa-robot',
   logs: 'fa-solid fa-clock-rotate-left',
 }
 
@@ -135,6 +141,11 @@ async function loadTabData(tab: AdminTabKey, force = false) {
   if (tab === 'categories') {
     await categoriesModel.loadCategories()
     loaded.categories = true
+    return
+  }
+  if (tab === 'agents') {
+    await agentsModel.bootstrap()
+    loaded.agents = true
     return
   }
   if (tab === 'logs') {
@@ -233,6 +244,7 @@ onUnmounted(() => {
             <AdminChatsSection v-if="activeTab === 'chats'" :model="chatsModel" />
             <AdminNotificationsSection v-if="activeTab === 'notifications'" :model="notificationsModel" />
             <AdminCategoriesSection v-if="activeTab === 'categories'" :model="categoriesModel" />
+            <AdminAgentsSection v-if="activeTab === 'agents'" :model="agentsModel" />
             <AdminActionLogsSection v-if="activeTab === 'logs'" :model="actionLogsModel" />
           </div>
         </div>

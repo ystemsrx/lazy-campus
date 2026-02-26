@@ -12,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '../../stores/auth'
 import { appConfirm } from '../../components/AppConfirm.vue'
+import { fetchAgentAvailability, startTaskAgent } from '../../api/agent'
 import {
   abandonTask,
   acceptTask,
@@ -30,6 +31,7 @@ import {
 } from '../../api/tasks'
 import { fetchUserReviews } from '../../api/users'
 import type {
+  AgentAvailability,
   Category,
   Task,
   TaskMessage,
@@ -145,6 +147,9 @@ export function useTaskManagement() {
   const showReviewForm = ref(false)
   const reviewForm = ref({ stars: 5, comment: '' })
   const showReportModal = ref(false)
+  const agentAvailability = ref<AgentAvailability | null>(null)
+  const createWithAgentSubmitting = ref(false)
+  const startingAgent = ref(false)
 
   const assigneeTotal = computed(() => myAccepted.value.length)
   const publisherTotal = computed(() => myPublished.value.length)
@@ -334,6 +339,36 @@ export function useTaskManagement() {
     return selectedTask.value.status === 'in_progress'
   })
 
+  const createCategorySupportsAgent = computed(() => {
+    if (!newTask.value.category_id) return false
+    return categories.value.some(
+      (category) => category.id === newTask.value.category_id && category.ai_agent_enabled,
+    )
+  })
+
+  const canCreateWithAgent = computed(() => {
+    if (!isAuthenticated.value) return false
+    if (!agentAvailability.value?.agent_enabled) return false
+    if ((agentAvailability.value.remaining_count ?? 0) <= 0) return false
+    return createCategorySupportsAgent.value
+  })
+
+  const selectedTaskCategorySupportsAgent = computed(() => {
+    if (!selectedTask.value?.category_id) return false
+    return categories.value.some(
+      (category) => category.id === selectedTask.value!.category_id && category.ai_agent_enabled,
+    )
+  })
+
+  const canUseAgentOnSelectedTask = computed(() => {
+    if (!isPublisher.value || !selectedTask.value) return false
+    if (!selectedTaskCategorySupportsAgent.value) return false
+    if (!agentAvailability.value?.agent_enabled) return false
+    const likelyExistingSession = selectedTask.value.status === 'in_progress' && !selectedTask.value.assignee_id
+    if (likelyExistingSession) return true
+    return selectedTask.value.status === 'open' && (agentAvailability.value.remaining_count ?? 0) > 0
+  })
+
   const myReviewTargetRole = computed<'worker' | 'publisher' | null>(() => {
     if (!me.value || !selectedTask.value) return null
     if (selectedTask.value.publisher_id === me.value.id) return 'worker'
@@ -379,6 +414,18 @@ export function useTaskManagement() {
     categories.value = await fetchCategories()
   }
 
+  async function refreshAgentAvailability() {
+    if (!isAuthenticated.value) {
+      agentAvailability.value = null
+      return
+    }
+    try {
+      agentAvailability.value = await fetchAgentAvailability()
+    } catch {
+      agentAvailability.value = null
+    }
+  }
+
   function goLogin() {
     router.push('/login')
   }
@@ -403,7 +450,7 @@ export function useTaskManagement() {
   async function bootstrap() {
     loading.value = true
     try {
-      await Promise.all([loadMyTasks(), loadCategories()])
+      await Promise.all([loadMyTasks(), loadCategories(), refreshAgentAvailability()])
     } catch (error: unknown) {
       showToast(extractError(error, '加载失败'), 'error')
     } finally {
@@ -638,9 +685,31 @@ export function useTaskManagement() {
     showCreateModal.value = true
   }
 
-  async function submitCreateTask() {
+  async function handleStartAgentFromSelectedTask() {
+    if (!selectedTask.value) return
+    startingAgent.value = true
     try {
-      await createTask({
+      const started = await startTaskAgent(selectedTask.value.id)
+      await Promise.all([loadMyTasks(), refreshAgentAvailability()])
+      closeDrawer()
+      router.push(`/agent/${started.session_id}`)
+    } catch (error: unknown) {
+      showToast(extractError(error, '启动 AI 代理失败'), 'error')
+    } finally {
+      startingAgent.value = false
+    }
+  }
+
+  async function submitCreateTask(mode: 'normal' | 'agent' = 'normal') {
+    if (mode === 'agent' && !canCreateWithAgent.value) {
+      showToast('当前任务不满足 AI 代理开启条件', 'error')
+      return
+    }
+    if (mode === 'agent') {
+      createWithAgentSubmitting.value = true
+    }
+    try {
+      const created = await createTask({
         title: newTask.value.title,
         description: newTask.value.description,
         deadline: newTask.value.deadline ? localToUTC(newTask.value.deadline) : null,
@@ -659,12 +728,29 @@ export function useTaskManagement() {
         await deleteTask(republishSourceId.value).catch(() => {})
         republishSourceId.value = null
       }
-      showToast('委托发布成功', 'success')
+      showToast(mode === 'agent' ? '委托已发布，正在启动 AI 代理' : '委托发布成功', 'success')
+
+      let startedSessionId: string | null = null
+      if (mode === 'agent') {
+        try {
+          const started = await startTaskAgent(created.id)
+          startedSessionId = started.session_id
+          await refreshAgentAvailability()
+        } catch (error: unknown) {
+          showToast(extractError(error, '委托已发布，但启动 AI 代理失败'), 'error')
+        }
+      }
+
       newTask.value = createEditorForm()
       showCreateModal.value = false
       await loadMyTasks()
+      if (startedSessionId) {
+        router.push(`/agent/${startedSessionId}`)
+      }
     } catch (error: unknown) {
       showToast(extractError(error, '发布失败'), 'error')
+    } finally {
+      createWithAgentSubmitting.value = false
     }
   }
 
@@ -722,7 +808,7 @@ export function useTaskManagement() {
 
   onActivated(() => {
     if (bootstrapped) {
-      Promise.all([loadMyTasks(), loadCategories()]).catch(() => {})
+      Promise.all([loadMyTasks(), loadCategories(), refreshAgentAvailability()]).catch(() => {})
     }
   })
 
@@ -757,6 +843,8 @@ export function useTaskManagement() {
     showReviewForm,
     reviewForm,
     showReportModal,
+    createWithAgentSubmitting,
+    startingAgent,
     assigneeTotal,
     publisherTotal,
     assigneeProgress,
@@ -781,6 +869,8 @@ export function useTaskManagement() {
     canRepublish,
     canEditTask,
     canDeleteTask,
+    canCreateWithAgent,
+    canUseAgentOnSelectedTask,
     deleteBlockedByAssignee,
     myReviewTargetRole,
     hasAlreadyReviewed,
@@ -801,6 +891,7 @@ export function useTaskManagement() {
     handleCancelTask,
     submitMessage,
     submitReview,
+    handleStartAgentFromSelectedTask,
     handleDeleteTask,
     openEditModal,
     submitEditTask,

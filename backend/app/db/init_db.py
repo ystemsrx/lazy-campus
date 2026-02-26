@@ -27,6 +27,8 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE users ADD COLUMN id_number VARCHAR(64) DEFAULT NULL'))
             if 'payment_qr_url' not in user_cols:
                 conn.execute(text('ALTER TABLE users ADD COLUMN payment_qr_url VARCHAR(500) DEFAULT NULL'))
+            if 'agent_usage_remaining' not in user_cols:
+                conn.execute(text('ALTER TABLE users ADD COLUMN agent_usage_remaining INTEGER DEFAULT 0'))
 
         if 'tasks' in tables:
             task_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))}
@@ -47,6 +49,19 @@ def run_startup_migrations() -> None:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN deleted_at DATETIME DEFAULT NULL'))
             if 'demote_level' not in task_cols:
                 conn.execute(text('ALTER TABLE tasks ADD COLUMN demote_level INTEGER NOT NULL DEFAULT 0'))
+            if 'agent_session_id' not in task_cols:
+                conn.execute(text('ALTER TABLE tasks ADD COLUMN agent_session_id VARCHAR(64) DEFAULT NULL'))
+                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_tasks_agent_session_id ON tasks (agent_session_id)'))
+
+        if 'task_categories' in tables:
+            category_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(task_categories)"))}
+            if 'ai_agent_enabled' not in category_cols:
+                conn.execute(text('ALTER TABLE task_categories ADD COLUMN ai_agent_enabled BOOLEAN DEFAULT 0'))
+
+        if 'platform_settings' in tables:
+            setting_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(platform_settings)"))}
+            if 'agent_enabled' not in setting_cols:
+                conn.execute(text('ALTER TABLE platform_settings ADD COLUMN agent_enabled BOOLEAN DEFAULT 0'))
 
         if 'reports' in tables:
             report_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(reports)"))}
@@ -151,6 +166,48 @@ def run_startup_migrations() -> None:
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_user_id ON task_publish_logs (user_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_task_id ON task_publish_logs (task_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_published_at ON task_publish_logs (published_at)'))
+
+        if 'agent_sessions' not in tables:
+            conn.execute(text('''
+                CREATE TABLE agent_sessions (
+                    id VARCHAR(64) PRIMARY KEY,
+                    task_id INTEGER NOT NULL REFERENCES tasks(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    kimi_session_id VARCHAR(64) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+                    container_id VARCHAR(128) DEFAULT NULL,
+                    interaction_count INTEGER NOT NULL DEFAULT 0,
+                    max_interactions INTEGER NOT NULL DEFAULT 8,
+                    last_error TEXT DEFAULT NULL,
+                    last_activity_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_sessions_task_id ON agent_sessions (task_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_sessions_user_id ON agent_sessions (user_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_sessions_status ON agent_sessions (status)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_sessions_user_status ON agent_sessions (user_id, status)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_sessions_user_updated ON agent_sessions (user_id, updated_at)'))
+
+        if 'agent_messages' not in tables:
+            conn.execute(text('''
+                CREATE TABLE agent_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id VARCHAR(64) NOT NULL REFERENCES agent_sessions(id),
+                    role VARCHAR(32) NOT NULL,
+                    content TEXT DEFAULT NULL,
+                    tool_name VARCHAR(128) DEFAULT NULL,
+                    tool_arguments TEXT DEFAULT NULL,
+                    tool_call_id VARCHAR(128) DEFAULT NULL,
+                    attachments_json TEXT DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_messages_session_id ON agent_messages (session_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_messages_role ON agent_messages (role)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_messages_created_at ON agent_messages (created_at)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_agent_messages_session_id_id ON agent_messages (session_id, id)'))
 
 
 def init_db() -> None:

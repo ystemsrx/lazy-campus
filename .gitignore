@@ -20,5 +20,11 @@ frontend/public/
 
 AGENTS.md
 
+# Agent
+backend/agent_sessions/
+!backend/agent/workspace/AGENTS.md
+backend/agent/skills/
+!backend/agent/skills/README.md
+
 *.pids
 logs/

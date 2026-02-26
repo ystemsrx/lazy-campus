@@ -6,6 +6,7 @@ const props = defineProps<{
   isEditing: boolean
   name: string
   description: string
+  aiAgentEnabled: boolean
   submitting: boolean
 }>()
 
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   confirm: []
   'update:name': [value: string]
   'update:description': [value: string]
+  'update:ai-agent-enabled': [value: boolean]
 }>()
 
 const descLength = computed(() => props.description.length)
@@ -26,6 +28,11 @@ function updateName(event: Event) {
 function updateDescription(event: Event) {
   const target = event.target as HTMLTextAreaElement
   emit('update:description', target.value)
+}
+
+function toggleAiAgent(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:ai-agent-enabled', target.checked)
 }
 </script>
 
@@ -67,6 +74,13 @@ function updateDescription(event: Event) {
               @input="updateDescription"
             />
             <p class="av-modal__field-hint">此描述将在用户发布任务选择类别时作为提示信息显示。</p>
+          </div>
+          <div class="av-modal__field">
+            <label class="av-modal__switch">
+              <input :checked="aiAgentEnabled" type="checkbox" @change="toggleAiAgent" />
+              <span>允许该类别使用 AI 代理</span>
+            </label>
+            <p class="av-modal__field-hint">开启后，用户在该类别下可选择“AI 代理”模式。</p>
           </div>
         </form>
         <div class="av-modal__footer">
@@ -205,6 +219,19 @@ function updateDescription(event: Event) {
   margin: 8px 0 0;
   font-size: 12px;
   color: #94a3b8;
+}
+
+.av-modal__switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.av-modal__switch input {
+  width: 16px;
+  height: 16px;
 }
 
 .av-modal__footer {

@@ -37,6 +37,7 @@ class UserMe(BaseModel):
     ban_publish: bool = False
     ban_accept: bool = False
     ban_contact: bool = False
+    agent_usage_remaining: int = 0
     role: str
     created_at: datetime
 

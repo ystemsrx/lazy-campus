@@ -58,6 +58,10 @@ const {
   canRepublish,
   canEditTask,
   canDeleteTask,
+  canCreateWithAgent,
+  canUseAgentOnSelectedTask,
+  createWithAgentSubmitting,
+  startingAgent,
   deleteBlockedByAssignee,
   myReviewTargetRole,
   hasAlreadyReviewed,
@@ -77,6 +81,7 @@ const {
   handleAbandonTask,
   handleCancelTask,
   handleRepublishTask,
+  handleStartAgentFromSelectedTask,
   submitMessage,
   submitReview,
   handleDeleteTask,
@@ -176,7 +181,10 @@ const {
       :form="newTask"
       :categories="categories"
       :now-local="nowLocal"
+      :show-agent-action="canCreateWithAgent"
+      :agent-submitting="createWithAgentSubmitting"
       @submit="submitCreateTask"
+      @submit-agent="submitCreateTask('agent')"
     />
 
     <HomeTaskEditorModal
@@ -185,6 +193,7 @@ const {
       :form="editTaskForm"
       :categories="categories"
       :now-local="nowLocal"
+      :show-agent-action="false"
       @submit="submitEditTask"
     />
 
@@ -202,6 +211,8 @@ const {
       :can-republish="canRepublish"
       :can-edit-task="canEditTask"
       :can-delete-task="canDeleteTask"
+      :can-use-agent="canUseAgentOnSelectedTask"
+      :agent-starting="startingAgent"
       :delete-blocked-by-assignee="deleteBlockedByAssignee"
       :task-messages="taskMessages"
       :task-reviews="taskReviews"
@@ -227,6 +238,7 @@ const {
       @cancel-task="handleCancelTask"
       @republish-task="handleRepublishTask"
       @edit-task="openEditModal"
+      @start-agent="handleStartAgentFromSelectedTask"
       @delete-task="handleDeleteTask"
       @update:chat-content="chatContent = $event"
       @submit-message="submitMessage"

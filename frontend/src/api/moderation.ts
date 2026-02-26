@@ -169,6 +169,7 @@ export async function updateAdminUserProfile(userId: number, payload: {
   ban_publish?: boolean
   ban_accept?: boolean
   ban_contact?: boolean
+  agent_usage_remaining?: number
   ban_reason?: string | null
   ban_until?: string | null
   ban_count?: number

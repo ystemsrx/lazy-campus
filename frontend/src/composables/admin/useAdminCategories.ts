@@ -10,6 +10,7 @@ interface CategoryForm {
   name: string
   description: string
   sort_order: number
+  ai_agent_enabled: boolean
 }
 
 export function useAdminCategories(showToast: AppToastNotifier) {
@@ -17,7 +18,7 @@ export function useAdminCategories(showToast: AppToastNotifier) {
   const categoryLoading = ref(false)
   const showCategoryModal = ref(false)
   const editingCategory = ref<Category | null>(null)
-  const categoryForm = ref<CategoryForm>({ name: '', description: '', sort_order: 0 })
+  const categoryForm = ref<CategoryForm>({ name: '', description: '', sort_order: 0, ai_agent_enabled: false })
   const categorySubmitting = ref(false)
 
   async function loadCategories() {
@@ -38,11 +39,13 @@ export function useAdminCategories(showToast: AppToastNotifier) {
           name: category.name,
           description: category.description || '',
           sort_order: category.sort_order,
+          ai_agent_enabled: category.ai_agent_enabled,
         }
       : {
           name: '',
           description: '',
           sort_order: categoryList.value.length + 1,
+          ai_agent_enabled: false,
         }
     showCategoryModal.value = true
   }
@@ -62,6 +65,7 @@ export function useAdminCategories(showToast: AppToastNotifier) {
         name: categoryForm.value.name.trim(),
         description: categoryForm.value.description.trim() || undefined,
         sort_order: categoryForm.value.sort_order,
+        ai_agent_enabled: categoryForm.value.ai_agent_enabled,
       }
       if (editingCategory.value) {
         await updateCategory(editingCategory.value.id, payload)
@@ -93,6 +97,7 @@ export function useAdminCategories(showToast: AppToastNotifier) {
             name: cat.name,
             description: cat.description || undefined,
             sort_order: i + 1,
+            ai_agent_enabled: cat.ai_agent_enabled,
           })
         }),
       )

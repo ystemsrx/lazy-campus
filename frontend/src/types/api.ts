@@ -48,6 +48,7 @@ export interface UserMe {
   ban_publish: boolean
   ban_accept: boolean
   ban_contact: boolean
+  agent_usage_remaining: number
   role: UserRole
   created_at: string
 }
@@ -122,6 +123,7 @@ export interface Category {
   name: string
   description: string | null
   sort_order: number
+  ai_agent_enabled: boolean
   task_count: number
   worker_count: number
 }
@@ -172,6 +174,7 @@ export interface AdminUserItem {
   ban_publish: boolean
   ban_accept: boolean
   ban_contact: boolean
+  agent_usage_remaining: number
   blocked_by_count: number
   worker_enabled: boolean
   worker_skill_count: number
@@ -482,6 +485,7 @@ export interface AdminUserProfile {
   ban_publish: boolean
   ban_accept: boolean
   ban_contact: boolean
+  agent_usage_remaining: number
   blocked_by_count: number
   last_active: string | null
   created_at: string
@@ -543,4 +547,85 @@ export interface AdminActionLogListResponse {
   page_size: number
   items: AdminActionLogItem[]
   distinct_actions: string[]
+}
+
+export interface AgentAvailability {
+  agent_enabled: boolean
+  remaining_count: number
+  max_interactions: number
+  max_files: number
+  max_file_size_mb: number
+}
+
+export interface AgentAttachment {
+  name: string
+  stored_name: string
+  workspace_path: string
+  size: number
+}
+
+export interface AgentMessage {
+  id: number
+  role: 'user' | 'assistant' | 'tool' | 'tool_call' | 'system'
+  content: string | null
+  tool_name: string | null
+  tool_arguments: string | null
+  tool_call_id: string | null
+  attachments: AgentAttachment[]
+  created_at: string
+}
+
+export interface AgentDeliverable {
+  name: string
+  size: number
+  updated_at: string
+}
+
+export interface AgentSessionStart {
+  session_id: string
+  task_id: number
+  task_title: string
+  status: string
+  interaction_count: number
+  max_interactions: number
+  remaining_count: number
+  can_send: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentSessionDetail extends AgentSessionStart {
+  deliverables: AgentDeliverable[]
+}
+
+export interface AgentSendResult {
+  queued: boolean
+  interaction_count: number
+  max_interactions: number
+}
+
+export interface AgentAdminConfig {
+  agent_enabled: boolean
+}
+
+export interface AgentAdminSessionItem {
+  session_id: string
+  task_id: number
+  task_title: string
+  user_id: number
+  user_display_name: string
+  status: string
+  interaction_count: number
+  max_interactions: number
+  has_container: boolean
+  last_activity_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentAdminSessionList {
+  total: number
+  page: number
+  page_size: number
+  items: AgentAdminSessionItem[]
 }

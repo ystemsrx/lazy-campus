@@ -14,6 +14,7 @@ class TaskCategory(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    ai_agent_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Task(Base):
@@ -44,6 +45,7 @@ class Task(Base):
     publisher_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True, index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey('task_categories.id'), nullable=True, index=True)
+    agent_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

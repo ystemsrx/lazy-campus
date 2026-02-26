@@ -100,17 +100,23 @@ const {
   canReview,
   canDeleteTask,
   canEditTask,
+  canCreateWithAgent,
+  canUseAgentOnSelectedTask,
+  createWithAgentSubmitting,
+  startingAgent,
   deleteBlockedByAssignee,
   canReport,
   reportTargetId,
   openDrawer: openTaskDrawer,
   closeDrawer: closeTaskDrawer,
+  refreshAgentAvailability,
   submitCreateTask,
   handleAcceptTask: _handleAcceptTask,
   handleConfirmTask,
   handleAbandonTask,
   handleCancelTask,
   handleRepublishTask,
+  handleStartAgentFromSelectedTask,
   submitMessage,
   submitReview,
   handleDeleteTask,
@@ -121,6 +127,7 @@ const {
 } = useHomeTaskDrawer({
   me,
   isAuthenticated,
+  categories: computed(() => categories.value),
   showToast,
   pollNotificationCount: () => {
     notifStore.pollCount()
@@ -130,6 +137,9 @@ const {
   loadMyTasks,
   loadCategories,
   loadWorkers,
+  goToAgentSession: (sessionId) => {
+    router.push(`/agent/${sessionId}`)
+  },
   requestCaptcha: appSlideCaptcha,
 })
 
@@ -230,6 +240,7 @@ onMounted(() => {
 onActivated(() => {
   if (bootstrapped) {
     Promise.all([loadTasks(), loadWorkers(), loadCategories()]).catch(() => {})
+    refreshAgentAvailability().catch(() => {})
     if (auth.isAuthenticated) loadMyTasks().catch(() => {})
   }
 })
@@ -307,7 +318,10 @@ onDeactivated(() => {
     :form="newTask"
     :categories="categories"
     :now-local="nowLocal"
+    :show-agent-action="canCreateWithAgent"
+    :agent-submitting="createWithAgentSubmitting"
     @submit="submitCreateTask"
+    @submit-agent="submitCreateTask('agent')"
   />
 
   <HomeTaskEditorModal
@@ -316,6 +330,7 @@ onDeactivated(() => {
     :form="editTaskForm"
     :categories="categories"
     :now-local="nowLocal"
+    :show-agent-action="false"
     @submit="submitEditTask"
   />
 
@@ -342,6 +357,8 @@ onDeactivated(() => {
     :can-republish="canRepublish"
     :can-edit-task="canEditTask"
     :can-delete-task="canDeleteTask"
+    :can-use-agent="canUseAgentOnSelectedTask"
+    :agent-starting="startingAgent"
     :delete-blocked-by-assignee="deleteBlockedByAssignee"
     :task-messages="taskMessages"
     :task-reviews="taskReviews"
@@ -367,6 +384,7 @@ onDeactivated(() => {
     @cancel-task="handleCancelTask"
     @republish-task="handleRepublishTask"
     @edit-task="openEditModal"
+    @start-agent="handleStartAgentFromSelectedTask"
     @delete-task="handleDeleteTask"
     @update:chat-content="chatContent = $event"
     @submit-message="submitMessage"

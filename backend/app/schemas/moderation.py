@@ -182,6 +182,7 @@ class AdminUserItem(BaseModel):
     ban_publish: bool = False
     ban_accept: bool = False
     ban_contact: bool = False
+    agent_usage_remaining: int = 0
     blocked_by_count: int = 0
     worker_enabled: bool = False
     worker_skill_count: int = 0
@@ -427,6 +428,7 @@ class AdminUserProfileOut(BaseModel):
     ban_publish: bool = False
     ban_accept: bool = False
     ban_contact: bool = False
+    agent_usage_remaining: int = 0
     blocked_by_count: int = 0
     last_active: datetime | None = None
     created_at: datetime
@@ -474,6 +476,7 @@ class AdminUserUpdateRequest(BaseModel):
     ban_publish: bool | None = None
     ban_accept: bool | None = None
     ban_contact: bool | None = None
+    agent_usage_remaining: int | None = Field(default=None, ge=0, le=1000000)
     ban_reason: str | None = Field(default=None, max_length=2000)
     ban_until: datetime | None = None
     ban_count: int | None = Field(default=None, ge=0, le=9999)

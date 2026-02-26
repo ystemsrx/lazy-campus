@@ -9,6 +9,7 @@ export type AdminTabKey =
   | 'chats'
   | 'notifications'
   | 'categories'
+  | 'agents'
   | 'logs'
 
 interface TabItem {
@@ -41,6 +42,7 @@ const tabs: TabItem[] = [
   { key: 'chats', label: '聊天审计', icon: 'fa-solid fa-comments', hint: '全量会话' },
   { key: 'notifications', label: '通知推送', icon: 'fa-solid fa-bullhorn', hint: '运营触达' },
   { key: 'categories', label: '类别管理', icon: 'fa-solid fa-tags', hint: '分类体系' },
+  { key: 'agents', label: '代理管理', icon: 'fa-solid fa-robot', hint: 'AI 配额与审计' },
   { key: 'logs', label: '操作日志', icon: 'fa-solid fa-clock-rotate-left', hint: '审计留痕' },
 ]
 

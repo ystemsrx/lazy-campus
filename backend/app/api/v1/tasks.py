@@ -193,6 +193,7 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
             name=c.name,
             description=c.description,
             sort_order=c.sort_order,
+            ai_agent_enabled=bool(c.ai_agent_enabled),
             task_count=task_count_map.get(c.id, 0),
             worker_count=worker_count_map.get(c.id, 0),
         )
@@ -209,7 +210,12 @@ def create_category(
     existing = db.query(TaskCategory).filter(TaskCategory.name == payload.name).first()
     if existing:
         raise HTTPException(status_code=409, detail='Category already exists')
-    category = TaskCategory(name=payload.name, description=payload.description, sort_order=payload.sort_order)
+    category = TaskCategory(
+        name=payload.name,
+        description=payload.description,
+        sort_order=payload.sort_order,
+        ai_agent_enabled=bool(payload.ai_agent_enabled),
+    )
     db.add(category)
     db.commit()
     db.refresh(category)
@@ -238,6 +244,7 @@ def update_category(
     category.name = payload.name
     category.description = payload.description
     category.sort_order = payload.sort_order
+    category.ai_agent_enabled = bool(payload.ai_agent_enabled)
     db.add(category)
     db.commit()
     db.refresh(category)
