@@ -240,7 +240,7 @@ export interface Report {
   created_at: string
 }
 
-export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'task_canceled' | 'punishment' | 'admin_notice' | 'admin_task_notice' | 'admin_warning' | 'admin_success' | 'admin_info' | 'admin_announcement'
+export type NotificationType = 'task_expired' | 'chat_message' | 'task_accepted' | 'report_reviewed' | 'task_completed' | 'task_abandoned' | 'task_canceled' | 'punishment' | 'admin_notice' | 'admin_task_notice' | 'admin_warning' | 'admin_success' | 'admin_info' | 'admin_announcement' | 'newcomer_reward'
 export type DismissType = 'read' | 'action' | 'source' | 'persistent'
 
 export interface AppNotification {
@@ -653,4 +653,46 @@ export interface AgentAdminSessionList {
   page: number
   page_size: number
   items: AgentAdminSessionItem[]
+}
+
+export interface NewcomerRewardRuleItem {
+  id: number
+  reward_type: string
+  reward_detail: string
+  enabled: boolean
+  start_time: string | null
+  end_time: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface NewcomerRewardRuleList {
+  items: NewcomerRewardRuleItem[]
+  total: number
+}
+
+export interface NewcomerRewardLogItem {
+  id: number
+  user_id: number
+  user_display_name: string
+  user_account: string
+  rule_id: number
+  reward_type: string
+  reward_detail: string
+  status: string
+  fail_reason: string | null
+  created_at: string
+}
+
+export interface NewcomerRewardLogList {
+  items: NewcomerRewardLogItem[]
+  total: number
+}
+
+export interface NewcomerRewardManualGrantResult {
+  requested_count: number
+  processed_count: number
+  success_count: number
+  failed_count: number
+  missing_user_ids: number[]
 }

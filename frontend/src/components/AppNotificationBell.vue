@@ -7,6 +7,7 @@ import {
   Bell,
   Check,
   CheckCircle,
+  Gift,
   Info,
   LogOut,
   Megaphone,
@@ -114,6 +115,7 @@ const iconMap: Record<NotificationType, any> = {
   admin_success: CheckCircle,
   admin_info: Info,
   admin_announcement: Megaphone,
+  newcomer_reward: Gift,
 }
 
 function getIcon(type: string) {
@@ -486,6 +488,11 @@ onUnmounted(() => {
 .notif-icon--admin_announcement {
   background: #faf5ff;
   color: #a855f7;
+}
+
+.notif-icon--newcomer_reward {
+  background: #fffbeb;
+  color: #d97706;
 }
 
 .notif-item__persistent-tag {

@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -7,9 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
+from app.models.newcomer_reward import NewcomerRewardLog, NewcomerRewardRule
+from app.models.notification import Notification
 from app.models.system import PlatformSetting
 from app.models.user import User
 from app.schemas.auth import ThirdPartyRequest, ThirdPartyResponse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -105,6 +110,68 @@ def set_agent_enabled(db: Session, enabled: bool) -> bool:
     return setting.agent_enabled
 
 
+def grant_newcomer_rewards(db: Session, user: User) -> None:
+    """Apply all active newcomer reward rules to a newly created user."""
+    now = datetime.now(timezone.utc)
+    granted_messages: list[str] = []
+    failed_messages: list[str] = []
+    rules = (
+        db.query(NewcomerRewardRule)
+        .filter(NewcomerRewardRule.enabled.is_(True))
+        .all()
+    )
+    for rule in rules:
+        if rule.start_time and now < rule.start_time.replace(tzinfo=timezone.utc):
+            continue
+        if rule.end_time and now > rule.end_time.replace(tzinfo=timezone.utc):
+            continue
+
+        status = 'success'
+        fail_reason = None
+        try:
+            if rule.reward_type == 'agent_usage':
+                amount = int(rule.reward_detail)
+                user.agent_usage_remaining = (user.agent_usage_remaining or 0) + amount
+                db.add(user)
+                granted_messages.append(f'代理使用次数 +{amount} 次')
+            else:
+                granted_messages.append(f'{rule.reward_type}: {rule.reward_detail}')
+        except Exception as exc:
+            status = 'failed'
+            fail_reason = str(exc)
+            failed_messages.append(f'{rule.reward_type}: {rule.reward_detail}')
+            logger.warning('Failed to grant newcomer reward rule=%s to user=%s: %s', rule.id, user.id, exc)
+
+        log = NewcomerRewardLog(
+            user_id=user.id,
+            rule_id=rule.id,
+            reward_type=rule.reward_type,
+            reward_detail=rule.reward_detail,
+            status=status,
+            fail_reason=fail_reason,
+        )
+        db.add(log)
+
+    if granted_messages or failed_messages:
+        title = '奖励已发放' if granted_messages else '奖励发放异常'
+        detail_parts: list[str] = []
+        if granted_messages:
+            detail_parts.append('已发放：' + '，'.join(granted_messages))
+        if failed_messages:
+            detail_parts.append('发放失败：' + '，'.join(failed_messages))
+        db.add(Notification(
+            user_id=user.id,
+            type='newcomer_reward',
+            title=title,
+            description='；'.join(detail_parts),
+            dismiss_type='read',
+            is_read=False,
+        ))
+
+    db.commit()
+    db.refresh(user)
+
+
 def register_local_user(db: Session, account: str, password: str, name: str) -> User:
     normalized_account = account.strip()
     normalized_name = name.strip()
@@ -133,6 +200,7 @@ def register_local_user(db: Session, account: str, password: str, name: str) -> 
     db.add(user)
     db.commit()
     db.refresh(user)
+    grant_newcomer_rewards(db, user)
     return user
 
 
@@ -152,11 +220,13 @@ async def third_party_auth(account: str, password: str) -> ThirdPartyResponse:
     return parsed
 
 
-def _create_or_update_user(db: Session, account: str, password: str, third_party_data: dict) -> User:
+def _create_or_update_user(db: Session, account: str, password: str, third_party_data: dict) -> tuple[User, bool]:
+    """Returns (user, is_new) — is_new is True when the user was just created."""
     user = db.query(User).filter(User.account == account).first()
     stored_password, hashed = _store_password_value(password)
 
     new_id_number = third_party_data.get('idNumber') or None
+    is_new = user is None
 
     if user:
         user.name = third_party_data['name']
@@ -177,7 +247,11 @@ def _create_or_update_user(db: Session, account: str, password: str, third_party
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+
+    if is_new:
+        grant_newcomer_rewards(db, user)
+
+    return user, is_new
 
 
 def verify_credentials(db: Session, account: str, password: str) -> User | None:
@@ -216,7 +290,7 @@ async def login_with_fallback(db: Session, account: str, password: str) -> Login
         msg = third_party_result.msg or 'Authentication failed'
         raise HTTPException(status_code=code, detail=msg)
 
-    synced_user = _create_or_update_user(
+    synced_user, _is_new = _create_or_update_user(
         db,
         account=account,
         password=password,

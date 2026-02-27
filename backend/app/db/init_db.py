@@ -167,6 +167,40 @@ def run_startup_migrations() -> None:
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_task_id ON task_publish_logs (task_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_task_publish_logs_published_at ON task_publish_logs (published_at)'))
 
+        if 'newcomer_reward_rules' not in tables:
+            conn.execute(text('''
+                CREATE TABLE newcomer_reward_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reward_type VARCHAR(32) NOT NULL,
+                    reward_detail VARCHAR(255) NOT NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    start_time DATETIME DEFAULT NULL,
+                    end_time DATETIME DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_rules_reward_type ON newcomer_reward_rules (reward_type)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_rules_type_status ON newcomer_reward_rules (reward_type, enabled)'))
+
+        if 'newcomer_reward_logs' not in tables:
+            conn.execute(text('''
+                CREATE TABLE newcomer_reward_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    rule_id INTEGER NOT NULL REFERENCES newcomer_reward_rules(id),
+                    reward_type VARCHAR(32) NOT NULL,
+                    reward_detail VARCHAR(255) NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'success',
+                    fail_reason TEXT DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            '''))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_logs_user_id ON newcomer_reward_logs (user_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_logs_rule_id ON newcomer_reward_logs (rule_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_logs_user_rule ON newcomer_reward_logs (user_id, rule_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_newcomer_logs_created_at ON newcomer_reward_logs (created_at)'))
+
         if 'agent_sessions' not in tables:
             conn.execute(text('''
                 CREATE TABLE agent_sessions (
