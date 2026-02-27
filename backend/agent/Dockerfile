@@ -2,7 +2,6 @@ FROM python:3.13-slim-bookworm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# 需要新加坡就改成 Asia/Singapore
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai \
     LANG=zh_CN.UTF-8 \
@@ -98,7 +97,11 @@ RUN set -eux; \
     mkdir -p /tmp/matplotlib; \
     chmod 1777 /tmp/matplotlib; \
     \
-    rm -rf /var/lib/apt/lists/*
+    # 清理 APT 缓存 + 无用文档/man/log
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/* \
+           /var/log/*.log /var/log/apt/* \
+           /usr/share/doc/* /usr/share/man/* /usr/share/info/* \
+           /usr/share/lintian/* /usr/share/linda/*
 
 # ============================================================
 # 1.5) 额外字体：从构建上下文 fonts/ 复制进镜像
@@ -110,7 +113,7 @@ RUN set -eux; \
 COPY fonts/ /usr/local/share/fonts/custom/
 
 # ============================================================
-# 1.6) 字体缓存 + matplotlib 全局默认字体（中文/英文/等宽）
+# 1.6) 字体缓存 + matplotlib 全局默认字体 + pip 国内源
 # ============================================================
 RUN set -eux; \
     fc-cache -f; \
@@ -123,12 +126,9 @@ RUN set -eux; \
 "font.monospace: Consolas, DejaVu Sans Mono" \
 "axes.unicode_minus: False"; \
     } > /etc/matplotlib/matplotlibrc; \
-    sed -i 's/\r$//' /etc/matplotlib/matplotlibrc
-
-# ============================================================
-# 2) pip 国内源（无 heredoc）
-# ============================================================
-RUN set -eux; \
+    sed -i 's/\r$//' /etc/matplotlib/matplotlibrc; \
+    \
+    # pip 国内源
     { \
       printf '%s\n' \
 '[global]' \
@@ -170,8 +170,9 @@ RUN set -eux; \
     pnpm config set global-bin-dir /usr/local/bin; \
     \
     # 允许 agent-browser 跑其脚本（避免 pnpm v10 安全限制导致功能缺失）
-    pnpm --allow-build=agent-browser add -g \
-      @ystemsrx/cfshare agent-browser pptxgenjs docx; \
+    pnpm --allow-build=agent-browser,puppeteer add -g \
+      @ystemsrx/cfshare agent-browser pptxgenjs docx \
+      @mermaid-js/mermaid-cli; \
     \
     # 建立稳定 NODE_PATH：/usr/local/share/pnpm/global/node_modules -> $(pnpm root -g)
     GLOBAL_NM="$(pnpm root -g)"; \
@@ -188,9 +189,14 @@ RUN set -eux; \
     node -v; npm -v; pnpm -v; \
     command -v cfshare; \
     command -v agent-browser; \
+    command -v mmdc; \
     node -e "require('pptxgenjs'); console.log('pptxgenjs ok')"; \
     \
-    rm -rf "${NVM_DIR}/.cache" || true
+    # 清理 Node/npm/pnpm 缓存
+    rm -rf "${NVM_DIR}/.cache" || true; \
+    npm cache clean --force 2>/dev/null || true; \
+    pnpm store prune 2>/dev/null || true; \
+    rm -rf /root/.npm /root/.cache /root/.local/share/pnpm/store /tmp/*
 
 # ============================================================
 # 4) Python 常用包 + PDF/DICOM/PPT 相关包（无 heredoc）
@@ -213,7 +219,8 @@ RUN set -eux; \
       pydicom \
       PyPDF2 \
       pypdf \
-      python-pptx; \
+      python-pptx \
+      "markitdown[all]"; \
     \
     # 字体自检（不影响构建成功与否）
     fc-list | grep -i "times new roman" | head -n 5 || true; \
@@ -228,7 +235,16 @@ print('Has SimHei:', 'SimHei' in n); \
 print('Has SimKai:', 'SimKai' in n); \
 print('Has Cambria:', 'Cambria' in n); \
 print('Has Consolas:', 'Consolas' in n); \
-print('Has Times New Roman:', 'Times New Roman' in n)"
+print('Has Times New Roman:', 'Times New Roman' in n)"; \
+    \
+    # 卸载编译期依赖（运行时不需要）
+    apt-get purge -y --auto-remove build-essential cmake pkg-config \
+      libffi-dev libssl-dev zlib1g-dev; \
+    \
+    # 清理 pip 缓存 + __pycache__ + .pyc
+    rm -rf /root/.cache/pip /root/.cache/matplotlib /tmp/*; \
+    find /usr/local/lib/python* -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true; \
+    find /usr/local/lib/python* -name '*.pyc' -delete 2>/dev/null || true
 
 # ============================================================
 # 5) 浏览器自动化：按你指定方式安装（官方下载源）
@@ -238,29 +254,34 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN set -eux; \
     apt-get update; \
     agent-browser install --with-deps; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/* \
+           /root/.cache /tmp/*
 
 # ============================================================
-# 6) 用户与 sudo 免密
+# 6) 用户与 sudo 免密 + Kimi Code CLI + 最终清理
 # ============================================================
 RUN set -eux; \
+    # 创建用户
     useradd -m -s /bin/bash agent; \
     echo "agent ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/agent; \
-    chmod 0440 /etc/sudoers.d/agent
-
-# ============================================================
-# 7) 安装 Kimi Code CLI，并验证
-# ============================================================
-RUN set -eux; \
+    chmod 0440 /etc/sudoers.d/agent; \
+    \
+    # 安装 Kimi Code CLI
     curl -LsSf https://code.kimi.com/install.sh | bash; \
     if [ -f /root/.local/bin/env ]; then . /root/.local/bin/env; fi; \
     command -v uv; \
     command -v uvx; \
     command -v kimi; \
     kimi --version; \
+    uv tool install nano-pdf; \
     \
-    # 安装 nano-pdf 工具
-    uv tool install nano-pdf
+    # 最终清理：移除所有残留缓存，压缩镜像体积
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/tmp/*; \
+    find / -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true; \
+    find / -name '*.pyc' -delete 2>/dev/null || true; \
+    rm -rf /root/.cache /root/.npm /root/.wget-hsts /tmp/*; \
+    rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/info/* /usr/share/lintian/*
 
 WORKDIR /workspace
 ENTRYPOINT ["tini", "--"]
