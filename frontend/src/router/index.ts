@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
 
-const publicPaths = ['/', '/login']
+const publicPaths = ['/login', '/home']
 
 const router = createRouter({
   history: createWebHistory(),
@@ -10,13 +10,18 @@ const router = createRouter({
     { path: '/login', component: () => import('../views/LoginView.vue') },
     { path: '/complete-profile', component: () => import('../views/CompleteProfileView.vue') },
     { path: '/admin', component: () => import('../views/AdminView.vue') },
+    { path: '/home', component: () => import('../views/HomeView.vue') },
     { path: '/tasks', component: () => import('../views/TaskManagementView.vue') },
     { path: '/agent-tasks', component: () => import('../views/AgentTasksView.vue') },
     { path: '/agent/:sessionId?', component: () => import('../views/AgentView.vue') },
     { path: '/settings', component: () => import('../views/SettingsView.vue') },
     { path: '/chat', component: () => import('../views/ChatView.vue') },
     { path: '/reports', component: () => import('../views/MyReportsView.vue') },
-    { path: '/', component: () => import('../views/HomeView.vue') }
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('../views/NotFoundView.vue'),
+    },
   ]
 })
 
@@ -48,12 +53,12 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (!auth.isAuthenticated && !publicPaths.includes(to.path)) {
+  if (!auth.isAuthenticated && !publicPaths.includes(to.path) && to.name !== 'not-found') {
     return '/login'
   }
 
   if (to.path === '/login' && auth.isAuthenticated) {
-    return auth.role === 'admin' ? '/admin' : '/'
+    return auth.role === 'admin' ? '/admin' : '/home'
   }
 
   if (auth.role === 'admin' && to.path !== '/admin') {
@@ -65,7 +70,7 @@ router.beforeEach(async (to) => {
   }
 
   if (auth.role === 'user' && auth.profileCompleted && to.path === '/complete-profile') {
-    return '/'
+    return '/home'
   }
 
   return true

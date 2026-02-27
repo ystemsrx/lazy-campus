@@ -90,7 +90,7 @@ export function useSettingsView() {
   }
 
   function openHome() {
-    router.push({ path: '/', query: { publish: '1' } })
+    router.push({ path: '/home', query: { publish: '1' } })
   }
 
   function openMyPanel() {
@@ -107,7 +107,7 @@ export function useSettingsView() {
 
   function handleHeaderTabChange(tab: 'hall' | 'workers' | null) {
     router.push({
-      path: '/',
+      path: '/home',
       query: tab === 'workers' ? { tab: 'workers' } : {},
     })
   }

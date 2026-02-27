@@ -67,7 +67,7 @@ const {
 })
 
 function handleHeaderTabChange(tab: 'hall' | 'workers' | null) {
-  router.push({ path: '/', query: tab === 'workers' ? { tab: 'workers' } : {} })
+  router.push({ path: '/home', query: tab === 'workers' ? { tab: 'workers' } : {} })
 }
 
 function logout() {

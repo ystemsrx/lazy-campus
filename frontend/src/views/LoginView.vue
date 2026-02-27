@@ -62,7 +62,7 @@ async function submitLogin() {
       await router.push("/admin");
       return;
     }
-    await router.push(res.profile_completed ? "/" : "/complete-profile");
+    await router.push(res.profile_completed ? "/home" : "/complete-profile");
   } catch (error: any) {
     const detail = error?.response?.data?.detail;
     if (detail && typeof detail === "object" && detail.code === "USER_BANNED") {
@@ -97,7 +97,7 @@ async function submitLogin() {
           await router.push("/admin");
           return;
         }
-        await router.push(res2.profile_completed ? "/" : "/complete-profile");
+        await router.push(res2.profile_completed ? "/home" : "/complete-profile");
       } catch (err2: any) {
         sessionId.value = newSessionId();
         const detail2 = err2?.response?.data?.detail;
@@ -160,7 +160,7 @@ async function submitRegister() {
       await router.push("/admin");
       return;
     }
-    await router.push(res.profile_completed ? "/" : "/complete-profile");
+    await router.push(res.profile_completed ? "/home" : "/complete-profile");
   } catch (error: any) {
     sessionId.value = newSessionId();
     showToast(extractError(error, "注册失败，请稍后重试"), "error");
@@ -278,7 +278,7 @@ onMounted(() => {
       <div class="av-footer">
         <div class="av-footer__text">
           <span class="av-footer__hint">请安全浏览！</span>
-          <button class="av-browse-link" @click="router.push('/')">
+          <button class="av-browse-link" @click="router.push('/home')">
             随便看看 →
           </button>
         </div>

@@ -189,7 +189,7 @@ function getRoutePublishQuery() {
 }
 
 function consumeRouteQueries() {
-  if (route.path !== '/') return
+  if (route.path !== '/home') return
 
   const nextQuery = { ...route.query }
   let shouldReplace = false
@@ -244,7 +244,7 @@ function openAgentTasks() {
 }
 
 watch(() => [route.path, route.query.task, route.query.publish, loading.value] as const, ([path, taskQuery, publishQuery, isLoading]) => {
-  if (path !== '/' || isLoading || (!taskQuery && !publishQuery)) return
+  if (path !== '/home' || isLoading || (!taskQuery && !publishQuery)) return
   consumeRouteQueries()
 })
 

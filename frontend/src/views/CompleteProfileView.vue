@@ -26,7 +26,7 @@ async function submit() {
   loading.value = true
   try {
     await auth.completeProfile({ email: email.value, gender: gender.value, nickname: nickname.value || null })
-    await router.push('/')
+    await router.push('/home')
   } catch (error: any) {
     showToast(extractError(error, '保存失败'), 'error')
   } finally {
