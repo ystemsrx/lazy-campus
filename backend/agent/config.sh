@@ -54,12 +54,36 @@ if [ "${KIMI_EFFECTIVE_API_KEY}" = "please_set_me" ] || [ "${KIMI_EFFECTIVE_API_
 fi
 export KIMI_EFFECTIVE_API_KEY
 
-KIMI_MODEL="${KIMI_MODEL:-kimi-for-coding}"
-KIMI_BASE_URL="${KIMI_BASE_URL:-https://api.kimi.com/coding/v1}"
-KIMI_SEARCH_URL="${KIMI_SEARCH_URL:-${KIMI_BASE_URL}/search}"
-KIMI_FETCH_URL="${KIMI_FETCH_URL:-${KIMI_BASE_URL}/fetch}"
-KIMI_DEFAULT_THINKING="${KIMI_DEFAULT_THINKING:-false}"
-KIMI_DEFAULT_YOLO="${KIMI_DEFAULT_YOLO:-true}"
+# ---- helpers: sanitize env values ----
+_strip_wrapping_quotes() {
+  # remove one pair of wrapping single/double quotes if present
+  local s="$1"
+  if [[ "$s" =~ ^\".*\"$ ]]; then s="${s:1:${#s}-2}"; fi
+  if [[ "$s" =~ ^\'.*\'$ ]]; then s="${s:1:${#s}-2}"; fi
+  printf '%s' "$s"
+}
+
+_to_toml_bool() {
+  # normalize common truthy/falsey to TOML true/false
+  local v="${1:-false}"
+  v="$(_strip_wrapping_quotes "$v")"
+  case "${v,,}" in
+    true|1|yes|y|on)  printf 'true' ;;
+    false|0|no|n|off|"") printf 'false' ;;
+    *)
+      echo "Invalid boolean value for TOML: '$v' (use true/false)" >&2
+      return 1
+      ;;
+  esac
+}
+
+# ---- runtime params ----
+KIMI_MODEL="$(_strip_wrapping_quotes "${KIMI_MODEL:-kimi-for-coding}")"
+KIMI_BASE_URL="$(_strip_wrapping_quotes "${KIMI_BASE_URL:-https://api.kimi.com/coding/v1}")"
+KIMI_SEARCH_URL="$(_strip_wrapping_quotes "${KIMI_SEARCH_URL:-${KIMI_BASE_URL}/search}")"
+KIMI_FETCH_URL="$(_strip_wrapping_quotes "${KIMI_FETCH_URL:-${KIMI_BASE_URL}/fetch}")"
+KIMI_DEFAULT_THINKING="$(_to_toml_bool "${KIMI_DEFAULT_THINKING:-false}")"
+KIMI_DEFAULT_YOLO="$(_to_toml_bool "${KIMI_DEFAULT_YOLO:-true}")"
 
 mkdir -p /root/.kimi
 
@@ -69,12 +93,14 @@ default_model = "${KIMI_MODEL}"
 default_thinking = ${KIMI_DEFAULT_THINKING}
 default_yolo = ${KIMI_DEFAULT_YOLO}
 
-[providers.kimi-code]
+[providers."kimi-code"]
 type = "kimi"
 base_url = "${KIMI_BASE_URL}"
 api_key = "${KIMI_EFFECTIVE_API_KEY}"
 
-[models.${KIMI_MODEL}]
+# IMPORTANT:
+# Model keys that contain '.' must be quoted in TOML, otherwise they become nested tables.
+[models."${KIMI_MODEL}"]
 provider = "kimi-code"
 model = "${KIMI_MODEL}"
 max_context_size = 262144
