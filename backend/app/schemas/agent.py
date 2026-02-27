@@ -1,8 +1,8 @@
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AgentAvailabilityOut(BaseModel):
@@ -130,8 +130,18 @@ class AgentAdminConfigUpdate(BaseModel):
 
 
 class AgentBatchGrantRequest(BaseModel):
-    user_ids: list[int] = Field(min_length=1)
-    amount: int = Field(ge=1, le=1000)
+    user_ids: list[int] = Field(default_factory=list)
+    amount: int = Field(ge=0, le=1000000)
+    mode: Literal['grant', 'set'] = 'grant'
+    include_all: bool = False
+
+    @model_validator(mode='after')
+    def _validate_scope_and_amount(self) -> 'AgentBatchGrantRequest':
+        if not self.include_all and not self.user_ids:
+            raise ValueError('用户列表不能为空')
+        if self.mode == 'grant' and self.amount <= 0:
+            raise ValueError('发放次数必须大于 0')
+        return self
 
 
 class AgentBatchGrantOut(BaseModel):

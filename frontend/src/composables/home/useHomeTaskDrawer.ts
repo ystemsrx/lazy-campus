@@ -212,9 +212,11 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     if (!isPublisher.value || !selectedTask.value) return false
     if (!selectedTaskCategorySupportsAgent.value) return false
     if (!agentAvailability.value?.agent_enabled) return false
+    const remainingCount = agentAvailability.value.remaining_count ?? 0
+    if (remainingCount <= 0) return false
     const likelyExistingSession = selectedTask.value.status === 'in_progress' && !selectedTask.value.assignee_id
     if (likelyExistingSession) return true
-    return selectedTask.value.status === 'open' && (agentAvailability.value.remaining_count ?? 0) > 0
+    return selectedTask.value.status === 'open'
   })
 
   async function refreshTaskBoardData() {

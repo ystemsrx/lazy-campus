@@ -35,6 +35,8 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
+const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined
+const logoUrl = computed(() => (logoFile ? `/logos/${logoFile}` : null))
 const sessionId = computed(() => String(route.params.sessionId || ''))
 const { toast, showToast, clearToast } = useAppToast()
 const {
@@ -361,6 +363,49 @@ function extractToolOutputText(raw: string): { systemLines: string[], text: stri
   }
 
   return { systemLines, text: finalText }
+}
+
+function formatReadFileContent(text: string): string {
+  if (!text) return ''
+  const lines = text.split('\n')
+  const numbered = lines.map((line) => {
+    const withSep = line.match(/^\s*(\d+)\s*(\||│|:)\s?(.*)$/)
+    if (withSep) {
+      return { lineNo: withSep[1], body: withSep[3], sep: withSep[2] === ':' ? ':' : '|' }
+    }
+    const withTab = line.match(/^\s*(\d+)\t(.*)$/)
+    if (withTab) {
+      return { lineNo: withTab[1], body: withTab[2], sep: '|' }
+    }
+    return null
+  })
+  const numberedCount = numbered.filter(Boolean).length
+  const nonEmptyCount = lines.filter(line => line.trim().length > 0).length
+
+  // Only normalize when this clearly looks like "lineNo | content" output.
+  if (numberedCount < 2 || numberedCount < Math.ceil(nonEmptyCount * 0.6)) {
+    return text
+  }
+
+  const lineNos = numbered.filter(Boolean).map((match) => Number(match!.lineNo))
+  let sequentialPairs = 0
+  for (let i = 1; i < lineNos.length; i++) {
+    if (lineNos[i] === lineNos[i - 1] + 1) sequentialPairs += 1
+  }
+  const looksSequential = lineNos.length >= 2 && sequentialPairs >= Math.max(1, lineNos.length - 2)
+  if (!looksSequential) return text
+
+  const width = Math.max(...numbered.map((match) => {
+    if (!match) return 0
+    return match.lineNo.length
+  }))
+
+  return lines.map((line, index) => {
+    const match = numbered[index]
+    if (!match) return line
+    const lineNo = match.lineNo.padStart(width, ' ')
+    return `${lineNo} ${match.sep} ${match.body}`
+  }).join('\n')
 }
 
 const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
@@ -1104,7 +1149,8 @@ onUnmounted(() => {
                 <i class="fa-solid fa-arrow-left"></i>
               </button>
               <div class="header-avatar">
-                <i class="fa-solid fa-robot"></i>
+                <img v-if="logoUrl" :src="logoUrl" alt="系统 Logo" class="header-avatar-img" />
+                <i v-else class="fa-solid fa-robot"></i>
               </div>
               <div>
                 <h2 class="header-title">{{ session?.task_title || '代理会话' }}</h2>
@@ -1201,8 +1247,7 @@ onUnmounted(() => {
                   <template v-for="entry in round.entries" :key="entry.id">
                     <div v-if="entry.toolType === 'shell'" class="terminal-entry">
                       <div class="terminal-prompt-line">
-                        <span v-if="entry.success === true" class="terminal-status-icon terminal-status-icon--ok"><i class="fa-solid fa-check"></i></span>
-                        <span v-else-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
+                        <span v-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
                         <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">{{ entry.promptPath || TERMINAL_DEFAULT_CWD }}</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
                       </div>
                       <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
@@ -1260,7 +1305,7 @@ onUnmounted(() => {
                             <i class="fa-solid fa-align-left"></i>
                             <span>文件内容</span>
                           </div>
-                          <pre class="terminal-readfile-pre" :class="{ 'terminal-readfile-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
+                          <pre class="terminal-readfile-pre" :class="{ 'terminal-readfile-pre--error': entry.hasErrorOutput }">{{ formatReadFileContent(entry.outputText) }}</pre>
                         </div>
                         <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
                           <span class="terminal-blink">█</span>
@@ -1929,7 +1974,7 @@ onUnmounted(() => {
 .header-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 50%;
   background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   display: flex;
   align-items: center;
@@ -1937,6 +1982,14 @@ onUnmounted(() => {
   color: #fff;
   font-size: 18px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.header-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .header-title {
@@ -2330,7 +2383,6 @@ onUnmounted(() => {
   margin-right: 6px;
 }
 
-.terminal-status-icon--ok { color: #3fb950; }
 .terminal-status-icon--err { color: #f85149; }
 
 .terminal-prompt-line {

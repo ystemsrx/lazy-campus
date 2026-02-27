@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_admin, require_completed_user
@@ -504,23 +504,40 @@ def batch_grant_agent_usage(
     db: Session = Depends(get_db),
 ) -> AgentBatchGrantOut:
     user_ids = sorted({uid for uid in payload.user_ids if uid > 0})
-    if not user_ids:
+    if not payload.include_all and not user_ids:
         raise HTTPException(status_code=422, detail='用户列表不能为空')
 
-    users = db.query(User).filter(User.id.in_(user_ids)).all()
-    for user in users:
-        user.agent_usage_remaining = int(user.agent_usage_remaining or 0) + payload.amount
-        db.add(user)
+    query = db.query(User)
+    if not payload.include_all:
+        query = query.filter(User.id.in_(user_ids))
+
+    if payload.mode == 'set':
+        updated_count = int(query.update(
+            {User.agent_usage_remaining: int(payload.amount)},
+            synchronize_session=False,
+        ) or 0)
+        action = 'set_agent_usage'
+    else:
+        updated_count = int(query.update(
+            {User.agent_usage_remaining: func.coalesce(User.agent_usage_remaining, 0) + int(payload.amount)},
+            synchronize_session=False,
+        ) or 0)
+        action = 'grant_agent_usage'
 
     db.add(AdminActionLog(
         admin_identifier=admin.admin_account or 'admin',
-        action='grant_agent_usage',
+        action=action,
         target_type='user_batch',
-        target_id=','.join(str(uid) for uid in user_ids[:100]),
-        detail=f'count={len(users)}, amount={payload.amount}',
+        target_id='all_users' if payload.include_all else ','.join(str(uid) for uid in user_ids[:100]),
+        detail=(
+            f'count={updated_count}, '
+            f'mode={payload.mode}, '
+            f'amount={payload.amount}, '
+            f'include_all={int(payload.include_all)}'
+        ),
     ))
     db.commit()
-    return AgentBatchGrantOut(updated_user_count=len(users))
+    return AgentBatchGrantOut(updated_user_count=updated_count)
 
 
 @router.get('/admin/sessions', response_model=AgentAdminSessionListOut)

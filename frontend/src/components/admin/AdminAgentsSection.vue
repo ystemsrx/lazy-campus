@@ -37,8 +37,19 @@ function roleLabel(role: string) {
     </div>
 
     <div class="av-agent-card">
-      <div class="av-agent-card__head">
-        <h3>批量发放次数</h3>
+      <div class="av-agent-card__head av-agent-card__head--usage">
+        <h3>次数管理</h3>
+        <div class="av-save-wrap">
+          <div class="av-save-item" :class="{ 'av-save-item--visible': vm.quotaSaveStatus === 'saving' }">
+            <span class="av-save-spinner"></span>
+          </div>
+          <div class="av-save-item av-save-item--saved" :class="{ 'av-save-item--visible': vm.quotaSaveStatus === 'saved' }">
+            <svg width="17" height="17" viewBox="0 0 18 18" fill="none">
+              <path d="M2 9l5 5L16 3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>已保存</span>
+          </div>
+        </div>
       </div>
 
       <div class="av-agent-toolbar">
@@ -47,9 +58,18 @@ function roleLabel(role: string) {
           <input v-model="vm.userSearch" class="form-input" placeholder="搜索账号/姓名/昵称" />
         </div>
         <div class="av-agent-grant">
-          <input v-model.number="vm.grantAmount" class="form-input av-agent-grant__input" type="number" min="1" />
-          <button class="btn btn-primary btn-sm" :disabled="vm.grantSubmitting" @click="vm.grantUsageToSelected">
-            {{ vm.grantSubmitting ? '发放中…' : `发放给已选（${vm.selectedUserIds.length}）` }}
+          <input v-model.number="vm.usageAmount" class="form-input av-agent-grant__input" type="number" min="0" />
+          <button class="btn btn-primary btn-sm" :disabled="vm.usageSubmitting || !vm.hasSelectedUsers" @click="vm.grantUsageToSelected">
+            {{ vm.usageSubmitting ? '处理中…' : `发放已选（${vm.selectedUserIds.length}）` }}
+          </button>
+          <button class="btn btn-outline btn-sm" :disabled="vm.usageSubmitting || !vm.hasSelectedUsers" @click="vm.adjustUsageForSelected">
+            {{ vm.usageSubmitting ? '处理中…' : `调整已选（${vm.selectedUserIds.length}）` }}
+          </button>
+          <button class="btn btn-outline btn-sm" :disabled="vm.usageSubmitting" @click="vm.grantUsageToAll">
+            {{ vm.usageSubmitting ? '处理中…' : '发放所有人' }}
+          </button>
+          <button class="btn btn-danger btn-sm" :disabled="vm.usageSubmitting" @click="vm.adjustUsageForAll">
+            {{ vm.usageSubmitting ? '处理中…' : '调整所有人' }}
           </button>
         </div>
       </div>
@@ -59,7 +79,7 @@ function roleLabel(role: string) {
           <thead>
             <tr>
               <th style="width: 52px;">
-                <input type="checkbox" @change="vm.toggleSelectAllCurrentPage" />
+                <input :checked="vm.allCurrentPageSelected" type="checkbox" @change="vm.toggleSelectAllCurrentPage" />
               </th>
               <th>用户</th>
               <th>状态</th>
@@ -81,7 +101,19 @@ function roleLabel(role: string) {
               <td>
                 <span class="badge" :class="user.is_active ? 'badge-green' : 'badge-red'">{{ user.is_active ? '启用' : '停用' }}</span>
               </td>
-              <td>{{ user.agent_usage_remaining }}</td>
+              <td>
+                <div class="av-agent-inline-edit">
+                  <input
+                    v-model.number="vm.userQuotaDraftMap[user.id]"
+                    class="form-input av-agent-inline-edit__input"
+                    type="number"
+                    min="0"
+                    @input="vm.handleUserQuotaInput(user)"
+                    @blur="vm.handleUserQuotaBlur(user)"
+                    @keydown.enter.prevent="vm.handleUserQuotaBlur(user)"
+                  />
+                </div>
+              </td>
               <td>{{ user.last_active ? formatShort(user.last_active) : '从未' }}</td>
             </tr>
           </tbody>
@@ -186,6 +218,65 @@ function roleLabel(role: string) {
   font-size: 16px;
 }
 
+.av-agent-card__head--usage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.av-save-wrap {
+  position: relative;
+  width: 96px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.av-save-item {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+  transition: opacity 500ms cubic-bezier(0.4, 0, 0.2, 1), transform 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.av-save-item--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.av-save-item--saved {
+  color: #10b981;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transform: translateY(10px) scale(0.95);
+}
+
+.av-save-item--saved.av-save-item--visible {
+  transform: translateY(0) scale(1);
+}
+
+.av-save-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: #94a3b8;
+  border-radius: 50%;
+  animation: av-save-spin 0.7s linear infinite;
+}
+
+@keyframes av-save-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .av-agent-switch-row {
   display: flex;
   align-items: center;
@@ -222,10 +313,21 @@ function roleLabel(role: string) {
 .av-agent-grant {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .av-agent-grant__input {
-  width: 100px;
+  width: 84px;
+}
+
+.av-agent-inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.av-agent-inline-edit__input {
+  width: 78px;
 }
 
 .av-agent-table-wrap {

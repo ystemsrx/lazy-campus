@@ -95,7 +95,12 @@ export async function updateAdminAgentConfig(payload: { agent_enabled: boolean }
   return data
 }
 
-export async function batchGrantAgentUsage(payload: { user_ids: number[]; amount: number }) {
+export async function batchGrantAgentUsage(payload: {
+  user_ids?: number[]
+  amount: number
+  mode?: 'grant' | 'set'
+  include_all?: boolean
+}) {
   const { data } = await api.post<{ updated_user_count: number }>('/agent/admin/grant', payload)
   return data
 }

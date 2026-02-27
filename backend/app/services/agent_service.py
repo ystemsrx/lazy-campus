@@ -301,12 +301,13 @@ def _build_prompt(user_prompt: str, attachments: list[dict[str, Any]]) -> str:
     if not attachments:
         return prompt
 
-    lines = ['']
-    lines.append('用户本次上传了文件，可在 /workspace 下直接读取：')
+    lines = ['', '<hint>']
+    lines.append('The user uploaded files in this message. You can read them directly under /workspace/uploads:')
     for att in attachments:
         path = att.get('workspace_path') or att.get('stored_name') or att.get('name')
         original = att.get('name') or ''
-        lines.append(f'- {path} (原名: {original})')
+        lines.append(f'- {path} (original name: {original})')
+    lines.append('</hint>')
     return f'{prompt}\n' + '\n'.join(lines)
 
 
