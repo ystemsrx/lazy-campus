@@ -464,7 +464,94 @@ function roleLabel(role: string) {
   border-radius: 8px;
   padding: 8px;
   background: #fff;
+  overflow: hidden;
 }
+
+.av-agent-rich-wrap :deep(.rich-text) {
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.av-agent-rich-wrap :deep(.rich-text > *) {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.av-agent-rich-wrap :deep(.rich-text) ul,
+.av-agent-rich-wrap :deep(.rich-text) ol {
+  padding-left: 1.3em;
+  margin: 0.35em 0;
+}
+
+.av-agent-rich-wrap :deep(.rich-text) li {
+  margin: 0.1em 0;
+}
+
+.av-agent-rich-wrap :deep(.rich-text) pre,
+.av-agent-rich-wrap :deep(.rich-text) pre.hljs-pre {
+  position: relative;
+  margin: 0.4em 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  padding-top: 34px;
+  font-size: 12px;
+}
+
+.av-agent-rich-wrap :deep(.rich-text) pre code,
+.av-agent-rich-wrap :deep(.rich-text) pre.hljs-pre code {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  background: transparent;
+  padding: 0;
+}
+
+.av-agent-rich-wrap :deep(.rich-text) code {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.av-agent-rich-wrap :deep(.code-lang) {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.av-agent-rich-wrap :deep(.code-copy-btn) {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.av-agent-rich-wrap :deep(.code-copy-btn:hover) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.av-agent-rich-wrap :deep(.code-copy-btn .icon-check) { display: none; }
+.av-agent-rich-wrap :deep(.code-copy-btn.copied .icon-copy) { display: none; }
+.av-agent-rich-wrap :deep(.code-copy-btn.copied .icon-check) { display: flex; color: #16a34a; }
 
 .av-agent-tool-output {
   margin: 0;

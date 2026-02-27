@@ -283,26 +283,26 @@ interface MediaOutputInfo {
   format: string
   size: string
   dimensions: string
+  prettyDimensions: string
+  isImage: boolean
   description: string
 }
 
-function parseMediaOutput(text: string): MediaOutputInfo {
-  const imagePath = text.match(/<image\s+path="([^"]+)"/)?.[1] || ''
-  const format = text.match(/\(([a-z]+\/[a-z]+)/i)?.[1] || ''
-  const size = text.match(/,\s*([\d.]+\s*(?:bytes|KB|MB|GB))/i)?.[1] || ''
-  const dimensions = text.match(/original size\s+(\d+x\d+)/i)?.[1] || ''
-  const description = text.replace(/<image[\s\S]*?<\/image>/g, '').replace(/`[^`]+`/g, '').trim().split('.')[0] || ''
-  return { imagePath, format, size, dimensions, description }
+function formatMediaDimensions(raw: string): string {
+  const match = raw.match(/^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i)
+  if (!match) return raw
+  return `${match[1]}×${match[2]}`
 }
 
-function findClosingQuote(s: string, start: number): number {
-  let i = start
-  while (i < s.length) {
-    if (s[i] === '\\') { i += 2; continue }
-    if (s[i] === "'") return i
-    i++
-  }
-  return -1
+function parseMediaOutput(text: string): MediaOutputInfo {
+  const imagePath = text.match(/<image\s+path="([^"]+)"/)?.[1] || text.match(/Loaded image file\s+`([^`]+)`/i)?.[1] || ''
+  const format = text.match(/\(([a-z]+\/[a-z0-9.+-]+)/i)?.[1] || ''
+  const size = text.match(/,\s*([\d.]+\s*(?:bytes|KB|MB|GB))/i)?.[1] || ''
+  const dimensions = text.match(/original size\s+(\d+\s*[x×]\s*\d+)/i)?.[1] || ''
+  const prettyDimensions = formatMediaDimensions(dimensions)
+  const description = text.replace(/<image[\s\S]*?<\/image>/g, '').replace(/`[^`]+`/g, '').trim().split('.')[0] || ''
+  const isImage = /image\//i.test(format) || /loaded image file/i.test(text) || Boolean(prettyDimensions)
+  return { imagePath, format, size, dimensions, prettyDimensions, isImage, description }
 }
 
 function unescapePythonStr(s: string): string {
@@ -313,6 +313,42 @@ function unescapePythonStr(s: string): string {
     .replace(/\\r/g, '\r')
     .replace(/\\'/g, "'")
     .replace(/\x00BS\x00/g, '\\')
+}
+
+function extractTextFieldsFromPseudoJson(raw: string): string[] {
+  const texts: string[] = []
+  const keyRe = /['"]text['"]\s*:\s*/g
+  let keyMatch: RegExpExecArray | null
+
+  while ((keyMatch = keyRe.exec(raw)) !== null) {
+    let i = keyRe.lastIndex
+    while (i < raw.length && /\s/.test(raw[i])) i++
+    const quote = raw[i]
+    if (quote !== "'" && quote !== '"') continue
+    i++
+    const start = i
+    let escaped = false
+    while (i < raw.length) {
+      const ch = raw[i]
+      if (escaped) {
+        escaped = false
+        i++
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        i++
+        continue
+      }
+      if (ch === quote) break
+      i++
+    }
+    if (i >= raw.length) break
+    texts.push(unescapePythonStr(raw.slice(start, i)))
+    keyRe.lastIndex = i + 1
+  }
+
+  return texts
 }
 
 function extractToolOutputText(raw: string): { systemLines: string[], text: string } {
@@ -329,18 +365,7 @@ function extractToolOutputText(raw: string): { systemLines: string[], text: stri
     }
   } catch {
     if (content.startsWith("[{") || content.startsWith("[{'")) {
-      const texts: string[] = []
-      const marker = "'text': '"
-      let pos = 0
-      while (true) {
-        const idx = content.indexOf(marker, pos)
-        if (idx === -1) break
-        const vStart = idx + marker.length
-        const vEnd = findClosingQuote(content, vStart)
-        if (vEnd === -1) break
-        texts.push(unescapePythonStr(content.substring(vStart, vEnd)))
-        pos = vEnd + 1
-      }
+      const texts = extractTextFieldsFromPseudoJson(content)
       if (texts.length > 0) content = texts.join('\n')
     }
   }
@@ -421,6 +446,10 @@ function startsWithErrorPrefix(text: string): boolean {
     .map(line => line.trimStart())
     .find(line => line.length > 0) || ''
   return firstContentLine.startsWith('ERROR:')
+}
+
+function isExitCodeSystemErrorLine(text: string): boolean {
+  return /^\s*ERROR:\s*Command failed with exit code:\s*\d+\.?\s*$/i.test(stripAnsi(text || ''))
 }
 
 // ── Terminal ──
@@ -748,7 +777,12 @@ const conversationRounds = computed<ConversationRound[]>(() => {
         entry.hasErrorOutput = startsWithErrorPrefix(text) || systemHasError
         if (entry.toolType === 'shell') {
           const kept: string[] = []
+          const hasActualOutput = Boolean(text.trim())
           for (const line of systemLines) {
+            if (isExitCodeSystemErrorLine(line) && hasActualOutput) {
+              entry.success = false
+              continue
+            }
             if (startsWithErrorPrefix(line)) {
               entry.success = false
               kept.push(line)
@@ -1250,7 +1284,14 @@ onUnmounted(() => {
                         <span v-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
                         <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">{{ entry.promptPath || TERMINAL_DEFAULT_CWD }}</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
                       </div>
-                      <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
+                      <div
+                        v-for="(line, idx) in entry.systemLines"
+                        :key="'s'+idx"
+                        class="terminal-sys-line"
+                        :class="{ 'terminal-sys-line--error': startsWithErrorPrefix(line) || isExitCodeSystemErrorLine(line) }"
+                      >
+                        {{ line }}
+                      </div>
                       <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
                       <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
                         <span class="terminal-blink">█</span>
@@ -1502,7 +1543,7 @@ onUnmounted(() => {
                     </div>
 
                     <div v-else-if="entry.toolType === 'read-media'" class="terminal-entry">
-                      <template v-for="media in [parseMediaOutput(entry.outputText)]" :key="0">
+                      <template v-for="media in [parseMediaOutput([...(entry.systemLines || []), entry.outputText || ''].join('\n'))]" :key="0">
                         <div class="terminal-tool-box terminal-tool-box--read-media">
                           <div class="terminal-tool-head terminal-tool-head--read-media">
                             <i class="fa-solid fa-image"></i>
@@ -1510,20 +1551,20 @@ onUnmounted(() => {
                           </div>
                           <div class="terminal-tool-detail">
                             <i
-                              v-if="!entry.pending && !entry.hasErrorOutput && entry.outputText"
+                              v-if="!entry.pending && !entry.hasErrorOutput && (entry.outputText || entry.systemLines.length)"
                               class="fa-solid fa-check terminal-readmedia-path-ok"
                             ></i>
                             <span class="terminal-tool-key">path</span>
                             <span class="terminal-tool-val">{{ entry.filePath }}</span>
                           </div>
                           <div
-                            v-if="!entry.pending && entry.outputText && (media.dimensions || media.format || media.size)"
+                            v-if="!entry.pending && (entry.outputText || entry.systemLines.length) && (media.prettyDimensions || media.format || media.size)"
                             class="terminal-media-preview"
                           >
                             <div class="terminal-media-meta">
-                              <div v-if="media.dimensions" class="terminal-media-chip">
+                              <div v-if="media.prettyDimensions" class="terminal-media-chip terminal-media-chip--spec">
                                 <i class="fa-solid fa-expand"></i>
-                                <span>{{ media.dimensions }}</span>
+                                <span>{{ media.prettyDimensions }}</span>
                               </div>
                               <div v-if="media.format" class="terminal-media-chip">
                                 <i class="fa-solid fa-file-image"></i>
@@ -1535,6 +1576,11 @@ onUnmounted(() => {
                               </div>
                             </div>
                           </div>
+                          <pre
+                            v-if="!entry.pending && entry.outputText && !media.isImage"
+                            class="terminal-pre terminal-pre--incard"
+                            :class="{ 'terminal-pre--error': entry.hasErrorOutput }"
+                          >{{ entry.outputText }}</pre>
                           <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
                             <span class="terminal-blink">█</span>
                           </div>
@@ -2403,6 +2449,10 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 
+.terminal-sys-line--error {
+  color: #f87171;
+}
+
 .terminal-pre {
   margin: 0;
   font-size: 12px;
@@ -2415,7 +2465,6 @@ onUnmounted(() => {
 
 .terminal-pre--args { color: #79c0ff; font-size: 11px; }
 .terminal-pre--error { color: #fca5a5; }
-.terminal-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
 
 .terminal-write-box {
   border: 1px solid #30363d;
@@ -3553,6 +3602,13 @@ onUnmounted(() => {
   border: 1px solid #30363d;
   font-size: 12px;
   color: #c9d1d9;
+}
+
+.terminal-media-chip--spec {
+  background: rgba(251, 113, 133, 0.12);
+  border-color: rgba(251, 113, 133, 0.35);
+  color: #fecdd3;
+  font-weight: 600;
 }
 
 .terminal-readmedia-path-ok {
