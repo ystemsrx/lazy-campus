@@ -23,6 +23,7 @@ export interface HomeTaskEditorForm {
   contact_info: string
   required_gender: Gender | null
   icon: string
+  attachments: string[]
 }
 
 export interface HomeReviewForm {
@@ -83,6 +84,7 @@ export function createTaskEditorForm(): HomeTaskEditorForm {
     contact_info: '',
     required_gender: null,
     icon: 'Hexagon',
+    attachments: [],
   }
 }
 

@@ -22,6 +22,7 @@ import {
   createTask,
   deleteTask,
   updateTask,
+  uploadTaskImage as uploadTaskImageApi,
   fetchAcceptedTasks,
   fetchCategories,
   fetchPublishedTasks,
@@ -67,6 +68,7 @@ export type TaskEditorForm = {
   contact_info: string
   required_gender: 'male' | 'female' | null
   icon: string
+  attachments: string[]
 }
 
 export type MyTask = Task & { myRole: 'publisher' | 'assignee' }
@@ -94,6 +96,7 @@ function createEditorForm(): TaskEditorForm {
     contact_info: '',
     required_gender: null,
     icon: 'Hexagon',
+    attachments: [],
   }
 }
 
@@ -430,6 +433,15 @@ export function useTaskManagement() {
     }
   }
 
+  async function uploadTaskImage(file: File): Promise<string> {
+    try {
+      return await uploadTaskImageApi(file)
+    } catch (error: unknown) {
+      showToast(extractError(error, '图片上传失败'), 'error')
+      throw error
+    }
+  }
+
   function goLogin() {
     router.push('/login')
   }
@@ -617,6 +629,7 @@ export function useTaskManagement() {
       contact_info: task.contact_info || '',
       required_gender: task.required_gender,
       icon: task.icon || 'Hexagon',
+      attachments: task.attachments.map((item) => item.file_url),
     }
 
     closeDrawer()
@@ -640,6 +653,7 @@ export function useTaskManagement() {
             : null,
         required_gender: editTaskForm.value.required_gender,
         icon: editTaskForm.value.icon,
+        attachment_urls: editTaskForm.value.attachments,
       })
       showEditModal.value = false
       editingTask.value = null
@@ -688,6 +702,7 @@ export function useTaskManagement() {
       contact_info: task.contact_info || '',
       required_gender: task.required_gender,
       icon: task.icon || 'Hexagon',
+      attachments: task.attachments.map((item) => item.file_url),
     }
     closeDrawer()
     showCreateModal.value = true
@@ -733,6 +748,7 @@ export function useTaskManagement() {
                 : null,
             required_gender: newTask.value.required_gender,
             icon: newTask.value.icon,
+            attachment_urls: newTask.value.attachments,
             captcha_token: captchaToken ?? null,
           }),
         appSlideCaptcha,
@@ -912,6 +928,7 @@ export function useTaskManagement() {
     openReportModal,
     reportTargetId,
     showToast,
+    uploadTaskImage,
     openCreateTask,
     handleRepublishTask,
     submitCreateTask,

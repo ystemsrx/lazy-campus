@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
 import AppCategoryPicker from '../AppCategoryPicker.vue'
 import AppDateTimePicker from '../AppDateTimePicker.vue'
@@ -18,6 +18,7 @@ type TaskEditorForm = {
   contact_info: string
   required_gender: 'male' | 'female' | null
   icon: string
+  attachments: string[]
 }
 
 const props = defineProps<{
@@ -28,6 +29,7 @@ const props = defineProps<{
   nowLocal: () => string
   showAgentAction: boolean
   agentSubmitting?: boolean
+  uploadTaskImage: (file: File) => Promise<string>
 }>()
 
 const emit = defineEmits<{
@@ -55,13 +57,63 @@ const GENDER_OPTIONS = [
 ] as const
 
 const genderTrackRef = ref<HTMLElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadingImages = ref(false)
+const lightboxSrc = ref<string | null>(null)
+const MAX_ATTACHMENTS = 3
 
 const activeGenderIndex = computed(() => {
   const idx = GENDER_OPTIONS.findIndex(o => o.value === props.form.required_gender)
   return idx === -1 ? 0 : idx
 })
 
-const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value].color)
+const canAddAttachments = computed(() => props.form.attachments.length < MAX_ATTACHMENTS)
+
+function triggerAttachmentUpload() {
+  if (uploadingImages.value || !canAddAttachments.value) return
+  fileInputRef.value?.click()
+}
+
+function removeAttachment(index: number) {
+  props.form.attachments.splice(index, 1)
+}
+
+async function handleAttachmentChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files) return
+
+  const files = Array.from(input.files)
+  input.value = ''
+
+  const remaining = MAX_ATTACHMENTS - props.form.attachments.length
+  if (remaining <= 0) return
+  const toUpload = files.slice(0, remaining)
+  if (!toUpload.length) return
+
+  uploadingImages.value = true
+  try {
+    for (const file of toUpload) {
+      try {
+        const url = await props.uploadTaskImage(file)
+        if (props.form.attachments.length >= MAX_ATTACHMENTS) break
+        if (!props.form.attachments.includes(url)) {
+          props.form.attachments.push(url)
+        }
+      } catch {
+        // 单张失败不影响其余图片上传
+      }
+    }
+  } finally {
+    uploadingImages.value = false
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (!open) lightboxSrc.value = null
+  },
+)
 </script>
 
 <template>
@@ -171,21 +223,57 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
         </div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">附件图片<span class="hv-upload-hint">最多 {{ MAX_ATTACHMENTS }} 张</span></label>
+        <div class="hv-attachment-grid">
+          <div v-for="(url, idx) in form.attachments" :key="`${url}-${idx}`" class="hv-attachment-cell">
+            <img :src="url" class="hv-attachment-thumb" alt="附件图片" @click="lightboxSrc = url" />
+            <button type="button" class="hv-attachment-remove" aria-label="删除图片" @click.stop="removeAttachment(idx)">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <button
+            v-if="canAddAttachments"
+            type="button"
+            class="hv-attachment-add"
+            :disabled="uploadingImages"
+            @click="triggerAttachmentUpload"
+          >
+            <i :class="uploadingImages ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-image'"></i>
+            <span>{{ uploadingImages ? '上传中…' : '上传图片' }}</span>
+          </button>
+        </div>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept="image/*"
+          multiple
+          class="hv-file-input"
+          @change="handleAttachmentChange"
+        />
+      </div>
+
       <div class="hv-submit-row">
         <button
           v-if="props.mode === 'create' && props.showAgentAction"
           class="btn btn-outline hv-ai-btn"
           type="button"
-          :disabled="props.agentSubmitting"
+          :disabled="props.agentSubmitting || uploadingImages"
           @click="emit('submit-agent')"
         >
           <i class="fa-solid fa-robot"></i>
           AI 代理
         </button>
-        <button class="btn btn-primary hv-submit-btn" type="submit">{{ submitText }}</button>
+        <button class="btn btn-primary hv-submit-btn" type="submit" :disabled="uploadingImages">{{ submitText }}</button>
       </div>
     </form>
   </HomeModal>
+
+  <Transition name="drawer-lightbox">
+    <div v-if="lightboxSrc" class="hv-image-lightbox" @click="lightboxSrc = null">
+      <img :src="lightboxSrc" class="hv-image-lightbox__img" alt="附件预览" />
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -223,6 +311,13 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
 
 .hv-description-textarea {
   min-height: 80px;
+}
+
+.hv-upload-hint {
+  margin-left: 6px;
+  color: var(--c-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
 }
 
 .required-star {
@@ -294,6 +389,69 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
   justify-content: center;
 }
 
+.hv-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hv-attachment-cell {
+  position: relative;
+  aspect-ratio: 1;
+}
+
+.hv-attachment-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  background: var(--c-border-light);
+  cursor: zoom-in;
+}
+
+.hv-attachment-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.hv-attachment-add {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 2px dashed var(--c-border);
+  background: transparent;
+  color: var(--c-text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+
+.hv-attachment-add:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.hv-file-input {
+  display: none;
+}
+
 /* ── Gender Toggle ── */
 .gender-toggle {
   position: relative;
@@ -336,5 +494,35 @@ const activeGenderColor = computed(() => GENDER_OPTIONS[activeGenderIndex.value]
 
 .gender-toggle__option--active {
   font-weight: 600;
+}
+
+.hv-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  cursor: zoom-out;
+}
+
+.hv-image-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+}
+
+.drawer-lightbox-enter-active,
+.drawer-lightbox-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.drawer-lightbox-enter-from,
+.drawer-lightbox-leave-to {
+  opacity: 0;
 }
 </style>

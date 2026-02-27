@@ -23,6 +23,7 @@ const {
   canCreateWithAgent,
   createWithAgentSubmitting,
   openPublishModal,
+  uploadTaskImage,
   submitPublishTask,
 } = useQuickTaskPublish({ showToast })
 
@@ -212,6 +213,7 @@ onMounted(() => {
       :now-local="nowLocal"
       :show-agent-action="canCreateWithAgent"
       :agent-submitting="createWithAgentSubmitting"
+      :upload-task-image="uploadTaskImage"
       @submit="submitPublishTask"
       @submit-agent="submitPublishTask('agent')"
     />

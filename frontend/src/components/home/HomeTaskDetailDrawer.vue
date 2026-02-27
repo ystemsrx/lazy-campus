@@ -9,6 +9,7 @@ import type { ChatMessage } from '../../types/chat'
 const chatRouter = useRouter()
 
 const showPaymentQrLightbox = ref(false)
+const showAttachmentLightbox = ref<string | null>(null)
 
 type ReviewForm = {
   stars: number
@@ -108,6 +109,8 @@ watch(
       document.body.style.top = `-${savedScrollY}px`
       document.body.style.width = '100%'
     } else {
+      showPaymentQrLightbox.value = false
+      showAttachmentLightbox.value = null
       document.body.style.position = ''
       document.body.style.top = ''
       document.body.style.width = ''
@@ -338,6 +341,21 @@ onUnmounted(() => {
                   该任务限{{ task.required_gender === 'male' ? '男生' : '女生' }}接取，您不满足要求
                 </span>
               </div>
+
+              <div v-if="task.attachments.length > 0" class="hv-attachments">
+                <h4 class="hv-drawer__subtitle"><i class="fa-regular fa-images"></i> 附件</h4>
+                <div class="hv-attachments__grid">
+                  <button
+                    v-for="att in task.attachments"
+                    :key="att.id"
+                    type="button"
+                    class="hv-attachments__item"
+                    @click="showAttachmentLightbox = att.file_url"
+                  >
+                    <img :src="att.file_url" class="hv-attachments__thumb" :alt="att.file_name || '附件图片'" />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="hv-drawer__section">
@@ -464,6 +482,16 @@ onUnmounted(() => {
         <img :src="task.publisher_payment_qr_url" class="hv-payment-qr-img" alt="收款码" />
       </div>
     </Transition>
+
+    <Transition name="drawer-lightbox">
+      <div
+        v-if="showAttachmentLightbox"
+        class="hv-payment-qr-overlay"
+        @click="showAttachmentLightbox = null"
+      >
+        <img :src="showAttachmentLightbox" class="hv-attachment-lightbox-img" alt="附件预览" />
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -555,6 +583,35 @@ onUnmounted(() => {
   color: var(--c-text-secondary);
   line-height: 1.7;
   margin-bottom: 12px;
+}
+
+.hv-attachments {
+  margin-top: 16px;
+  margin-bottom: 14px;
+}
+
+.hv-attachments__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hv-attachments__item {
+  border: none;
+  background: transparent;
+  padding: 0;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.hv-attachments__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
 }
 
 .hv-detail-grid {
@@ -860,6 +917,15 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   pointer-events: none;
+}
+
+.hv-attachment-lightbox-img {
+  max-width: min(92vw, 980px);
+  max-height: 88vh;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  object-fit: contain;
 }
 
 .drawer-lightbox-enter-active,

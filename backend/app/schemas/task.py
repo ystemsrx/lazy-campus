@@ -42,12 +42,25 @@ class TaskCreate(BaseModel):
     contact_info: str | None = None
     required_gender: Gender | None = None
     icon: str | None = None
+    attachment_urls: list[str] = Field(default_factory=list, max_length=3)
     captcha_token: str | None = Field(default=None, min_length=8, max_length=64)
 
     @field_validator('deadline', mode='after')
     @classmethod
     def normalize_deadline(cls, v: datetime | None) -> datetime | None:
         return _to_naive_utc(v)
+
+    @field_validator('attachment_urls', mode='before')
+    @classmethod
+    def normalize_attachment_urls(cls, v: list[str] | None) -> list[str]:
+        if not v:
+            return []
+        out: list[str] = []
+        for item in v:
+            value = (item or '').strip()
+            if value:
+                out.append(value)
+        return out
 
 
 class TaskUpdate(BaseModel):
@@ -61,11 +74,32 @@ class TaskUpdate(BaseModel):
     contact_info: str | None = None
     required_gender: Gender | None = None
     icon: str | None = None
+    attachment_urls: list[str] | None = Field(default=None, max_length=3)
 
     @field_validator('deadline', mode='after')
     @classmethod
     def normalize_deadline(cls, v: datetime | None) -> datetime | None:
         return _to_naive_utc(v)
+
+    @field_validator('attachment_urls', mode='before')
+    @classmethod
+    def normalize_attachment_urls(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        out: list[str] = []
+        for item in v:
+            value = (item or '').strip()
+            if value:
+                out.append(value)
+        return out
+
+
+class TaskAttachmentItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    file_name: str
+    file_url: str
 
 
 class TaskOut(BaseModel):
@@ -96,6 +130,7 @@ class TaskOut(BaseModel):
     publisher_blocked_by_count: int = 0
     publisher_task_count: int = 0
     publisher_payment_qr_url: str | None = None
+    attachments: list[TaskAttachmentItem] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

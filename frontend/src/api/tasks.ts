@@ -27,10 +27,20 @@ export async function createTask(payload: {
   contact_info: string | null
   required_gender: 'male' | 'female' | null
   icon?: string | null
+  attachment_urls?: string[]
   captcha_token?: string | null
 }) {
   const { data } = await api.post<Task>('/tasks', payload)
   return data
+}
+
+export async function uploadTaskImage(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post<{ url: string }>('/tasks/images', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.url
 }
 
 export async function acceptTask(taskId: number, captchaToken?: string) {
@@ -101,6 +111,7 @@ export async function updateTask(
     contact_info?: string | null
     required_gender?: 'male' | 'female' | null
     icon?: string | null
+    attachment_urls?: string[]
   }
 ) {
   const { data } = await api.put<Task>(`/tasks/${taskId}`, payload)

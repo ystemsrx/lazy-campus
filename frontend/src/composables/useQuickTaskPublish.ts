@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { fetchAgentAvailability, startTaskAgent } from '../api/agent'
-import { createTask, fetchCategories } from '../api/tasks'
+import { createTask, fetchCategories, uploadTaskImage as uploadTaskImageApi } from '../api/tasks'
 import { appSlideCaptcha } from '../components/AppSlideCaptcha.vue'
 import { useAuthStore } from '../stores/auth'
 import type { AgentAvailability, Category } from '../types/api'
@@ -21,6 +21,7 @@ export type QuickTaskEditorForm = {
   contact_info: string
   required_gender: 'male' | 'female' | null
   icon: string
+  attachments: string[]
 }
 
 function createTaskEditorForm(): QuickTaskEditorForm {
@@ -35,6 +36,7 @@ function createTaskEditorForm(): QuickTaskEditorForm {
     contact_info: '',
     required_gender: null,
     icon: 'Hexagon',
+    attachments: [],
   }
 }
 
@@ -99,6 +101,15 @@ export function useQuickTaskPublish(options: {
     showCreateModal.value = true
   }
 
+  async function uploadTaskImage(file: File): Promise<string> {
+    try {
+      return await uploadTaskImageApi(file)
+    } catch (error) {
+      options.showToast(extractError(error, '图片上传失败'), 'error')
+      throw error
+    }
+  }
+
   async function submitPublishTask(mode: 'normal' | 'agent' = 'normal') {
     if (mode === 'agent' && !canCreateWithAgent.value) {
       options.showToast('当前任务不满足 AI 代理开启条件', 'error')
@@ -123,6 +134,7 @@ export function useQuickTaskPublish(options: {
                 : null,
             required_gender: newTask.value.required_gender,
             icon: newTask.value.icon,
+            attachment_urls: newTask.value.attachments,
             captcha_token: captchaToken ?? null,
           }),
         appSlideCaptcha,
@@ -161,6 +173,7 @@ export function useQuickTaskPublish(options: {
     canCreateWithAgent,
     createWithAgentSubmitting,
     openPublishModal,
+    uploadTaskImage,
     submitPublishTask,
   }
 }

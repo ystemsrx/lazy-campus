@@ -90,6 +90,7 @@ const {
   openReportModal,
   reportTargetId,
   showToast,
+  uploadTaskImage,
   openCreateTask,
   submitCreateTask,
   closeDrawer,
@@ -184,6 +185,7 @@ const {
       :now-local="nowLocal"
       :show-agent-action="canCreateWithAgent"
       :agent-submitting="createWithAgentSubmitting"
+      :upload-task-image="uploadTaskImage"
       @submit="submitCreateTask"
       @submit-agent="submitCreateTask('agent')"
     />
@@ -195,6 +197,7 @@ const {
       :categories="categories"
       :now-local="nowLocal"
       :show-agent-action="false"
+      :upload-task-image="uploadTaskImage"
       @submit="submitEditTask"
     />
 

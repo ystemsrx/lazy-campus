@@ -13,6 +13,7 @@ import {
   fetchMessages,
   fetchReviews,
   sendMessage,
+  uploadTaskImage as uploadTaskImageApi,
   updateTask,
 } from '../../api/tasks'
 import { fetchUserReviews } from '../../api/users'
@@ -235,6 +236,15 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     }
   }
 
+  async function uploadTaskImage(file: File): Promise<string> {
+    try {
+      return await uploadTaskImageApi(file)
+    } catch (error) {
+      options.showToast(extractError(error, '图片上传失败'), 'error')
+      throw error
+    }
+  }
+
   function openDrawer(task: Task) {
     selectedTask.value = task
     showReviewForm.value = false
@@ -303,6 +313,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
                 : null,
             required_gender: newTask.value.required_gender,
             icon: newTask.value.icon,
+            attachment_urls: newTask.value.attachments,
             captcha_token: captchaToken ?? null,
           }),
         options.requestCaptcha,
@@ -441,6 +452,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
       contact_info: task.contact_info || '',
       required_gender: task.required_gender,
       icon: task.icon || 'Hexagon',
+      attachments: task.attachments.map((item) => item.file_url),
     }
     closeDrawer()
     showPostModal.value = true
@@ -525,6 +537,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
       contact_info: task.contact_info || '',
       required_gender: task.required_gender,
       icon: task.icon || 'Hexagon',
+      attachments: task.attachments.map((item) => item.file_url),
     }
     closeDrawer()
     showEditModal.value = true
@@ -551,6 +564,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
             : null,
         required_gender: editTaskForm.value.required_gender,
         icon: editTaskForm.value.icon,
+        attachment_urls: editTaskForm.value.attachments,
       })
       showEditModal.value = false
       editingTask.value = null
@@ -627,6 +641,7 @@ export function useHomeTaskDrawer(options: UseHomeTaskDrawerOptions) {
     refreshAgentAvailability,
     refreshTaskMeta,
     refreshPublisherReviews,
+    uploadTaskImage,
     submitCreateTask,
     handleAcceptTask,
     handleConfirmTask,

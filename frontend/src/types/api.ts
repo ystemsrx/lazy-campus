@@ -114,8 +114,15 @@ export interface Task {
   publisher_task_count: number
   publisher_payment_qr_url: string | null
   icon: string | null
+  attachments: TaskAttachment[]
   created_at: string
   updated_at: string
+}
+
+export interface TaskAttachment {
+  id: number
+  file_name: string
+  file_url: string
 }
 
 export interface Category {

@@ -110,6 +110,7 @@ const {
   openDrawer: openTaskDrawer,
   closeDrawer: closeTaskDrawer,
   refreshAgentAvailability,
+  uploadTaskImage,
   submitCreateTask,
   handleAcceptTask: _handleAcceptTask,
   handleConfirmTask,
@@ -340,6 +341,7 @@ onDeactivated(() => {
     :now-local="nowLocal"
     :show-agent-action="canCreateWithAgent"
     :agent-submitting="createWithAgentSubmitting"
+    :upload-task-image="uploadTaskImage"
     @submit="submitCreateTask"
     @submit-agent="submitCreateTask('agent')"
   />
@@ -351,6 +353,7 @@ onDeactivated(() => {
     :categories="categories"
     :now-local="nowLocal"
     :show-agent-action="false"
+    :upload-task-image="uploadTaskImage"
     @submit="submitEditTask"
   />
 

@@ -1,11 +1,16 @@
+import io
 import math
+import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import and_, asc, case, desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import optional_user, require_admin, require_completed_user, require_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.enums import ContactVisibility, RatingTargetRole, TaskStatus
 from app.models.moderation import Blacklist
@@ -23,10 +28,10 @@ from app.models.task import (
 )
 from app.models.user import User, WorkerProfile, worker_skill_tags
 from app.schemas.task import (
-    TaskAttachmentCreate,
-    TaskAttachmentOut,
     CategoryCreate,
     CategoryOut,
+    TaskAttachmentCreate,
+    TaskAttachmentOut,
     TaskCreate,
     TaskMessageCreate,
     TaskMessageOut,
@@ -47,6 +52,10 @@ _URGENCY_CAP = 0.1
 _URGENCY_WINDOW_H = 72.0
 _BLOCK_K = 0.5
 _BAN_K = 1.5
+_TASK_IMAGE_MAX_SIZE = 10 * 1024 * 1024
+_TASK_IMAGE_MAX_COUNT = 3
+_TASK_IMAGE_DIR = Path(__file__).resolve().parents[3] / 'uploads' / 'task_images'
+_TASK_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _publisher_mu(db: Session) -> float:
@@ -90,6 +99,7 @@ def _task_to_out(
     task: Task, publisher: User, assignee: User | None,
     viewer_id: int | None = None, publisher_completed_count: int = 0,
     publisher_task_count: int = 0,
+    attachments: list[TaskAttachment] | None = None,
 ) -> TaskOut:
     return TaskOut(
         id=task.id,
@@ -117,9 +127,162 @@ def _task_to_out(
         publisher_blocked_by_count=publisher.blocked_by_count,
         publisher_task_count=publisher_task_count,
         publisher_payment_qr_url=publisher.payment_qr_url,
+        attachments=attachments or [],
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
+
+
+def _attachments_by_task_ids(db: Session, task_ids: set[int]) -> dict[int, list[TaskAttachment]]:
+    if not task_ids:
+        return {}
+    rows = (
+        db.query(TaskAttachment)
+        .filter(TaskAttachment.task_id.in_(task_ids))
+        .order_by(asc(TaskAttachment.created_at), asc(TaskAttachment.id))
+        .all()
+    )
+    out: dict[int, list[TaskAttachment]] = {}
+    for row in rows:
+        out.setdefault(row.task_id, []).append(row)
+    return out
+
+
+def _extract_task_image_file_name(url: str) -> str:
+    file_name = url.split('?', 1)[0].rsplit('/', 1)[-1].strip()
+    if not file_name:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+    if '/' in file_name or '\\' in file_name or '..' in file_name:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+    if not file_name.lower().endswith('.webp'):
+        raise HTTPException(status_code=422, detail='附件图片仅支持 webp')
+    return file_name
+
+
+def _task_image_relative_path(url: str) -> Path:
+    raw = (url or '').strip()
+    if not raw:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+
+    parsed = urlparse(raw)
+    path = parsed.path or raw
+    marker = '/uploads/task_images/'
+    idx = path.find(marker)
+    if idx < 0:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+    rel_raw = path[idx + len(marker):].strip('/')
+    if not rel_raw:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+
+    rel = Path(rel_raw)
+    if rel.is_absolute() or any(part in ('', '.', '..') for part in rel.parts):
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+    if rel.suffix.lower() != '.webp':
+        raise HTTPException(status_code=422, detail='附件图片仅支持 webp')
+    return rel
+
+
+def _task_image_absolute_path(url: str) -> Path:
+    root = _TASK_IMAGE_DIR.resolve()
+    target = (root / _task_image_relative_path(url)).resolve()
+    if root not in target.parents:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
+    return target
+
+
+def _delete_task_image_file_if_unreferenced(db: Session, url: str) -> None:
+    ref_count = (
+        db.query(func.count(TaskAttachment.id))
+        .filter(TaskAttachment.file_url == url)
+        .scalar()
+        or 0
+    )
+    if ref_count > 0:
+        return
+
+    try:
+        target = _task_image_absolute_path(url)
+    except HTTPException:
+        return
+
+    target.unlink(missing_ok=True)
+
+    # 清理空目录（例如 YYYY/MM 分区在该文件删除后为空）
+    root = _TASK_IMAGE_DIR.resolve()
+    parent = target.parent
+    while parent != root:
+        if not parent.exists():
+            parent = parent.parent
+            continue
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+
+
+def _normalize_task_attachment_urls(urls: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    allowed_prefixes = (
+        f'{settings.backend_public_url}/uploads/task_images/',
+        '/uploads/task_images/',
+    )
+    for raw in urls:
+        url = (raw or '').strip()
+        if not url:
+            continue
+        if not any(url.startswith(prefix) for prefix in allowed_prefixes):
+            raise HTTPException(status_code=422, detail='附件图片地址非法')
+        _extract_task_image_file_name(url)
+        if not _task_image_absolute_path(url).exists():
+            raise HTTPException(status_code=422, detail='附件图片不存在或已失效，请重新上传')
+        if url in seen:
+            continue
+        normalized.append(url)
+        seen.add(url)
+
+    if len(normalized) > _TASK_IMAGE_MAX_COUNT:
+        raise HTTPException(status_code=422, detail=f'任务最多上传 {_TASK_IMAGE_MAX_COUNT} 张附件图片')
+    return normalized
+
+
+def _replace_task_attachments(db: Session, task_id: int, uploader_id: int, urls: list[str]) -> None:
+    old_rows = db.query(TaskAttachment).filter(TaskAttachment.task_id == task_id).all()
+    old_urls = {row.file_url for row in old_rows}
+    next_urls = set(urls)
+
+    removed_urls = old_urls - next_urls
+    if removed_urls:
+        (
+            db.query(TaskAttachment)
+            .filter(TaskAttachment.task_id == task_id, TaskAttachment.file_url.in_(removed_urls))
+            .delete(synchronize_session=False)
+        )
+
+    existing_urls = old_urls - removed_urls
+    for url in urls:
+        if url in existing_urls:
+            continue
+        db.add(TaskAttachment(
+            task_id=task_id,
+            uploader_id=uploader_id,
+            file_name=_extract_task_image_file_name(url),
+            file_url=url,
+        ))
+    db.flush()
+
+    for url in removed_urls:
+        _delete_task_image_file_if_unreferenced(db, url)
+
+
+def _delete_all_task_attachments(db: Session, task_id: int) -> None:
+    rows = db.query(TaskAttachment.file_url).filter(TaskAttachment.task_id == task_id).all()
+    urls = [row[0] for row in rows]
+    db.query(TaskAttachment).filter(TaskAttachment.task_id == task_id).delete(synchronize_session=False)
+    db.flush()
+    for url in urls:
+        _delete_task_image_file_if_unreferenced(db, url)
 
 
 def _blocked_between(db: Session, user_a: int, user_b: int) -> bool:
@@ -414,9 +577,18 @@ def list_tasks(
             .all()
         )
 
+    attachment_map = _attachments_by_task_ids(db, {task.id for task, _ in rows})
     viewer_id = user.id if user else None
     return [
-        _task_to_out(task, publisher, assignees.get(task.assignee_id), viewer_id, pub_completed.get(publisher.id, 0), pub_total_tasks.get(publisher.id, 0))
+        _task_to_out(
+            task,
+            publisher,
+            assignees.get(task.assignee_id),
+            viewer_id,
+            pub_completed.get(publisher.id, 0),
+            pub_total_tasks.get(publisher.id, 0),
+            attachment_map.get(task.id),
+        )
         for task, publisher in rows
     ]
 
@@ -448,6 +620,7 @@ def create_task(
             message='24小时内发布任务已超过 5 条，请先完成滑块验证',
         )
 
+    attachment_urls = _normalize_task_attachment_urls(payload.attachment_urls)
     task = Task(
         title=payload.title,
         description=payload.description,
@@ -463,12 +636,65 @@ def create_task(
     )
     db.add(task)
     db.flush()
+    _replace_task_attachments(db, task.id, user.id, attachment_urls)
     db.add(TaskPublishLog(user_id=user.id, task_id=task.id))
     db.commit()
     db.refresh(task)
 
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
-    return _task_to_out(task, user, assignee=None, viewer_id=user.id, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        user,
+        assignee=None,
+        viewer_id=user.id,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
+
+
+@router.post('/images', response_model=dict)
+async def upload_task_image(
+    file: UploadFile = File(...),
+    _user: User = Depends(require_completed_user),
+) -> dict:
+    content_type = (file.content_type or '').lower()
+    if not content_type.startswith('image/'):
+        raise HTTPException(status_code=415, detail='仅支持图片文件')
+
+    raw = await file.read(_TASK_IMAGE_MAX_SIZE + 1)
+    if len(raw) > _TASK_IMAGE_MAX_SIZE:
+        raise HTTPException(status_code=413, detail='图片大小不能超过 10MB')
+
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        raise HTTPException(status_code=500, detail='服务器缺少 Pillow 依赖')
+
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        raise HTTPException(status_code=400, detail='无效图片文件')
+
+    if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+        rgba = img.convert('RGBA')
+        bg = Image.new('RGB', rgba.size, (255, 255, 255))
+        bg.paste(rgba, mask=rgba.split()[-1])
+        img = bg
+    else:
+        img = img.convert('RGB')
+
+    now = datetime.utcnow()
+    partition = Path(str(now.year)) / f'{now.month:02d}'
+    target_dir = _TASK_IMAGE_DIR / partition
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f'{uuid.uuid4().hex}.webp'
+    target = target_dir / filename
+    img.save(target, format='WEBP', quality=80)
+
+    return {'url': f'{settings.backend_public_url}/uploads/task_images/{partition.as_posix()}/{filename}'}
 
 
 @router.get('/{task_id}', response_model=TaskOut)
@@ -480,7 +706,16 @@ def get_task(task_id: int, user: User | None = Depends(optional_user), db: Sessi
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
-    return _task_to_out(task, publisher, assignee, viewer_id=user.id if user else None, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        publisher,
+        assignee,
+        viewer_id=user.id if user else None,
+        publisher_completed_count=pub_completed,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 @router.put('/{task_id}', response_model=TaskOut)
@@ -499,6 +734,7 @@ def update_task(
         raise HTTPException(status_code=400, detail='Task already accepted or closed')
 
     data = payload.model_dump(exclude_unset=True)
+    attachment_urls = data.pop('attachment_urls', None)
     for k, v in data.items():
         setattr(task, k, v)
 
@@ -510,12 +746,23 @@ def update_task(
     if task.contact_visibility == ContactVisibility.INTERNAL_ONLY:
         task.contact_info = None
 
+    if attachment_urls is not None:
+        _replace_task_attachments(db, task.id, user.id, _normalize_task_attachment_urls(attachment_urls))
+
     db.add(task)
     db.commit()
     db.refresh(task)
 
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
-    return _task_to_out(task, user, None, viewer_id=user.id, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        user,
+        None,
+        viewer_id=user.id,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 _ABANDON_WINDOW_H = 24
@@ -616,7 +863,16 @@ def accept_task(
     publisher = db.get(User, task.publisher_id)
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
-    return _task_to_out(task, publisher, user, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        publisher,
+        user,
+        viewer_id=user.id,
+        publisher_completed_count=pub_completed,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 @router.post('/{task_id}/confirm-complete', response_model=TaskOut)
@@ -647,7 +903,16 @@ def confirm_complete(task_id: int, user: User = Depends(require_completed_user),
     assignee = db.get(User, task.assignee_id) if task.assignee_id else None
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == user.id).scalar() or 0
-    return _task_to_out(task, user, assignee, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        user,
+        assignee,
+        viewer_id=user.id,
+        publisher_completed_count=pub_completed,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 @router.post('/{task_id}/abandon', response_model=TaskOut)
@@ -682,7 +947,16 @@ def abandon_task(task_id: int, user: User = Depends(require_completed_user), db:
     publisher = db.get(User, task.publisher_id)
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
-    return _task_to_out(task, publisher, None, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        publisher,
+        None,
+        viewer_id=user.id,
+        publisher_completed_count=pub_completed,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 @router.post('/{task_id}/cancel', response_model=TaskOut)
@@ -720,7 +994,16 @@ def cancel_task(task_id: int, user: User = Depends(require_completed_user), db: 
     publisher = db.get(User, task.publisher_id)
     pub_completed = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id, Task.status == TaskStatus.COMPLETED).scalar() or 0
     pub_total = db.query(func.count(Task.id)).filter(Task.publisher_id == task.publisher_id).scalar() or 0
-    return _task_to_out(task, publisher, None, viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total)
+    attachment_map = _attachments_by_task_ids(db, {task.id})
+    return _task_to_out(
+        task,
+        publisher,
+        None,
+        viewer_id=user.id,
+        publisher_completed_count=pub_completed,
+        publisher_task_count=pub_total,
+        attachments=attachment_map.get(task.id),
+    )
 
 
 @router.delete('/{task_id}')
@@ -735,6 +1018,7 @@ def delete_task(task_id: int, user: User = Depends(require_completed_user), db: 
     if task.status not in (TaskStatus.OPEN, TaskStatus.CANCELED):
         raise HTTPException(status_code=400, detail='当前任务状态不允许删除')
 
+    _delete_all_task_attachments(db, task.id)
     task.is_deleted = True
     task.deleted_at = datetime.utcnow()
     db.add(task)
@@ -900,12 +1184,23 @@ def create_attachment(
         raise HTTPException(status_code=404, detail='Task not found')
     if not _is_participant(task, user.id):
         raise HTTPException(status_code=403, detail='Only participants can upload attachments')
+    existing_count = (
+        db.query(func.count(TaskAttachment.id))
+        .filter(TaskAttachment.task_id == task_id)
+        .scalar()
+        or 0
+    )
+    if existing_count >= _TASK_IMAGE_MAX_COUNT:
+        raise HTTPException(status_code=422, detail=f'任务最多上传 {_TASK_IMAGE_MAX_COUNT} 张附件图片')
+    normalized = _normalize_task_attachment_urls([payload.file_url])
+    if not normalized:
+        raise HTTPException(status_code=422, detail='附件图片地址非法')
 
     attachment = TaskAttachment(
         task_id=task_id,
         uploader_id=user.id,
-        file_name=payload.file_name,
-        file_url=payload.file_url,
+        file_name=_extract_task_image_file_name(normalized[0]),
+        file_url=normalized[0],
     )
     db.add(attachment)
     db.commit()
@@ -994,7 +1289,19 @@ def list_my_published(user: User = Depends(require_completed_user), db: Session 
     assignees = {u.id: u for u in db.query(User).filter(User.id.in_(assignee_ids)).all()} if assignee_ids else {}
     pub_total = len(rows)
     pub_completed = sum(1 for t in rows if t.status == TaskStatus.COMPLETED)
-    return [_task_to_out(task, user, assignees.get(task.assignee_id), viewer_id=user.id, publisher_completed_count=pub_completed, publisher_task_count=pub_total) for task in rows]
+    attachment_map = _attachments_by_task_ids(db, {task.id for task in rows})
+    return [
+        _task_to_out(
+            task,
+            user,
+            assignees.get(task.assignee_id),
+            viewer_id=user.id,
+            publisher_completed_count=pub_completed,
+            publisher_task_count=pub_total,
+            attachments=attachment_map.get(task.id),
+        )
+        for task in rows
+    ]
 
 
 @router.get('/me/accepted', response_model=list[TaskOut])
@@ -1015,4 +1322,16 @@ def list_my_accepted(user: User = Depends(require_completed_user), db: Session =
             .filter(Task.publisher_id.in_(publisher_ids))
             .group_by(Task.publisher_id).all()
         )
-    return [_task_to_out(task, publishers.get(task.publisher_id), user, viewer_id=user.id, publisher_completed_count=pub_completed_map.get(task.publisher_id, 0), publisher_task_count=pub_total_map.get(task.publisher_id, 0)) for task in rows]
+    attachment_map = _attachments_by_task_ids(db, {task.id for task in rows})
+    return [
+        _task_to_out(
+            task,
+            publishers.get(task.publisher_id),
+            user,
+            viewer_id=user.id,
+            publisher_completed_count=pub_completed_map.get(task.publisher_id, 0),
+            publisher_task_count=pub_total_map.get(task.publisher_id, 0),
+            attachments=attachment_map.get(task.id),
+        )
+        for task in rows
+    ]
