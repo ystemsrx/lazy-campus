@@ -2,11 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
 
-const publicPaths = ['/login', '/home']
+const publicPaths = ['/', '/login', '/home']
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/', component: () => import('../views/LandingView.vue') },
     { path: '/login', component: () => import('../views/LoginView.vue') },
     { path: '/complete-profile', component: () => import('../views/CompleteProfileView.vue') },
     { path: '/admin', component: () => import('../views/AdminView.vue') },
@@ -57,7 +58,7 @@ router.beforeEach(async (to) => {
     return '/login'
   }
 
-  if (to.path === '/login' && auth.isAuthenticated) {
+  if ((to.path === '/login' || to.path === '/') && auth.isAuthenticated) {
     return auth.role === 'admin' ? '/admin' : '/home'
   }
 
