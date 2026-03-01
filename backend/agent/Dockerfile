@@ -56,9 +56,6 @@ RUN set -eux; \
       # 中文完整支持：时区 + locale
       tzdata locales \
       \
-      # OCR
-      tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim libtesseract-dev \
-      \
       # 字体/中文支持（系统/Matplotlib）
       fontconfig \
       fonts-noto-cjk \
@@ -212,7 +209,6 @@ RUN set -eux; \
       openpyxl \
       tqdm rich typer \
       pydantic \
-      pytesseract \
       \
       pymupdf \
       pdf2image \

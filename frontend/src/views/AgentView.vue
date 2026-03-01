@@ -187,6 +187,67 @@ function parseToolArgs(raw: string | null): Record<string, any> {
   try { return JSON.parse(raw) } catch { return {} }
 }
 
+interface StrReplaceEdit {
+  old: string
+  new: string
+}
+
+interface StrReplaceDiffLine {
+  kind: 'old' | 'new'
+  text: string
+}
+
+function toSafeText(value: unknown): string {
+  if (value == null) return ''
+  return typeof value === 'string' ? value : String(value)
+}
+
+function normalizeStrReplaceEdit(raw: unknown): StrReplaceEdit | null {
+  if (!raw || typeof raw !== 'object') return null
+  const record = raw as Record<string, unknown>
+  const hasKnownField = (
+    'old' in record
+    || 'new' in record
+    || 'old_str' in record
+    || 'new_str' in record
+    || 'old_text' in record
+    || 'new_text' in record
+    || 'before' in record
+    || 'after' in record
+  )
+  if (!hasKnownField) return null
+  return {
+    old: toSafeText(record.old ?? record.old_str ?? record.old_text ?? record.before),
+    new: toSafeText(record.new ?? record.new_str ?? record.new_text ?? record.after),
+  }
+}
+
+function getStrReplaceEdits(args: Record<string, any> | undefined): StrReplaceEdit[] {
+  if (!args || typeof args !== 'object') return []
+  const editRaw = (args as Record<string, unknown>).edit
+  if (Array.isArray(editRaw)) {
+    return editRaw
+      .map(item => normalizeStrReplaceEdit(item))
+      .filter((item): item is StrReplaceEdit => item != null)
+  }
+  const singleFromEdit = normalizeStrReplaceEdit(editRaw)
+  if (singleFromEdit) return [singleFromEdit]
+  const singleFromRoot = normalizeStrReplaceEdit(args)
+  if (singleFromRoot) return [singleFromRoot]
+  return []
+}
+
+function splitDiffLines(text: string): string[] {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+}
+
+function buildStrReplaceDiffLines(edit: StrReplaceEdit): StrReplaceDiffLine[] {
+  return [
+    ...splitDiffLines(edit.old).map(text => ({ kind: 'old' as const, text })),
+    ...splitDiffLines(edit.new).map(text => ({ kind: 'new' as const, text })),
+  ]
+}
+
 function isShellTool(name: string | null): boolean {
   if (!name) return false
   const n = name.toLowerCase()
@@ -1524,15 +1585,21 @@ onUnmounted(() => {
                           <span class="terminal-tool-key">path</span>
                           <span class="terminal-tool-val">{{ entry.filePath }}</span>
                         </div>
-                        <div v-if="entry.args?.edit" class="terminal-diff">
-                          <div class="terminal-diff-old">
-                            <span class="terminal-diff-label">-</span>
-                            <code>{{ entry.args.edit.old }}</code>
-                          </div>
-                          <div class="terminal-diff-new">
-                            <span class="terminal-diff-label">+</span>
-                            <code>{{ entry.args.edit.new }}</code>
-                          </div>
+                        <div v-if="getStrReplaceEdits(entry.args).length" class="terminal-diff">
+                          <div class="terminal-diff-meta">--- a/{{ entry.filePath || '(unknown)' }}</div>
+                          <div class="terminal-diff-meta">+++ b/{{ entry.filePath || '(unknown)' }}</div>
+                          <template v-for="(edit, editIdx) in getStrReplaceEdits(entry.args)" :key="`edit-${editIdx}`">
+                            <div class="terminal-diff-hunk">@@ edit {{ editIdx + 1 }} @@</div>
+                            <div
+                              v-for="(line, lineIdx) in buildStrReplaceDiffLines(edit)"
+                              :key="`line-${editIdx}-${lineIdx}`"
+                              class="terminal-diff-line"
+                              :class="line.kind === 'old' ? 'terminal-diff-line--old' : 'terminal-diff-line--new'"
+                            >
+                              <span class="terminal-diff-line-prefix">{{ line.kind === 'old' ? '-' : '+' }}</span>
+                              <code class="terminal-diff-line-code">{{ line.text || ' ' }}</code>
+                            </div>
+                          </template>
                         </div>
                         <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line" :class="{ 'terminal-tool-ok-line--error': entry.hasErrorOutput }">
                           <i :class="entry.hasErrorOutput ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ entry.outputText }}
@@ -3532,53 +3599,70 @@ onUnmounted(() => {
 
 .terminal-diff {
   border-top: 1px solid #21262d;
+  max-height: 280px;
+  overflow-y: auto;
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
 }
 
-.terminal-diff-old {
+.terminal-diff-meta {
+  padding: 2px 12px;
+  color: #8b949e;
+  font-size: 12px;
+}
+
+.terminal-diff-hunk {
+  padding: 3px 12px;
+  background: rgba(88, 166, 255, 0.08);
+  color: #79c0ff;
+  font-size: 12px;
+  border-top: 1px solid #21262d;
+}
+
+.terminal-diff-line {
   display: flex;
   gap: 8px;
-  padding: 4px 12px;
+  align-items: flex-start;
+  padding: 2px 12px;
+}
+
+.terminal-diff-line--old {
   background: rgba(248, 81, 73, 0.1);
-  font-size: 12px;
-  align-items: flex-start;
 }
 
-.terminal-diff-new {
-  display: flex;
-  gap: 8px;
-  padding: 4px 12px;
+.terminal-diff-line--new {
   background: rgba(63, 185, 80, 0.1);
-  font-size: 12px;
-  align-items: flex-start;
 }
 
-.terminal-diff-label {
+.terminal-diff-line-prefix {
   flex-shrink: 0;
   width: 14px;
   text-align: center;
   font-weight: 700;
 }
 
-.terminal-diff-old .terminal-diff-label { color: #f85149; }
-.terminal-diff-new .terminal-diff-label { color: #3fb950; }
+.terminal-diff-line--old .terminal-diff-line-prefix { color: #f85149; }
+.terminal-diff-line--new .terminal-diff-line-prefix { color: #3fb950; }
 
-.terminal-diff-old code {
-  color: #ffa198;
+.terminal-diff-line-code {
+  flex: 1;
+  color: #c9d1d9;
   background: transparent;
-  font-size: inherit;
+  font-size: 12px;
   padding: 0;
   word-break: break-all;
   white-space: pre-wrap;
 }
 
-.terminal-diff-new code {
-  color: #7ee787;
-  background: transparent;
-  font-size: inherit;
-  padding: 0;
-  word-break: break-all;
-  white-space: pre-wrap;
+.terminal-diff-line--old .terminal-diff-line-code { color: #ffa198; }
+.terminal-diff-line--new .terminal-diff-line-code { color: #7ee787; }
+
+.terminal-diff::-webkit-scrollbar { width: 4px; }
+.terminal-diff::-webkit-scrollbar-track { background: #0d1117; }
+.terminal-diff::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+.terminal-diff-line-code::selection {
+  background: rgba(56, 139, 253, 0.35);
+  color: #f0f6fc;
 }
 
 /* --- ReadMediaFile --- */
