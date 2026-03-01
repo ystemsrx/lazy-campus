@@ -615,6 +615,14 @@ export interface AgentSendResult {
   max_interactions: number
 }
 
+export interface AgentCancelResult {
+  canceled: boolean
+  mode: 'none' | 'queued' | 'running'
+  removed_message_id: number | null
+  restored_content: string | null
+  restored_attachments: AgentAttachment[]
+}
+
 export interface AgentMySessionItem {
   session_id: string
   task_id: number

@@ -113,6 +113,14 @@ class AgentSendOut(BaseModel):
     max_interactions: int
 
 
+class AgentCancelOut(BaseModel):
+    canceled: bool
+    mode: Literal['none', 'queued', 'running'] = 'none'
+    removed_message_id: int | None = None
+    restored_content: str | None = None
+    restored_attachments: list[AgentAttachmentOut] = Field(default_factory=list)
+
+
 class AgentDeliverableDeleteBody(BaseModel):
     names: list[str] = Field(min_length=1)
 

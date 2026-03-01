@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
-import AppToast from '../components/AppToast.vue'
-import ChatRichTextRenderer from '../components/chat/ChatRichTextRenderer.vue'
-import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
-import HomeTaskEditorModal from '../components/home/HomeTaskEditorModal.vue'
+import AppToast from "../components/AppToast.vue";
+import ChatRichTextRenderer from "../components/chat/ChatRichTextRenderer.vue";
+import HomeHeaderBar from "../components/home/HomeHeaderBar.vue";
+import HomeTaskEditorModal from "../components/home/HomeTaskEditorModal.vue";
 import {
   cancelAgentSession,
   deleteAgentDeliverables,
@@ -15,30 +15,30 @@ import {
   fetchAgentSession,
   fetchMyAgentSessions,
   sendAgentMessage,
-} from '../api/agent'
-import { getFileIconComponent } from '../composables/chat/attachmentUtils'
-import { useAppToast } from '../composables/useAppToast'
-import { useQuickTaskPublish } from '../composables/useQuickTaskPublish'
-import { useAuthStore } from '../stores/auth'
+} from "../api/agent";
+import { getFileIconComponent } from "../composables/chat/attachmentUtils";
+import { useAppToast } from "../composables/useAppToast";
+import { useQuickTaskPublish } from "../composables/useQuickTaskPublish";
+import { useAuthStore } from "../stores/auth";
 import type {
   AgentAvailability,
   AgentDeliverable,
   AgentMessage,
   AgentMySessionItem,
   AgentSessionDetail,
-} from '../types/api'
-import { extractError } from '../utils/error'
-import { formatChatTime, formatFull, nowLocal } from '../utils/time'
+} from "../types/api";
+import { extractError } from "../utils/error";
+import { formatChatTime, formatFull, nowLocal } from "../utils/time";
 
-const route = useRoute()
-const router = useRouter()
-const auth = useAuthStore()
+const route = useRoute();
+const router = useRouter();
+const auth = useAuthStore();
 
-const appTitle = import.meta.env.VITE_APP_TITLE || '校园任务平台'
-const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined
-const logoUrl = computed(() => (logoFile ? `/logos/${logoFile}` : null))
-const sessionId = computed(() => String(route.params.sessionId || ''))
-const { toast, showToast, clearToast } = useAppToast()
+const appTitle = import.meta.env.VITE_APP_TITLE || "校园任务平台";
+const logoFile = import.meta.env.VITE_APP_LOGO as string | undefined;
+const logoUrl = computed(() => (logoFile ? `/logos/${logoFile}` : null));
+const sessionId = computed(() => String(route.params.sessionId || ""));
+const { toast, showToast, clearToast } = useAppToast();
 const {
   showCreateModal,
   newTask,
@@ -48,1072 +48,1411 @@ const {
   openPublishModal,
   uploadTaskImage,
   submitPublishTask,
-} = useQuickTaskPublish({ showToast })
+} = useQuickTaskPublish({ showToast });
 
-const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
-function checkMobile() { isMobile.value = window.innerWidth < 768 }
+const isMobile = ref(
+  typeof window !== "undefined" ? window.innerWidth < 768 : false,
+);
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768;
+}
 
 // ── Sidebar ──
 
-const allSessions = ref<AgentMySessionItem[]>([])
-const loadingSessions = ref(true)
-const searchQuery = ref('')
+const allSessions = ref<AgentMySessionItem[]>([]);
+const loadingSessions = ref(true);
+const searchQuery = ref("");
 
 const filteredSessions = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return allSessions.value
-  return allSessions.value.filter(s => s.task_title.toLowerCase().includes(q))
-})
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return allSessions.value;
+  return allSessions.value.filter((s) =>
+    s.task_title.toLowerCase().includes(q),
+  );
+});
 
 async function loadSessions() {
   try {
-    const result = await fetchMyAgentSessions({ page: 1, page_size: 100 })
-    allSessions.value = result.items
-  } catch { /* ignore */ }
-  finally { loadingSessions.value = false }
+    const result = await fetchMyAgentSessions({ page: 1, page_size: 100 });
+    allSessions.value = result.items;
+  } catch {
+    /* ignore */
+  } finally {
+    loadingSessions.value = false;
+  }
 }
 
 function selectSession(s: AgentMySessionItem) {
-  router.push(`/agent/${s.session_id}`)
+  router.push(`/agent/${s.session_id}`);
 }
 
 function sessionStatusDot(s: AgentMySessionItem): string {
-  if (s.status === 'running') return 'running'
-  if (s.status === 'queued') return 'queued'
-  if (s.task_status === 'completed') return 'done'
-  if (s.task_status === 'canceled') return 'canceled'
-  return ''
+  if (s.status === "running") return "running";
+  if (s.status === "queued") return "queued";
+  if (s.task_status === "completed") return "done";
+  if (s.task_status === "canceled") return "canceled";
+  return "";
 }
 
 // ── Session & Messages ──
 
-const availability = ref<AgentAvailability | null>(null)
-const session = ref<AgentSessionDetail | null>(null)
-const messages = ref<AgentMessage[]>([])
+const availability = ref<AgentAvailability | null>(null);
+const session = ref<AgentSessionDetail | null>(null);
+const messages = ref<AgentMessage[]>([]);
 
-const loading = ref(true)
-const sending = ref(false)
-const canceling = ref(false)
-const inputText = ref('')
-const pendingFiles = ref<File[]>([])
+const loading = ref(true);
+const sending = ref(false);
+const canceling = ref(false);
+const inputText = ref("");
+const pendingFiles = ref<File[]>([]);
+const queuedDraft = ref<{ text: string; files: File[] } | null>(null);
 
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const agentTextareaRef = ref<HTMLTextAreaElement | null>(null)
-const chatScrollRef = ref<HTMLDivElement | null>(null)
-const terminalStickToBottomMap = ref(new Map<number, boolean>())
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const agentTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const chatScrollRef = ref<HTMLDivElement | null>(null);
+const terminalStickToBottomMap = ref(new Map<number, boolean>());
 
 function autoResizeTextarea() {
   nextTick(() => {
-    const el = agentTextareaRef.value
-    if (!el) return
-    el.style.height = '0px'
-    const height = Math.min(Math.max(el.scrollHeight, 38), 160)
-    el.style.height = `${height}px`
-    el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
-  })
+    const el = agentTextareaRef.value;
+    if (!el) return;
+    el.style.height = "0px";
+    const height = Math.min(Math.max(el.scrollHeight, 38), 160);
+    el.style.height = `${height}px`;
+    el.style.overflowY = el.scrollHeight > 160 ? "auto" : "hidden";
+  });
 }
 
-watch(inputText, () => { autoResizeTextarea() }, { immediate: true })
+watch(
+  inputText,
+  () => {
+    autoResizeTextarea();
+  },
+  { immediate: true },
+);
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
-let pollBusy = false
-let lastMessageId = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollBusy = false;
+let lastMessageId = 0;
 
 const interactionLeft = computed(() => {
-  if (!session.value) return 0
-  return Math.max(0, session.value.max_interactions - session.value.interaction_count)
-})
+  if (!session.value) return 0;
+  return Math.max(
+    0,
+    session.value.max_interactions - session.value.interaction_count,
+  );
+});
 
-const queueAheadUsers = computed(() => {
-  if (!session.value?.queue_waiting) return 0
-  return Math.max(0, session.value.queue_ahead_users || 0)
-})
+const queueAheadUsers = computed(() =>
+  Math.max(0, session.value?.queue_ahead_users || 0),
+);
+const needsQueue = computed(() => Boolean(session.value?.queue_waiting));
+const isCancelable = computed(
+  () =>
+    session.value?.status === "running" || session.value?.status === "queued",
+);
 
 const isTaskTerminal = computed(() => {
-  const status = session.value?.task_status
-  return status === 'completed' || status === 'canceled'
-})
+  const status = session.value?.task_status;
+  return status === "completed" || status === "canceled";
+});
 
 const sendDisabled = computed(() => {
-  if (!session.value) return true
-  if (sending.value) return true
-  if (isTaskTerminal.value) return true
-  if (!session.value.can_send) return true
-  if (session.value.interaction_count >= session.value.max_interactions) return true
-  return false
-})
+  if (!session.value) return true;
+  if (sending.value) return true;
+  if (isTaskTerminal.value) return true;
+  if (!session.value.can_send) return true;
+  if (session.value.interaction_count >= session.value.max_interactions)
+    return true;
+  return false;
+});
 
 const useDisabledComposeStyle = computed(() => {
-  if (!session.value) return false
-  if (session.value.status === 'running') return true
-  if (isTaskTerminal.value) return true
-  if (!session.value.can_send) return true
-  if (session.value.interaction_count >= session.value.max_interactions) return true
-  return false
-})
+  if (!session.value) return false;
+  if (session.value.status === "running" || session.value.status === "queued")
+    return true;
+  if (isTaskTerminal.value) return true;
+  if (!session.value.can_send) return true;
+  if (session.value.interaction_count >= session.value.max_interactions)
+    return true;
+  return false;
+});
+
+const queueText = computed(() =>
+  queueAheadUsers.value > 0 ? `前方还有 ${queueAheadUsers.value} 人` : "",
+);
+
+const sessionStatusText = computed(() => {
+  if (!session.value) return "空闲";
+  if (isTaskTerminal.value)
+    return session.value.task_status === "completed" ? "已完成" : "已取消";
+  if (session.value.status === "running") return "正在执行...";
+  if (session.value.status === "queued")
+    return queueAheadUsers.value > 0
+      ? `排队中，${queueText.value}`
+      : "排队中...";
+  if (needsQueue.value)
+    return queueAheadUsers.value > 0 ? `需排队，${queueText.value}` : "需排队";
+  return "空闲";
+});
 
 const composePlaceholder = computed(() => {
-  if (!session.value) return '描述你的目标、预期产物和约束条件...'
-  if (session.value.task_status === 'canceled') return '任务已取消，会话已关闭。'
-  if (session.value.task_status === 'completed') return '任务已完成，会话已关闭。'
-  if (session.value.status === 'queued') return queueAheadUsers.value > 0 ? `排队中，前面还有 ${queueAheadUsers.value} 人。` : '排队中，请稍候...'
-  if (session.value.status === 'running') return '代理正在执行中，可中断后继续输入。'
-  if (!session.value.can_send) return '当前会话不可继续发送。'
-  if (session.value.interaction_count >= session.value.max_interactions) return '交互次数已用尽。'
-  return '描述你的目标、预期产物和约束条件...'
-})
+  if (!session.value) return "描述你的目标、预期产物和约束条件...";
+  if (session.value.task_status === "canceled")
+    return "任务已取消，会话已关闭。";
+  if (session.value.task_status === "completed")
+    return "任务已完成，会话已关闭。";
+  if (session.value.status === "queued")
+    return queueAheadUsers.value > 0
+      ? `排队中，${queueText.value}。`
+      : "排队中，请稍候...";
+  if (session.value.status === "running")
+    return "代理正在执行中，可中断后继续输入。";
+  if (needsQueue.value)
+    return queueAheadUsers.value > 0
+      ? `当前需排队，${queueText.value}。`
+      : "当前需排队，请稍后发送。";
+  if (!session.value.can_send) return "当前会话不可继续发送。";
+  if (session.value.interaction_count >= session.value.max_interactions)
+    return "交互次数已用尽。";
+  return "描述你的目标、预期产物和约束条件...";
+});
 
 const canSendNow = computed(() => {
-  if (sendDisabled.value) return false
-  return Boolean(inputText.value.trim() || pendingFiles.value.length > 0)
-})
+  if (sendDisabled.value) return false;
+  return Boolean(inputText.value.trim() || pendingFiles.value.length > 0);
+});
 
-const maxFileCount = computed(() => availability.value?.max_files ?? 5)
-const maxFileSizeMb = computed(() => availability.value?.max_file_size_mb ?? 50)
+const maxFileCount = computed(() => availability.value?.max_files ?? 5);
+const maxFileSizeMb = computed(
+  () => availability.value?.max_file_size_mb ?? 50,
+);
 
 // ── Deliverable Modal ──
 
-const showDeliverableModal = ref(false)
-const zippingAll = ref(false)
-const deletingSelected = ref(false)
-const selectedNames = ref<Set<string>>(new Set())
+const showDeliverableModal = ref(false);
+const zippingAll = ref(false);
+const deletingSelected = ref(false);
+const selectedNames = ref<Set<string>>(new Set());
 
-const deliverableCount = computed(() => session.value?.deliverables.length ?? 0)
+const deliverableCount = computed(
+  () => session.value?.deliverables.length ?? 0,
+);
 
 // ── Tool Parsing ──
 
 function parseToolArgs(raw: string | null): Record<string, any> {
-  if (!raw) return {}
-  try { return JSON.parse(raw) } catch { return {} }
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 interface StrReplaceEdit {
-  old: string
-  new: string
+  old: string;
+  new: string;
 }
 
 interface StrReplaceDiffLine {
-  kind: 'old' | 'new'
-  text: string
+  kind: "old" | "new";
+  text: string;
 }
 
 function toSafeText(value: unknown): string {
-  if (value == null) return ''
-  return typeof value === 'string' ? value : String(value)
+  if (value == null) return "";
+  return typeof value === "string" ? value : String(value);
 }
 
 function normalizeStrReplaceEdit(raw: unknown): StrReplaceEdit | null {
-  if (!raw || typeof raw !== 'object') return null
-  const record = raw as Record<string, unknown>
-  const hasKnownField = (
-    'old' in record
-    || 'new' in record
-    || 'old_str' in record
-    || 'new_str' in record
-    || 'old_text' in record
-    || 'new_text' in record
-    || 'before' in record
-    || 'after' in record
-  )
-  if (!hasKnownField) return null
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const hasKnownField =
+    "old" in record ||
+    "new" in record ||
+    "old_str" in record ||
+    "new_str" in record ||
+    "old_text" in record ||
+    "new_text" in record ||
+    "before" in record ||
+    "after" in record;
+  if (!hasKnownField) return null;
   return {
-    old: toSafeText(record.old ?? record.old_str ?? record.old_text ?? record.before),
-    new: toSafeText(record.new ?? record.new_str ?? record.new_text ?? record.after),
-  }
+    old: toSafeText(
+      record.old ?? record.old_str ?? record.old_text ?? record.before,
+    ),
+    new: toSafeText(
+      record.new ?? record.new_str ?? record.new_text ?? record.after,
+    ),
+  };
 }
 
-function getStrReplaceEdits(args: Record<string, any> | undefined): StrReplaceEdit[] {
-  if (!args || typeof args !== 'object') return []
-  const editRaw = (args as Record<string, unknown>).edit
+function getStrReplaceEdits(
+  args: Record<string, any> | undefined,
+): StrReplaceEdit[] {
+  if (!args || typeof args !== "object") return [];
+  const editRaw = (args as Record<string, unknown>).edit;
   if (Array.isArray(editRaw)) {
     return editRaw
-      .map(item => normalizeStrReplaceEdit(item))
-      .filter((item): item is StrReplaceEdit => item != null)
+      .map((item) => normalizeStrReplaceEdit(item))
+      .filter((item): item is StrReplaceEdit => item != null);
   }
-  const singleFromEdit = normalizeStrReplaceEdit(editRaw)
-  if (singleFromEdit) return [singleFromEdit]
-  const singleFromRoot = normalizeStrReplaceEdit(args)
-  if (singleFromRoot) return [singleFromRoot]
-  return []
+  const singleFromEdit = normalizeStrReplaceEdit(editRaw);
+  if (singleFromEdit) return [singleFromEdit];
+  const singleFromRoot = normalizeStrReplaceEdit(args);
+  if (singleFromRoot) return [singleFromRoot];
+  return [];
 }
 
 function splitDiffLines(text: string): string[] {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 }
 
 function buildStrReplaceDiffLines(edit: StrReplaceEdit): StrReplaceDiffLine[] {
   return [
-    ...splitDiffLines(edit.old).map(text => ({ kind: 'old' as const, text })),
-    ...splitDiffLines(edit.new).map(text => ({ kind: 'new' as const, text })),
-  ]
+    ...splitDiffLines(edit.old).map((text) => ({ kind: "old" as const, text })),
+    ...splitDiffLines(edit.new).map((text) => ({ kind: "new" as const, text })),
+  ];
 }
 
 function isShellTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'shell' || n === 'execute_command' || n === 'bash'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "shell" || n === "execute_command" || n === "bash";
 }
 
 function isWriteFileTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'writefile' || n === 'write_file'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "writefile" || n === "write_file";
 }
 
 function isReadFileTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'readfile' || n === 'read_file'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "readfile" || n === "read_file";
 }
 
 function isGlobTool(name: string | null): boolean {
-  if (!name) return false
-  return name.toLowerCase() === 'glob'
+  if (!name) return false;
+  return name.toLowerCase() === "glob";
 }
 
 function isGrepTool(name: string | null): boolean {
-  if (!name) return false
-  return name.toLowerCase() === 'grep'
+  if (!name) return false;
+  return name.toLowerCase() === "grep";
 }
 
 function isSearchWebTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'searchweb' || n === 'search_web' || n === 'websearch' || n === 'web_search'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return (
+    n === "searchweb" ||
+    n === "search_web" ||
+    n === "websearch" ||
+    n === "web_search"
+  );
 }
 
 function isFetchURLTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'fetchurl' || n === 'fetch_url'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "fetchurl" || n === "fetch_url";
 }
 
 function isSetTodoListTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'settodolist' || n === 'set_todo_list' || n === 'set_todolist'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "settodolist" || n === "set_todo_list" || n === "set_todolist";
 }
 
 function isTaskTool(name: string | null): boolean {
-  if (!name) return false
-  return name.toLowerCase() === 'task'
+  if (!name) return false;
+  return name.toLowerCase() === "task";
 }
 
 function isStrReplaceTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'strreplacefile' || n === 'str_replace_file' || n === 'str_replace' || n === 'str_replace_editor'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return (
+    n === "strreplacefile" ||
+    n === "str_replace_file" ||
+    n === "str_replace" ||
+    n === "str_replace_editor"
+  );
 }
 
 function isReadMediaTool(name: string | null): boolean {
-  if (!name) return false
-  const n = name.toLowerCase()
-  return n === 'readmediafile' || n === 'read_media_file' || n === 'read_media'
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n === "readmediafile" || n === "read_media_file" || n === "read_media";
 }
 
-function parseSearchResults(text: string): Array<{ title: string; url: string; summary: string }> {
-  if (!text?.trim()) return []
-  const results: Array<{ title: string; url: string; summary: string }> = []
-  const blocks = text.split(/\n(?=Title:\s)/g)
+function parseSearchResults(
+  text: string,
+): Array<{ title: string; url: string; summary: string }> {
+  if (!text?.trim()) return [];
+  const results: Array<{ title: string; url: string; summary: string }> = [];
+  const blocks = text.split(/\n(?=Title:\s)/g);
   for (const block of blocks) {
-    if (!block.trim()) continue
-    const title = block.match(/^Title:\s*(.*)/m)?.[1]?.trim() || ''
-    const url = block.match(/^URL:\s*(.*)/m)?.[1]?.trim() || ''
-    const summaryMatch = block.match(/^Summary:\s*([\s\S]*?)(?=\nTitle:|\s*$)/m)
-    const summary = summaryMatch?.[1]?.trim() || ''
-    if (title || url) results.push({ title, url, summary })
+    if (!block.trim()) continue;
+    const title = block.match(/^Title:\s*(.*)/m)?.[1]?.trim() || "";
+    const url = block.match(/^URL:\s*(.*)/m)?.[1]?.trim() || "";
+    const summaryMatch = block.match(
+      /^Summary:\s*([\s\S]*?)(?=\nTitle:|\s*$)/m,
+    );
+    const summary = summaryMatch?.[1]?.trim() || "";
+    if (title || url) results.push({ title, url, summary });
   }
-  return results
+  return results;
 }
 
-function parseFetchResult(text: string): { title: string; url: string; content: string } | null {
-  if (!text?.trim()) return null
-  const jsonStart = text.indexOf('{')
-  if (jsonStart === -1) return null
+function parseFetchResult(
+  text: string,
+): { title: string; url: string; content: string } | null {
+  if (!text?.trim()) return null;
+  const jsonStart = text.indexOf("{");
+  if (jsonStart === -1) return null;
   try {
-    const jsonStr = text.substring(jsonStart)
-    const obj = JSON.parse(jsonStr)
-    if (obj && typeof obj === 'object') {
-      return { title: obj.title || '', url: obj.url || '', content: (obj.markdown || obj.content || '').substring(0, 500) }
+    const jsonStr = text.substring(jsonStart);
+    const obj = JSON.parse(jsonStr);
+    if (obj && typeof obj === "object") {
+      return {
+        title: obj.title || "",
+        url: obj.url || "",
+        content: (obj.markdown || obj.content || "").substring(0, 500),
+      };
     }
   } catch {}
-  return null
+  return null;
 }
 
 interface MediaOutputInfo {
-  imagePath: string
-  format: string
-  size: string
-  dimensions: string
-  prettyDimensions: string
-  isImage: boolean
-  description: string
+  imagePath: string;
+  format: string;
+  size: string;
+  dimensions: string;
+  prettyDimensions: string;
+  isImage: boolean;
+  description: string;
 }
 
 function formatMediaDimensions(raw: string): string {
-  const match = raw.match(/^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i)
-  if (!match) return raw
-  return `${match[1]}×${match[2]}`
+  const match = raw.match(/^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i);
+  if (!match) return raw;
+  return `${match[1]}×${match[2]}`;
 }
 
 function parseMediaOutput(text: string): MediaOutputInfo {
-  const imagePath = text.match(/<image\s+path="([^"]+)"/)?.[1] || text.match(/Loaded image file\s+`([^`]+)`/i)?.[1] || ''
-  const format = text.match(/\(([a-z]+\/[a-z0-9.+-]+)/i)?.[1] || ''
-  const size = text.match(/,\s*([\d.]+\s*(?:bytes|KB|MB|GB))/i)?.[1] || ''
-  const dimensions = text.match(/original size\s+(\d+\s*[x×]\s*\d+)/i)?.[1] || ''
-  const prettyDimensions = formatMediaDimensions(dimensions)
-  const description = text.replace(/<image[\s\S]*?<\/image>/g, '').replace(/`[^`]+`/g, '').trim().split('.')[0] || ''
-  const isImage = /image\//i.test(format) || /loaded image file/i.test(text) || Boolean(prettyDimensions)
-  return { imagePath, format, size, dimensions, prettyDimensions, isImage, description }
+  const imagePath =
+    text.match(/<image\s+path="([^"]+)"/)?.[1] ||
+    text.match(/Loaded image file\s+`([^`]+)`/i)?.[1] ||
+    "";
+  const format = text.match(/\(([a-z]+\/[a-z0-9.+-]+)/i)?.[1] || "";
+  const size = text.match(/,\s*([\d.]+\s*(?:bytes|KB|MB|GB))/i)?.[1] || "";
+  const dimensions =
+    text.match(/original size\s+(\d+\s*[x×]\s*\d+)/i)?.[1] || "";
+  const prettyDimensions = formatMediaDimensions(dimensions);
+  const description =
+    text
+      .replace(/<image[\s\S]*?<\/image>/g, "")
+      .replace(/`[^`]+`/g, "")
+      .trim()
+      .split(".")[0] || "";
+  const isImage =
+    /image\//i.test(format) ||
+    /loaded image file/i.test(text) ||
+    Boolean(prettyDimensions);
+  return {
+    imagePath,
+    format,
+    size,
+    dimensions,
+    prettyDimensions,
+    isImage,
+    description,
+  };
 }
 
 function unescapePythonStr(s: string): string {
   return s
-    .replace(/\\\\/g, '\x00BS\x00')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '\r')
+    .replace(/\\\\/g, "\x00BS\x00")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\r/g, "\r")
     .replace(/\\'/g, "'")
-    .replace(/\x00BS\x00/g, '\\')
+    .replace(/\x00BS\x00/g, "\\");
 }
 
 function extractTextFieldsFromPseudoJson(raw: string): string[] {
-  const texts: string[] = []
-  const keyRe = /['"]text['"]\s*:\s*/g
-  let keyMatch: RegExpExecArray | null
+  const texts: string[] = [];
+  const keyRe = /['"]text['"]\s*:\s*/g;
+  let keyMatch: RegExpExecArray | null;
 
   while ((keyMatch = keyRe.exec(raw)) !== null) {
-    let i = keyRe.lastIndex
-    while (i < raw.length && /\s/.test(raw[i])) i++
-    const quote = raw[i]
-    if (quote !== "'" && quote !== '"') continue
-    i++
-    const start = i
-    let escaped = false
+    let i = keyRe.lastIndex;
+    while (i < raw.length && /\s/.test(raw[i])) i++;
+    const quote = raw[i];
+    if (quote !== "'" && quote !== '"') continue;
+    i++;
+    const start = i;
+    let escaped = false;
     while (i < raw.length) {
-      const ch = raw[i]
+      const ch = raw[i];
       if (escaped) {
-        escaped = false
-        i++
-        continue
+        escaped = false;
+        i++;
+        continue;
       }
-      if (ch === '\\') {
-        escaped = true
-        i++
-        continue
+      if (ch === "\\") {
+        escaped = true;
+        i++;
+        continue;
       }
-      if (ch === quote) break
-      i++
+      if (ch === quote) break;
+      i++;
     }
-    if (i >= raw.length) break
-    texts.push(unescapePythonStr(raw.slice(start, i)))
-    keyRe.lastIndex = i + 1
+    if (i >= raw.length) break;
+    texts.push(unescapePythonStr(raw.slice(start, i)));
+    keyRe.lastIndex = i + 1;
   }
 
-  return texts
+  return texts;
 }
 
-function extractToolOutputText(raw: string): { systemLines: string[], text: string } {
-  if (!raw) return { systemLines: [], text: '' }
-  let content = raw.trim()
+function extractToolOutputText(raw: string): {
+  systemLines: string[];
+  text: string;
+} {
+  if (!raw) return { systemLines: [], text: "" };
+  let content = raw.trim();
 
   try {
-    const parsed = JSON.parse(content)
+    const parsed = JSON.parse(content);
     if (Array.isArray(parsed)) {
       content = parsed
         .filter((x: any) => x?.text != null)
         .map((x: any) => String(x.text))
-        .join('\n')
+        .join("\n");
     }
   } catch {
     if (content.startsWith("[{") || content.startsWith("[{'")) {
-      const texts = extractTextFieldsFromPseudoJson(content)
-      if (texts.length > 0) content = texts.join('\n')
+      const texts = extractTextFieldsFromPseudoJson(content);
+      if (texts.length > 0) content = texts.join("\n");
     }
   }
 
-  const systemLines: string[] = []
-  const cleaned = content.replace(/<system>([\s\S]*?)<\/system>/g, (_, inner) => {
-    systemLines.push(inner.trim())
-    return ''
-  })
+  const systemLines: string[] = [];
+  const cleaned = content.replace(
+    /<system>([\s\S]*?)<\/system>/g,
+    (_, inner) => {
+      systemLines.push(inner.trim());
+      return "";
+    },
+  );
 
-  let finalText = cleaned.trim()
+  let finalText = cleaned.trim();
 
   if (
     /['"]type['"]\s*:\s*['"]invalid_request_error['"]/.test(finalText) ||
     /['"]type['"]\s*:\s*['"]server_error['"]/.test(finalText) ||
     /['"]type['"]\s*:\s*['"]api_error['"]/.test(finalText)
   ) {
-    const msgMatch = finalText.match(/['"]message['"]\s*:\s*['"](.*?)['"]/)
-    finalText = msgMatch ? `[API Error] ${msgMatch[1]}` : '[API Error]'
+    const msgMatch = finalText.match(/['"]message['"]\s*:\s*['"](.*?)['"]/);
+    finalText = msgMatch ? `[API Error] ${msgMatch[1]}` : "[API Error]";
   }
 
-  return { systemLines, text: finalText }
+  return { systemLines, text: finalText };
 }
 
 function formatReadFileContent(text: string): string {
-  if (!text) return ''
-  const lines = text.split('\n')
+  if (!text) return "";
+  const lines = text.split("\n");
   const numbered = lines.map((line) => {
-    const withSep = line.match(/^\s*(\d+)\s*(\||│|:)\s?(.*)$/)
+    const withSep = line.match(/^\s*(\d+)\s*(\||│|:)\s?(.*)$/);
     if (withSep) {
-      return { lineNo: withSep[1], body: withSep[3], sep: withSep[2] === ':' ? ':' : '|' }
+      return {
+        lineNo: withSep[1],
+        body: withSep[3],
+        sep: withSep[2] === ":" ? ":" : "|",
+      };
     }
-    const withTab = line.match(/^\s*(\d+)\t(.*)$/)
+    const withTab = line.match(/^\s*(\d+)\t(.*)$/);
     if (withTab) {
-      return { lineNo: withTab[1], body: withTab[2], sep: '|' }
+      return { lineNo: withTab[1], body: withTab[2], sep: "|" };
     }
-    return null
-  })
-  const numberedCount = numbered.filter(Boolean).length
-  const nonEmptyCount = lines.filter(line => line.trim().length > 0).length
+    return null;
+  });
+  const numberedCount = numbered.filter(Boolean).length;
+  const nonEmptyCount = lines.filter((line) => line.trim().length > 0).length;
 
   // Only normalize when this clearly looks like "lineNo | content" output.
   if (numberedCount < 2 || numberedCount < Math.ceil(nonEmptyCount * 0.6)) {
-    return text
+    return text;
   }
 
-  const lineNos = numbered.filter(Boolean).map((match) => Number(match!.lineNo))
-  let sequentialPairs = 0
+  const lineNos = numbered
+    .filter(Boolean)
+    .map((match) => Number(match!.lineNo));
+  let sequentialPairs = 0;
   for (let i = 1; i < lineNos.length; i++) {
-    if (lineNos[i] === lineNos[i - 1] + 1) sequentialPairs += 1
+    if (lineNos[i] === lineNos[i - 1] + 1) sequentialPairs += 1;
   }
-  const looksSequential = lineNos.length >= 2 && sequentialPairs >= Math.max(1, lineNos.length - 2)
-  if (!looksSequential) return text
+  const looksSequential =
+    lineNos.length >= 2 && sequentialPairs >= Math.max(1, lineNos.length - 2);
+  if (!looksSequential) return text;
 
-  const width = Math.max(...numbered.map((match) => {
-    if (!match) return 0
-    return match.lineNo.length
-  }))
+  const width = Math.max(
+    ...numbered.map((match) => {
+      if (!match) return 0;
+      return match.lineNo.length;
+    }),
+  );
 
-  return lines.map((line, index) => {
-    const match = numbered[index]
-    if (!match) return line
-    const lineNo = match.lineNo.padStart(width, ' ')
-    return `${lineNo} ${match.sep} ${match.body}`
-  }).join('\n')
+  return lines
+    .map((line, index) => {
+      const match = numbered[index];
+      if (!match) return line;
+      const lineNo = match.lineNo.padStart(width, " ");
+      return `${lineNo} ${match.sep} ${match.body}`;
+    })
+    .join("\n");
 }
 
-const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g
+const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 
 function stripAnsi(text: string): string {
-  return text.replace(ANSI_ESCAPE_RE, '')
+  return text.replace(ANSI_ESCAPE_RE, "");
 }
 
 function startsWithErrorPrefix(text: string): boolean {
-  if (!text) return false
-  const firstContentLine = stripAnsi(text)
-    .split('\n')
-    .map(line => line.trimStart())
-    .find(line => line.length > 0) || ''
-  return firstContentLine.startsWith('ERROR:')
+  if (!text) return false;
+  const firstContentLine =
+    stripAnsi(text)
+      .split("\n")
+      .map((line) => line.trimStart())
+      .find((line) => line.length > 0) || "";
+  return firstContentLine.startsWith("ERROR:");
 }
 
 function isExitCodeSystemErrorLine(text: string): boolean {
-  return /^\s*ERROR:\s*Command failed with exit code:\s*\d+\.?\s*$/i.test(stripAnsi(text || ''))
+  return /^\s*ERROR:\s*Command failed with exit code:\s*\d+\.?\s*$/i.test(
+    stripAnsi(text || ""),
+  );
 }
 
 // ── Terminal ──
 
 const terminalHostname = computed(() => {
-  return appTitle.replace(/\s+/g, '-').replace(/[A-Za-z]/g, (c: string) => c.toLowerCase()) + '@agent'
-})
+  return (
+    appTitle
+      .replace(/\s+/g, "-")
+      .replace(/[A-Za-z]/g, (c: string) => c.toLowerCase()) + "@agent"
+  );
+});
 
 interface TerminalEntry {
-  id: number
-  toolType: 'shell' | 'write-file' | 'read-file' | 'glob' | 'grep' | 'search-web' | 'fetch-url' | 'set-todo' | 'task' | 'str-replace' | 'read-media' | 'other'
-  toolName: string
-  command?: string
-  promptPath?: string
-  filePath?: string
-  rawArgs?: string
-  args?: Record<string, any>
-  systemLines: string[]
-  outputText: string
-  hasErrorOutput: boolean
-  pending: boolean
-  success: boolean | null
+  id: number;
+  toolType:
+    | "shell"
+    | "write-file"
+    | "read-file"
+    | "glob"
+    | "grep"
+    | "search-web"
+    | "fetch-url"
+    | "set-todo"
+    | "task"
+    | "str-replace"
+    | "read-media"
+    | "other";
+  toolName: string;
+  command?: string;
+  promptPath?: string;
+  filePath?: string;
+  rawArgs?: string;
+  args?: Record<string, any>;
+  systemLines: string[];
+  outputText: string;
+  hasErrorOutput: boolean;
+  pending: boolean;
+  success: boolean | null;
 }
 
-const snapIndices = ref(new Map<number, number>())
+const snapIndices = ref(new Map<number, number>());
 
 function handleSnapScroll(event: Event, roundId: number, total: number) {
-  const el = event.target as HTMLElement
-  const idx = Math.min(Math.round(el.scrollTop / 64), total - 1)
-  snapIndices.value = new Map(snapIndices.value.set(roundId, idx))
+  const el = event.target as HTMLElement;
+  const idx = Math.min(Math.round(el.scrollTop / 64), total - 1);
+  snapIndices.value = new Map(snapIndices.value.set(roundId, idx));
 }
 
 function isNearBottom(el: HTMLElement, threshold = 28): boolean {
-  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
-  return distance <= threshold
+  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
+  return distance <= threshold;
 }
 
 function handleTerminalScroll(event: Event, roundId: number) {
-  const el = event.target as HTMLElement
-  const shouldStick = isNearBottom(el)
-  terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, shouldStick))
+  const el = event.target as HTMLElement;
+  const shouldStick = isNearBottom(el);
+  terminalStickToBottomMap.value = new Map(
+    terminalStickToBottomMap.value.set(roundId, shouldStick),
+  );
 }
 
 function scrollToBottomOnEnter() {
   nextTick(() => {
-    const root = chatScrollRef.value
-    if (!root) return
+    const root = chatScrollRef.value;
+    if (!root) return;
 
-    root.scrollTo({ top: root.scrollHeight, behavior: 'auto' })
+    root.scrollTo({ top: root.scrollHeight, behavior: "auto" });
 
-    root.querySelectorAll('.chat-ai-snap').forEach((el) => {
-      const snapEl = el as HTMLElement
-      snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: 'auto' })
-    })
+    root.querySelectorAll(".chat-ai-snap").forEach((el) => {
+      const snapEl = el as HTMLElement;
+      snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: "auto" });
+    });
 
-    root.querySelectorAll('.terminal-body').forEach((el) => {
-      const terminalEl = el as HTMLElement
-      const roundId = Number(terminalEl.dataset.roundId || '0')
-      terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: 'auto' })
-      terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, true))
-    })
-  })
+    root.querySelectorAll(".terminal-body").forEach((el) => {
+      const terminalEl = el as HTMLElement;
+      const roundId = Number(terminalEl.dataset.roundId || "0");
+      terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: "auto" });
+      terminalStickToBottomMap.value = new Map(
+        terminalStickToBottomMap.value.set(roundId, true),
+      );
+    });
+  });
 }
 
 interface ConversationRound {
-  id: number
-  userMessage: AgentMessage | null
-  aiIntermediate: AgentMessage[]
-  entries: TerminalEntry[]
-  aiFinal: AgentMessage | null
+  id: number;
+  userMessage: AgentMessage | null;
+  aiIntermediate: AgentMessage[];
+  entries: TerminalEntry[];
+  aiFinal: AgentMessage | null;
 }
 
-const TERMINAL_DEFAULT_CWD = '/workspace'
-const TERMINAL_HOME_CWD = '/root'
+const TERMINAL_DEFAULT_CWD = "/workspace";
+const TERMINAL_HOME_CWD = "/root";
 
 function extractCdParseScope(command: string): string {
-  let inSingle = false
-  let inDouble = false
-  let inBacktick = false
-  let escaped = false
+  let inSingle = false;
+  let inDouble = false;
+  let inBacktick = false;
+  let escaped = false;
 
   for (let i = 0; i < command.length - 1; i++) {
-    const ch = command[i]
+    const ch = command[i];
     if (escaped) {
-      escaped = false
-      continue
+      escaped = false;
+      continue;
     }
-    if (ch === '\\') {
-      escaped = true
-      continue
+    if (ch === "\\") {
+      escaped = true;
+      continue;
     }
     if (!inDouble && !inBacktick && ch === "'") {
-      inSingle = !inSingle
-      continue
+      inSingle = !inSingle;
+      continue;
     }
     if (!inSingle && !inBacktick && ch === '"') {
-      inDouble = !inDouble
-      continue
+      inDouble = !inDouble;
+      continue;
     }
-    if (!inSingle && !inDouble && ch === '`') {
-      inBacktick = !inBacktick
-      continue
+    if (!inSingle && !inDouble && ch === "`") {
+      inBacktick = !inBacktick;
+      continue;
     }
-    if (inSingle || inDouble || inBacktick) continue
+    if (inSingle || inDouble || inBacktick) continue;
 
-    if (ch === '<' && command[i + 1] === '<') {
-      return command.slice(0, i)
+    if (ch === "<" && command[i + 1] === "<") {
+      return command.slice(0, i);
     }
   }
-  return command
+  return command;
 }
 
 function splitShellCommands(command: string): string[] {
-  const source = extractCdParseScope(command)
-  const parts: string[] = []
-  let start = 0
-  let inSingle = false
-  let inDouble = false
-  let inBacktick = false
-  let escaped = false
+  const source = extractCdParseScope(command);
+  const parts: string[] = [];
+  let start = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inBacktick = false;
+  let escaped = false;
 
   for (let i = 0; i < source.length; i++) {
-    const ch = source[i]
+    const ch = source[i];
     if (escaped) {
-      escaped = false
-      continue
+      escaped = false;
+      continue;
     }
-    if (ch === '\\') {
-      escaped = true
-      continue
+    if (ch === "\\") {
+      escaped = true;
+      continue;
     }
     if (!inDouble && !inBacktick && ch === "'") {
-      inSingle = !inSingle
-      continue
+      inSingle = !inSingle;
+      continue;
     }
     if (!inSingle && !inBacktick && ch === '"') {
-      inDouble = !inDouble
-      continue
+      inDouble = !inDouble;
+      continue;
     }
-    if (!inSingle && !inDouble && ch === '`') {
-      inBacktick = !inBacktick
-      continue
+    if (!inSingle && !inDouble && ch === "`") {
+      inBacktick = !inBacktick;
+      continue;
     }
-    if (inSingle || inDouble || inBacktick) continue
+    if (inSingle || inDouble || inBacktick) continue;
 
-    const next = source[i + 1] || ''
-    if ((ch === '&' && next === '&') || (ch === '|' && next === '|')) {
-      const piece = source.slice(start, i).trim()
-      if (piece) parts.push(piece)
-      i++
-      start = i + 1
-      continue
+    const next = source[i + 1] || "";
+    if ((ch === "&" && next === "&") || (ch === "|" && next === "|")) {
+      const piece = source.slice(start, i).trim();
+      if (piece) parts.push(piece);
+      i++;
+      start = i + 1;
+      continue;
     }
-    if (ch === ';') {
-      const piece = source.slice(start, i).trim()
-      if (piece) parts.push(piece)
-      start = i + 1
+    if (ch === ";") {
+      const piece = source.slice(start, i).trim();
+      if (piece) parts.push(piece);
+      start = i + 1;
     }
   }
 
-  const last = source.slice(start).trim()
-  if (last) parts.push(last)
-  return parts
+  const last = source.slice(start).trim();
+  if (last) parts.push(last);
+  return parts;
 }
 
 function parseCdTarget(commandPart: string): string | null {
-  const trimmed = commandPart.trim()
-  const match = trimmed.match(/^(?:builtin\s+)?cd(?:\s+--)?(?:\s+([\s\S]*))?$/)
-  if (!match) return null
-  const raw = (match[1] || '').trim()
-  if (!raw) return ''
+  const trimmed = commandPart.trim();
+  const match = trimmed.match(/^(?:builtin\s+)?cd(?:\s+--)?(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  const raw = (match[1] || "").trim();
+  if (!raw) return "";
 
-  const first = raw.match(/^("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+)/)
-  if (!first) return ''
-  let token = first[1]
+  const first = raw.match(/^("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+)/);
+  if (!first) return "";
+  let token = first[1];
 
-  if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
-    token = token.slice(1, -1)
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    token = token.slice(1, -1);
   }
 
-  return token
+  return token;
 }
 
 function normalizePosixPath(path: string): string {
-  const parts = path.split('/').filter(Boolean)
-  const out: string[] = []
+  const parts = path.split("/").filter(Boolean);
+  const out: string[] = [];
   for (const part of parts) {
-    if (part === '.') continue
-    if (part === '..') {
-      out.pop()
-      continue
+    if (part === ".") continue;
+    if (part === "..") {
+      out.pop();
+      continue;
     }
-    out.push(part)
+    out.push(part);
   }
-  return '/' + out.join('/')
+  return "/" + out.join("/");
 }
 
-function resolveCdTarget(cwd: string, prevCwd: string, rawTarget: string): { cwd: string, prevCwd: string } {
-  let target = rawTarget.trim()
-  if (!target) target = TERMINAL_HOME_CWD
-  else if (target === '~') target = TERMINAL_HOME_CWD
-  else if (target.startsWith('~/')) target = `${TERMINAL_HOME_CWD}/${target.slice(2)}`
-  else if (target === '-') target = prevCwd
-  else if (!target.startsWith('/')) target = `${cwd}/${target}`
+function resolveCdTarget(
+  cwd: string,
+  prevCwd: string,
+  rawTarget: string,
+): { cwd: string; prevCwd: string } {
+  let target = rawTarget.trim();
+  if (!target) target = TERMINAL_HOME_CWD;
+  else if (target === "~") target = TERMINAL_HOME_CWD;
+  else if (target.startsWith("~/"))
+    target = `${TERMINAL_HOME_CWD}/${target.slice(2)}`;
+  else if (target === "-") target = prevCwd;
+  else if (!target.startsWith("/")) target = `${cwd}/${target}`;
 
   return {
     cwd: normalizePosixPath(target),
     prevCwd: cwd,
-  }
+  };
 }
 
 function hasCdFailure(entry: TerminalEntry): boolean {
-  const combined = [entry.outputText, ...entry.systemLines].join('\n')
-  return /(?:^|\n)\s*(?:bash:\s*)?cd:\s.*(?:no such file|not a directory|can't cd|too many arguments|permission denied)/i.test(combined)
+  const combined = [entry.outputText, ...entry.systemLines].join("\n");
+  return /(?:^|\n)\s*(?:bash:\s*)?cd:\s.*(?:no such file|not a directory|can't cd|too many arguments|permission denied)/i.test(
+    combined,
+  );
 }
 
-function inferNextCwd(entry: TerminalEntry, cwd: string, prevCwd: string): { cwd: string, prevCwd: string } {
-  if (entry.toolType !== 'shell' || !entry.command) return { cwd, prevCwd }
-  if (hasCdFailure(entry)) return { cwd, prevCwd }
+function inferNextCwd(
+  entry: TerminalEntry,
+  cwd: string,
+  prevCwd: string,
+): { cwd: string; prevCwd: string } {
+  if (entry.toolType !== "shell" || !entry.command) return { cwd, prevCwd };
+  if (hasCdFailure(entry)) return { cwd, prevCwd };
 
-  const parts = splitShellCommands(entry.command)
-  if (!parts.length) return { cwd, prevCwd }
+  const parts = splitShellCommands(entry.command);
+  if (!parts.length) return { cwd, prevCwd };
 
-  let nextCwd = cwd
-  let nextPrevCwd = prevCwd
+  let nextCwd = cwd;
+  let nextPrevCwd = prevCwd;
   for (const part of parts) {
-    const target = parseCdTarget(part)
-    if (target === null) continue
-    const next = resolveCdTarget(nextCwd, nextPrevCwd, target)
-    nextCwd = next.cwd
-    nextPrevCwd = next.prevCwd
+    const target = parseCdTarget(part);
+    if (target === null) continue;
+    const next = resolveCdTarget(nextCwd, nextPrevCwd, target);
+    nextCwd = next.cwd;
+    nextPrevCwd = next.prevCwd;
   }
-  return { cwd: nextCwd, prevCwd: nextPrevCwd }
+  return { cwd: nextCwd, prevCwd: nextPrevCwd };
 }
 
 const conversationRounds = computed<ConversationRound[]>(() => {
-  const rounds: ConversationRound[] = []
-  const msgs = messages.value
-  let runningCwd = TERMINAL_DEFAULT_CWD
-  let runningPrevCwd = TERMINAL_DEFAULT_CWD
+  const rounds: ConversationRound[] = [];
+  const msgs = messages.value;
+  let runningCwd = TERMINAL_DEFAULT_CWD;
+  let runningPrevCwd = TERMINAL_DEFAULT_CWD;
 
-  const groups: AgentMessage[][] = []
-  let cur: AgentMessage[] = []
+  const groups: AgentMessage[][] = [];
+  let cur: AgentMessage[] = [];
   for (const msg of msgs) {
-    if (msg.role === 'user') {
-      if (cur.length > 0) groups.push(cur)
-      cur = [msg]
+    if (msg.role === "user") {
+      if (cur.length > 0) groups.push(cur);
+      cur = [msg];
     } else {
-      cur.push(msg)
+      cur.push(msg);
     }
   }
-  if (cur.length > 0) groups.push(cur)
+  if (cur.length > 0) groups.push(cur);
 
   for (const group of groups) {
     const round: ConversationRound = {
       id: group[0].id,
-      userMessage: group[0].role === 'user' ? group[0] : null,
+      userMessage: group[0].role === "user" ? group[0] : null,
       aiIntermediate: [],
       entries: [],
       aiFinal: null,
-    }
+    };
 
     for (let i = 0; i < group.length; i++) {
-      const msg = group[i]
-      if (msg.role !== 'assistant' && msg.role !== 'system') continue
-      if (!msg.content?.trim()) continue
-      const rest = group.slice(i + 1)
-      const hasToolAfter = rest.some(m => m.role === 'tool_call')
-      const hasLaterText = rest.some(m => m.role === 'assistant' && m.content?.trim())
+      const msg = group[i];
+      if (msg.role !== "assistant" && msg.role !== "system") continue;
+      if (!msg.content?.trim()) continue;
+      const rest = group.slice(i + 1);
+      const hasToolAfter = rest.some((m) => m.role === "tool_call");
+      const hasLaterText = rest.some(
+        (m) => m.role === "assistant" && m.content?.trim(),
+      );
       if (hasToolAfter || hasLaterText) {
-        round.aiIntermediate.push(msg)
+        round.aiIntermediate.push(msg);
       } else {
-        round.aiFinal = msg
+        round.aiFinal = msg;
       }
     }
 
     for (let i = 0; i < group.length; i++) {
-      const msg = group[i]
-      if (msg.role !== 'tool_call') continue
-      const args = parseToolArgs(msg.tool_arguments)
-      const toolName = msg.tool_name || 'Tool'
-      let entry: TerminalEntry
+      const msg = group[i];
+      if (msg.role !== "tool_call") continue;
+      const args = parseToolArgs(msg.tool_arguments);
+      const toolName = msg.tool_name || "Tool";
+      let entry: TerminalEntry;
 
       if (isShellTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'shell', toolName, command: args.command || '', promptPath: runningCwd, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "shell",
+          toolName,
+          command: args.command || "",
+          promptPath: runningCwd,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isWriteFileTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'write-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "write-file",
+          toolName,
+          filePath: args.path || "",
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isReadFileTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'read-file', toolName, filePath: args.path || '', systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "read-file",
+          toolName,
+          filePath: args.path || "",
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isGlobTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'glob', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "glob",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isGrepTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'grep', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "grep",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isSearchWebTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'search-web', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "search-web",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isFetchURLTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'fetch-url', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "fetch-url",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isSetTodoListTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'set-todo', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "set-todo",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isTaskTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'task', toolName, args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "task",
+          toolName,
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isStrReplaceTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'str-replace', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "str-replace",
+          toolName,
+          filePath: args.path || "",
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else if (isReadMediaTool(msg.tool_name)) {
-        entry = { id: msg.id, toolType: 'read-media', toolName, filePath: args.path || '', args, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        entry = {
+          id: msg.id,
+          toolType: "read-media",
+          toolName,
+          filePath: args.path || "",
+          args,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       } else {
-        let pretty = msg.tool_arguments || ''
-        try { pretty = JSON.stringify(JSON.parse(pretty), null, 2) } catch {}
-        entry = { id: msg.id, toolType: 'other', toolName, rawArgs: pretty, systemLines: [], outputText: '', hasErrorOutput: false, pending: true, success: null }
+        let pretty = msg.tool_arguments || "";
+        try {
+          pretty = JSON.stringify(JSON.parse(pretty), null, 2);
+        } catch {}
+        entry = {
+          id: msg.id,
+          toolType: "other",
+          toolName,
+          rawArgs: pretty,
+          systemLines: [],
+          outputText: "",
+          hasErrorOutput: false,
+          pending: true,
+          success: null,
+        };
       }
 
-      let outputMsg: AgentMessage | undefined
+      let outputMsg: AgentMessage | undefined;
       if (msg.tool_call_id) {
-        outputMsg = msgs.find(m => m.role === 'tool' && m.tool_call_id === msg.tool_call_id)
+        outputMsg = msgs.find(
+          (m) => m.role === "tool" && m.tool_call_id === msg.tool_call_id,
+        );
       }
       if (!outputMsg) {
         for (let j = i + 1; j < group.length; j++) {
-          if (group[j].role === 'tool') { outputMsg = group[j]; break }
-          if (group[j].role === 'tool_call') break
+          if (group[j].role === "tool") {
+            outputMsg = group[j];
+            break;
+          }
+          if (group[j].role === "tool_call") break;
         }
       }
       if (outputMsg?.content) {
-        const { systemLines, text } = extractToolOutputText(outputMsg.content)
-        const systemHasError = systemLines.some(line => startsWithErrorPrefix(line))
-        entry.hasErrorOutput = startsWithErrorPrefix(text) || systemHasError
-        if (entry.toolType === 'shell') {
-          const kept: string[] = []
-          const hasActualOutput = Boolean(text.trim())
+        const { systemLines, text } = extractToolOutputText(outputMsg.content);
+        const systemHasError = systemLines.some((line) =>
+          startsWithErrorPrefix(line),
+        );
+        entry.hasErrorOutput = startsWithErrorPrefix(text) || systemHasError;
+        if (entry.toolType === "shell") {
+          const kept: string[] = [];
+          const hasActualOutput = Boolean(text.trim());
           for (const line of systemLines) {
             if (isExitCodeSystemErrorLine(line) && hasActualOutput) {
-              entry.success = false
-              continue
+              entry.success = false;
+              continue;
             }
             if (startsWithErrorPrefix(line)) {
-              entry.success = false
-              kept.push(line)
+              entry.success = false;
+              kept.push(line);
             } else if (/command executed successfully/i.test(line)) {
-              entry.success = true
+              entry.success = true;
             } else if (/\berror\b/i.test(line)) {
-              entry.success = false
-              kept.push(line)
+              entry.success = false;
+              kept.push(line);
             } else {
-              kept.push(line)
+              kept.push(line);
             }
           }
-          entry.systemLines = kept
-          if (entry.hasErrorOutput) entry.success = false
-          if (entry.success === null) entry.success = true
+          entry.systemLines = kept;
+          if (entry.hasErrorOutput) entry.success = false;
+          if (entry.success === null) entry.success = true;
         } else {
-          entry.systemLines = systemLines
+          entry.systemLines = systemLines;
         }
-        entry.outputText = text
-        entry.pending = false
+        entry.outputText = text;
+        entry.pending = false;
       }
-      const nextState = inferNextCwd(entry, runningCwd, runningPrevCwd)
-      runningCwd = nextState.cwd
-      runningPrevCwd = nextState.prevCwd
-      round.entries.push(entry)
+      const nextState = inferNextCwd(entry, runningCwd, runningPrevCwd);
+      runningCwd = nextState.cwd;
+      runningPrevCwd = nextState.prevCwd;
+      round.entries.push(entry);
     }
 
-    rounds.push(round)
+    rounds.push(round);
   }
-  return rounds
-})
+  return rounds;
+});
 
 // ── Skeleton & Braille ──
 
 const showPendingRoundSkeleton = computed(() => {
-  if (!session.value || session.value.status !== 'running') return false
-  const rounds = conversationRounds.value
-  if (rounds.length === 0) return false
-  const last = rounds[rounds.length - 1]
-  return !!last.userMessage && last.aiIntermediate.length === 0 && last.entries.length === 0 && !last.aiFinal
-})
+  if (!session.value || session.value.status !== "running") return false;
+  const rounds = conversationRounds.value;
+  if (rounds.length === 0) return false;
+  const last = rounds[rounds.length - 1];
+  return (
+    !!last.userMessage &&
+    last.aiIntermediate.length === 0 &&
+    last.entries.length === 0 &&
+    !last.aiFinal
+  );
+});
 
 const showSetupSkeleton = computed(() => {
-  if (!showPendingRoundSkeleton.value) return false
-  return conversationRounds.value.length === 1
-})
+  if (!showPendingRoundSkeleton.value) return false;
+  return conversationRounds.value.length === 1;
+});
 
-const brailleFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-const brailleIndex = ref(0)
-let brailleTimer: ReturnType<typeof setInterval> | null = null
+const brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const brailleIndex = ref(0);
+let brailleTimer: ReturnType<typeof setInterval> | null = null;
 
-const brailleChar = computed(() => brailleFrames[brailleIndex.value])
+const brailleChar = computed(() => brailleFrames[brailleIndex.value]);
 
 watch(showSetupSkeleton, (show) => {
   if (show) {
     brailleTimer = setInterval(() => {
-      brailleIndex.value = (brailleIndex.value + 1) % brailleFrames.length
-    }, 80)
+      brailleIndex.value = (brailleIndex.value + 1) % brailleFrames.length;
+    }, 80);
   } else if (brailleTimer) {
-    clearInterval(brailleTimer)
-    brailleTimer = null
+    clearInterval(brailleTimer);
+    brailleTimer = null;
   }
-})
+});
 
 // ── Last round glow detection ──
 
 function isLastRound(roundId: number): boolean {
-  const rounds = conversationRounds.value
-  return rounds.length > 0 && rounds[rounds.length - 1].id === roundId
+  const rounds = conversationRounds.value;
+  return rounds.length > 0 && rounds[rounds.length - 1].id === roundId;
 }
 
 // ── Data Loading ──
 
 function resetViewState() {
-  loading.value = true
-  messages.value = []
-  lastMessageId = 0
-  inputText.value = ''
-  pendingFiles.value = []
-  if (fileInputRef.value) fileInputRef.value.value = ''
+  loading.value = true;
+  messages.value = [];
+  lastMessageId = 0;
+  inputText.value = "";
+  pendingFiles.value = [];
+  queuedDraft.value = null;
+  if (fileInputRef.value) fileInputRef.value.value = "";
 }
 
 async function refreshAvailability() {
   try {
-    availability.value = await fetchAgentAvailability()
+    availability.value = await fetchAgentAvailability();
   } catch {
-    availability.value = null
+    availability.value = null;
   }
 }
 
 async function refreshSession() {
-  session.value = await fetchAgentSession(sessionId.value)
+  session.value = await fetchAgentSession(sessionId.value);
 }
 
 async function refreshMessages() {
-  const newMessages = await fetchAgentMessages(sessionId.value, lastMessageId)
-  if (newMessages.length === 0) return
-  messages.value.push(...newMessages)
-  lastMessageId = newMessages[newMessages.length - 1].id
+  const newMessages = await fetchAgentMessages(sessionId.value, lastMessageId);
+  if (newMessages.length === 0) return;
+  messages.value.push(...newMessages);
+  lastMessageId = newMessages[newMessages.length - 1].id;
 }
 
 async function pollSession() {
-  if (pollBusy || !sessionId.value) return
-  pollBusy = true
+  if (pollBusy || !sessionId.value) return;
+  pollBusy = true;
   try {
-    await Promise.all([refreshSession(), refreshMessages()])
-  } catch { /* ignore */ }
-  finally { pollBusy = false }
+    await Promise.all([refreshSession(), refreshMessages()]);
+  } catch {
+    /* ignore */
+  } finally {
+    pollBusy = false;
+  }
 }
 
 function startPolling() {
-  stopPolling()
-  pollTimer = setInterval(() => { pollSession().catch(() => {}) }, 2000)
+  stopPolling();
+  pollTimer = setInterval(() => {
+    pollSession().catch(() => {});
+  }, 2000);
 }
 
 function stopPolling() {
-  if (!pollTimer) return
-  clearInterval(pollTimer)
-  pollTimer = null
+  if (!pollTimer) return;
+  clearInterval(pollTimer);
+  pollTimer = null;
 }
 
 async function bootstrap() {
   if (!sessionId.value) {
-    loading.value = false
-    return
+    loading.value = false;
+    return;
   }
-  resetViewState()
+  resetViewState();
   try {
-    await Promise.all([refreshAvailability(), refreshSession()])
-    await refreshMessages()
+    await Promise.all([refreshAvailability(), refreshSession()]);
+    await refreshMessages();
   } catch (error) {
-    showToast(extractError(error, '加载代理会话失败'), 'error')
-    router.push('/agent')
+    showToast(extractError(error, "加载代理会话失败"), "error");
+    router.push("/agent");
   } finally {
-    loading.value = false
-    scrollToBottomOnEnter()
+    loading.value = false;
+    scrollToBottomOnEnter();
   }
 }
 
 // ── File Handling ──
 
 function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getAgentFileIcon(name: string, mime = '') {
-  return getFileIconComponent(mime, name)
+function getAgentFileIcon(name: string, mime = "") {
+  return getFileIconComponent(mime, name);
 }
 
 function pickFiles(event: Event) {
-  const input = event.target as HTMLInputElement
-  const files = Array.from(input.files || [])
-  if (!files.length) return
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
 
-  const limitCount = maxFileCount.value
-  const limitSize = maxFileSizeMb.value * 1024 * 1024
-  const next = [...pendingFiles.value]
+  const limitCount = maxFileCount.value;
+  const limitSize = maxFileSizeMb.value * 1024 * 1024;
+  const next = [...pendingFiles.value];
 
   for (const file of files) {
     if (next.length >= limitCount) {
-      showToast(`最多可添加 ${limitCount} 个文件`, 'warning')
-      break
+      showToast(`最多可添加 ${limitCount} 个文件`, "warning");
+      break;
     }
     if (file.size > limitSize) {
-      showToast(`「${file.name}」超过 ${maxFileSizeMb.value} MB 限制`, 'error')
-      continue
+      showToast(`「${file.name}」超过 ${maxFileSizeMb.value} MB 限制`, "error");
+      continue;
     }
-    next.push(file)
+    next.push(file);
   }
 
-  pendingFiles.value = next
-  input.value = ''
+  pendingFiles.value = next;
+  input.value = "";
 }
 
 function removePendingFile(index: number) {
-  pendingFiles.value.splice(index, 1)
+  pendingFiles.value.splice(index, 1);
 }
 
 // ── Send & Cancel ──
 
 async function handleSend() {
-  if (!canSendNow.value || !session.value) return
-  sending.value = true
+  if (!canSendNow.value || !session.value) return;
+  sending.value = true;
+  const draft = {
+    text: inputText.value.trim(),
+    files: [...pendingFiles.value],
+  };
   try {
     const result = await sendAgentMessage(session.value.session_id, {
-      content: inputText.value.trim(),
-      files: pendingFiles.value,
-    })
-    inputText.value = ''
-    pendingFiles.value = []
-    if (fileInputRef.value) fileInputRef.value.value = ''
-    if (result.queue_ahead_users > 0) {
-      showToast(`排队中，前面还有 ${result.queue_ahead_users} 人`, 'warning')
+      content: draft.text,
+      files: draft.files,
+    });
+    queuedDraft.value = result.queued ? draft : null;
+    inputText.value = "";
+    pendingFiles.value = [];
+    if (fileInputRef.value) fileInputRef.value.value = "";
+    if (Math.max(0, result.queue_ahead_users || 0) > 0) {
+      showToast(`排队中，前方还有 ${result.queue_ahead_users} 人`, "warning");
     }
-    await Promise.all([pollSession(), refreshAvailability()])
+    await Promise.all([pollSession(), refreshAvailability()]);
   } catch (error) {
-    showToast(extractError(error, '发送失败'), 'error')
+    queuedDraft.value = null;
+    showToast(extractError(error, "发送失败"), "error");
   } finally {
-    sending.value = false
+    sending.value = false;
   }
 }
 
 async function handleCancel() {
-  if (!session.value || canceling.value) return
-  canceling.value = true
+  if (!session.value || canceling.value) return;
+  canceling.value = true;
   try {
-    const result = await cancelAgentSession(session.value.session_id)
-    await pollSession()
-    showToast(result.canceled ? '已请求中断' : '当前没有可中断的运行任务', result.canceled ? 'success' : 'warning')
-  } catch (error: any) {
-    const status = error?.response?.status
-    if (status === 404 || status === 405) {
-      showToast('后端暂不支持中断功能', 'warning')
+    const result = await cancelAgentSession(session.value.session_id);
+    if (result.canceled && result.mode === "queued") {
+      if (result.removed_message_id != null) {
+        messages.value = messages.value.filter(
+          (msg) => msg.id !== result.removed_message_id,
+        );
+        lastMessageId =
+          messages.value.length > 0
+            ? messages.value[messages.value.length - 1].id
+            : 0;
+      }
+      const restoredText = (
+        queuedDraft.value?.text ??
+        result.restored_content ??
+        ""
+      ).trim();
+      const restoredFiles = queuedDraft.value?.files ?? [];
+      inputText.value = restoredText;
+      pendingFiles.value = [...restoredFiles];
+      autoResizeTextarea();
+      showToast("已终止排队", "success");
+      queuedDraft.value = null;
+    } else if (result.canceled && result.mode === "running") {
+      showToast("已中断当前执行", "success");
+      queuedDraft.value = null;
     } else {
-      showToast(extractError(error, '中断失败'), 'error')
+      showToast("当前没有可终止的排队或运行任务", "warning");
+    }
+    await pollSession();
+  } catch (error: any) {
+    const status = error?.response?.status;
+    if (status === 404 || status === 405) {
+      showToast("暂不支持中断功能", "warning");
+    } else {
+      showToast(extractError(error, "中断失败"), "error");
     }
   } finally {
-    canceling.value = false
+    canceling.value = false;
   }
 }
 
 // ── Deliverable Actions ──
 
 async function handleDownloadZip() {
-  if (!session.value) return
-  zippingAll.value = true
+  if (!session.value) return;
+  zippingAll.value = true;
   try {
-    const names = selectedNames.value.size > 0
-      ? [...selectedNames.value]
-      : []
-    const blob = await downloadDeliverableZip(session.value.session_id, names)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'deliverables.zip'
-    link.click()
-    URL.revokeObjectURL(url)
+    const names = selectedNames.value.size > 0 ? [...selectedNames.value] : [];
+    const blob = await downloadDeliverableZip(session.value.session_id, names);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "deliverables.zip";
+    link.click();
+    URL.revokeObjectURL(url);
   } catch (error) {
-    showToast(extractError(error, '打包下载失败'), 'error')
+    showToast(extractError(error, "打包下载失败"), "error");
   } finally {
-    zippingAll.value = false
+    zippingAll.value = false;
   }
 }
 
 async function handleDeleteSelected() {
-  if (!session.value || selectedNames.value.size === 0) return
-  deletingSelected.value = true
+  if (!session.value || selectedNames.value.size === 0) return;
+  deletingSelected.value = true;
   try {
-    await deleteAgentDeliverables(session.value.session_id, [...selectedNames.value])
-    selectedNames.value = new Set()
-    await refreshSession()
+    await deleteAgentDeliverables(session.value.session_id, [
+      ...selectedNames.value,
+    ]);
+    selectedNames.value = new Set();
+    await refreshSession();
   } catch (error) {
-    showToast(extractError(error, '删除失败'), 'error')
+    showToast(extractError(error, "删除失败"), "error");
   } finally {
-    deletingSelected.value = false
+    deletingSelected.value = false;
   }
 }
 
 function toggleSelect(name: string) {
-  const next = new Set(selectedNames.value)
-  if (next.has(name)) next.delete(name)
-  else next.add(name)
-  selectedNames.value = next
+  const next = new Set(selectedNames.value);
+  if (next.has(name)) next.delete(name);
+  else next.add(name);
+  selectedNames.value = next;
 }
 
 function handleDeliverableClick(item: AgentDeliverable) {
-  toggleSelect(item.name)
+  toggleSelect(item.name);
 }
 
 // ── Watchers ──
@@ -1122,49 +1461,60 @@ watch(
   () => messages.value.length,
   () => {
     nextTick(() => {
-      if (!chatScrollRef.value) return
+      if (!chatScrollRef.value) return;
 
       // Process area should always animate to the newest generation snippet.
-      chatScrollRef.value.querySelectorAll('.chat-ai-snap').forEach((el) => {
-        const snapEl = el as HTMLElement
-        snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: 'smooth' })
-      })
+      chatScrollRef.value.querySelectorAll(".chat-ai-snap").forEach((el) => {
+        const snapEl = el as HTMLElement;
+        snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: "smooth" });
+      });
 
       // Terminal follows only when user is already near the bottom.
-      chatScrollRef.value.querySelectorAll('.terminal-body').forEach((el) => {
-        const terminalEl = el as HTMLElement
-        const roundId = Number(terminalEl.dataset.roundId || '0')
-        const shouldStick = terminalStickToBottomMap.value.get(roundId) ?? isNearBottom(terminalEl)
-        if (!shouldStick) return
-        terminalEl.scrollTo({ top: terminalEl.scrollHeight, behavior: 'smooth' })
-        terminalStickToBottomMap.value = new Map(terminalStickToBottomMap.value.set(roundId, true))
-      })
-    })
+      chatScrollRef.value.querySelectorAll(".terminal-body").forEach((el) => {
+        const terminalEl = el as HTMLElement;
+        const roundId = Number(terminalEl.dataset.roundId || "0");
+        const shouldStick =
+          terminalStickToBottomMap.value.get(roundId) ??
+          isNearBottom(terminalEl);
+        if (!shouldStick) return;
+        terminalEl.scrollTo({
+          top: terminalEl.scrollHeight,
+          behavior: "smooth",
+        });
+        terminalStickToBottomMap.value = new Map(
+          terminalStickToBottomMap.value.set(roundId, true),
+        );
+      });
+    });
   },
-)
+);
 
 watch(
   () => sessionId.value,
-  () => { bootstrap().catch(() => {}) },
+  () => {
+    bootstrap().catch(() => {});
+  },
   { immediate: true },
-)
+);
 
-let sessionPollTimer: ReturnType<typeof setInterval> | null = null
+let sessionPollTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-  checkMobile()
-  window.addEventListener('resize', checkMobile)
-  startPolling()
-  loadSessions()
-  sessionPollTimer = setInterval(() => { loadSessions() }, 10000)
-})
+  checkMobile();
+  window.addEventListener("resize", checkMobile);
+  startPolling();
+  loadSessions();
+  sessionPollTimer = setInterval(() => {
+    loadSessions();
+  }, 10000);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile)
-  stopPolling()
-  if (brailleTimer) clearInterval(brailleTimer)
-  if (sessionPollTimer) clearInterval(sessionPollTimer)
-})
+  window.removeEventListener("resize", checkMobile);
+  stopPolling();
+  if (brailleTimer) clearInterval(brailleTimer);
+  if (sessionPollTimer) clearInterval(sessionPollTimer);
+});
 </script>
 
 <template>
@@ -1183,20 +1533,33 @@ onUnmounted(() => {
       @open-chat="router.push('/chat')"
       @open-agent-tasks="router.push('/agent-tasks')"
       @login="router.push('/login')"
-      @logout="auth.logout(); router.push('/login')"
-      @update:active-tab="(tab) => router.push(tab === 'workers' ? '/?tab=workers' : '/')"
+      @logout="
+        auth.logout();
+        router.push('/login');
+      "
+      @update:active-tab="
+        (tab) => router.push(tab === 'workers' ? '/?tab=workers' : '/')
+      "
     />
 
     <div class="agent-page">
       <AppToast :toast="toast" @dismiss="clearToast" />
 
       <!-- ── Left Sidebar ── -->
-      <aside class="agent-sidebar" :class="{ 'sidebar-hidden': sessionId && isMobile }">
+      <aside
+        class="agent-sidebar"
+        :class="{ 'sidebar-hidden': sessionId && isMobile }"
+      >
         <div class="sidebar-header">
           <h1 class="sidebar-title">代理任务</h1>
           <div class="sidebar-search">
             <i class="fa-solid fa-search search-icon"></i>
-            <input v-model="searchQuery" type="text" placeholder="搜索..." class="search-input" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索..."
+              class="search-input"
+            />
           </div>
         </div>
         <div class="session-list">
@@ -1209,14 +1572,30 @@ onUnmounted(() => {
           >
             <div class="session-item-top">
               <span class="session-item-title">{{ s.task_title }}</span>
-              <span class="session-item-time">{{ formatChatTime(s.last_activity_at) }}</span>
+              <span class="session-item-time">{{
+                formatChatTime(s.last_activity_at)
+              }}</span>
             </div>
             <div class="session-item-bottom">
-              <span class="session-item-preview">已用 {{ s.interaction_count }}/{{ s.max_interactions }}</span>
-              <span v-if="sessionStatusDot(s) === 'running'" class="session-dot session-dot--running"></span>
-              <span v-else-if="sessionStatusDot(s) === 'queued'" class="session-dot session-dot--queued"></span>
-              <span v-else-if="sessionStatusDot(s) === 'done'" class="session-dot session-dot--done"></span>
-              <span v-else-if="sessionStatusDot(s) === 'canceled'" class="session-dot session-dot--canceled"></span>
+              <span class="session-item-preview"
+                >已用 {{ s.interaction_count }}/{{ s.max_interactions }}</span
+              >
+              <span
+                v-if="sessionStatusDot(s) === 'running'"
+                class="session-dot session-dot--running"
+              ></span>
+              <span
+                v-else-if="sessionStatusDot(s) === 'queued'"
+                class="session-dot session-dot--queued"
+              ></span>
+              <span
+                v-else-if="sessionStatusDot(s) === 'done'"
+                class="session-dot session-dot--done"
+              ></span>
+              <span
+                v-else-if="sessionStatusDot(s) === 'canceled'"
+                class="session-dot session-dot--canceled"
+              ></span>
             </div>
           </button>
 
@@ -1231,7 +1610,10 @@ onUnmounted(() => {
       </aside>
 
       <!-- ── Right Main ── -->
-      <main class="agent-main" :class="{ 'main-hidden': !sessionId && isMobile }">
+      <main
+        class="agent-main"
+        :class="{ 'main-hidden': !sessionId && isMobile }"
+      >
         <div v-if="!sessionId" class="agent-empty-state">
           <i class="fa-solid fa-robot agent-empty-icon"></i>
           <p>从左侧选择一个代理会话</p>
@@ -1241,24 +1623,47 @@ onUnmounted(() => {
           <!-- Header -->
           <div class="agent-header">
             <div class="header-left">
-              <button v-if="isMobile" class="icon-btn back-btn" @click="router.push('/agent')">
+              <button
+                v-if="isMobile"
+                class="icon-btn back-btn"
+                @click="router.push('/agent')"
+              >
                 <i class="fa-solid fa-arrow-left"></i>
               </button>
               <div class="header-avatar">
-                <img v-if="logoUrl" :src="logoUrl" alt="系统 Logo" class="header-avatar-img" />
+                <img
+                  v-if="logoUrl"
+                  :src="logoUrl"
+                  alt="系统 Logo"
+                  class="header-avatar-img"
+                />
                 <i v-else class="fa-solid fa-robot"></i>
               </div>
               <div>
-                <h2 class="header-title">{{ session?.task_title || '代理会话' }}</h2>
-                <p class="header-status" :class="{ 'status-running': session?.status === 'running', 'status-queued': session?.status === 'queued' }">
-                  {{ session?.status === 'running' ? '正在执行...' : session?.status === 'queued' ? (queueAheadUsers > 0 ? `排队中，前面还有 ${queueAheadUsers} 人` : '排队中...') : isTaskTerminal ? (session?.task_status === 'completed' ? '已完成' : '已取消') : '空闲' }}
+                <h2 class="header-title">
+                  {{ session?.task_title || "代理会话" }}
+                </h2>
+                <p
+                  class="header-status"
+                  :class="{
+                    'status-running': session?.status === 'running',
+                    'status-queued': session?.status === 'queued' || needsQueue,
+                  }"
+                >
+                  {{ sessionStatusText }}
                 </p>
               </div>
             </div>
             <div class="header-actions">
-              <button class="icon-btn" title="交付文件" @click="showDeliverableModal = true">
+              <button
+                class="icon-btn"
+                title="交付文件"
+                @click="showDeliverableModal = true"
+              >
                 <i class="fa-solid fa-paperclip"></i>
-                <span v-if="deliverableCount > 0" class="att-count-badge">{{ deliverableCount }}</span>
+                <span v-if="deliverableCount > 0" class="att-count-badge">{{
+                  deliverableCount
+                }}</span>
               </button>
             </div>
           </div>
@@ -1266,16 +1671,41 @@ onUnmounted(() => {
           <!-- Chat Scroll -->
           <div ref="chatScrollRef" class="chat-scroll">
             <div v-if="loading" class="chat-empty">加载中...</div>
-            <div v-else-if="conversationRounds.length === 0 && !showSetupSkeleton" class="chat-empty">还没有消息，先发送你的需求吧。</div>
+            <div
+              v-else-if="conversationRounds.length === 0 && !showSetupSkeleton"
+              class="chat-empty"
+            >
+              还没有消息，先发送你的需求吧。
+            </div>
 
-            <div v-for="(round, roundIndex) in conversationRounds" :key="round.id" class="chat-round">
+            <div
+              v-for="(round, roundIndex) in conversationRounds"
+              :key="round.id"
+              class="chat-round"
+            >
               <!-- User message -->
-              <div v-if="round.userMessage" class="chat-bubble-row chat-bubble-row--right">
+              <div
+                v-if="round.userMessage"
+                class="chat-bubble-row chat-bubble-row--right"
+              >
                 <div class="chat-bubble chat-bubble--user">
-                  <ChatRichTextRenderer :content="round.userMessage.content || ''" />
-                  <div v-if="round.userMessage.attachments?.length" class="chat-bubble-files">
-                    <span v-for="att in round.userMessage.attachments" :key="att.stored_name" class="chat-file-chip">
-                      <component :is="getAgentFileIcon(att.name)" :size="14" class="agent-file-icon" />
+                  <ChatRichTextRenderer
+                    :content="round.userMessage.content || ''"
+                  />
+                  <div
+                    v-if="round.userMessage.attachments?.length"
+                    class="chat-bubble-files"
+                  >
+                    <span
+                      v-for="att in round.userMessage.attachments"
+                      :key="att.stored_name"
+                      class="chat-file-chip"
+                    >
+                      <component
+                        :is="getAgentFileIcon(att.name)"
+                        :size="14"
+                        class="agent-file-icon"
+                      />
                       {{ att.name }}
                       <small>({{ formatFileSize(att.size) }})</small>
                     </span>
@@ -1284,7 +1714,12 @@ onUnmounted(() => {
               </div>
 
               <!-- Skeleton: shown only on last round when waiting for first AI response -->
-              <template v-if="showPendingRoundSkeleton && roundIndex === conversationRounds.length - 1">
+              <template
+                v-if="
+                  showPendingRoundSkeleton &&
+                  roundIndex === conversationRounds.length - 1
+                "
+              >
                 <div class="chat-ai-snap-wrap">
                   <div class="chat-ai-snap-outer chat-ai-snap-outer--glow">
                     <div class="chat-ai-snap skeleton-snap">
@@ -1303,12 +1738,18 @@ onUnmounted(() => {
                       <span class="terminal-dot terminal-dot--yellow"></span>
                       <span class="terminal-dot terminal-dot--green"></span>
                     </div>
-                    <span class="terminal-hostname">{{ terminalHostname }}</span>
+                    <span class="terminal-hostname">{{
+                      terminalHostname
+                    }}</span>
                   </div>
                   <div class="terminal-body">
                     <div class="terminal-setup">
-                      <span class="terminal-setup-text">Setting up the environment</span>
-                      <span class="terminal-setup-spinner">{{ brailleChar }}</span>
+                      <span class="terminal-setup-text"
+                        >Setting up the environment</span
+                      >
+                      <span class="terminal-setup-spinner">{{
+                        brailleChar
+                      }}</span>
                     </div>
                   </div>
                 </div>
@@ -1318,14 +1759,35 @@ onUnmounted(() => {
               <div v-if="round.aiIntermediate.length" class="chat-ai-snap-wrap">
                 <div
                   class="chat-ai-snap-outer"
-                  :class="{ 'chat-ai-snap-outer--glow': session?.status === 'running' && isLastRound(round.id) }"
+                  :class="{
+                    'chat-ai-snap-outer--glow':
+                      session?.status === 'running' && isLastRound(round.id),
+                  }"
                 >
-                  <div class="chat-ai-snap" @scroll="handleSnapScroll($event, round.id, round.aiIntermediate.length)">
-                    <div v-for="msg in round.aiIntermediate" :key="msg.id" class="chat-ai-snap-item">
+                  <div
+                    class="chat-ai-snap"
+                    @scroll="
+                      handleSnapScroll(
+                        $event,
+                        round.id,
+                        round.aiIntermediate.length,
+                      )
+                    "
+                  >
+                    <div
+                      v-for="msg in round.aiIntermediate"
+                      :key="msg.id"
+                      class="chat-ai-snap-item"
+                    >
                       <span>{{ msg.content }}</span>
                     </div>
                   </div>
-                  <span class="chat-ai-snap-idx">{{ (snapIndices.get(round.id) ?? (round.aiIntermediate.length - 1)) + 1 }}/{{ round.aiIntermediate.length }}</span>
+                  <span class="chat-ai-snap-idx"
+                    >{{
+                      (snapIndices.get(round.id) ??
+                        round.aiIntermediate.length - 1) + 1
+                    }}/{{ round.aiIntermediate.length }}</span
+                  >
                 </div>
               </div>
 
@@ -1339,28 +1801,59 @@ onUnmounted(() => {
                   </div>
                   <span class="terminal-hostname">{{ terminalHostname }}</span>
                 </div>
-                <div class="terminal-body" :data-round-id="round.id" @scroll="handleTerminalScroll($event, round.id)">
+                <div
+                  class="terminal-body"
+                  :data-round-id="round.id"
+                  @scroll="handleTerminalScroll($event, round.id)"
+                >
                   <template v-for="entry in round.entries" :key="entry.id">
-                    <div v-if="entry.toolType === 'shell'" class="terminal-entry">
+                    <div
+                      v-if="entry.toolType === 'shell'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-prompt-line">
-                        <span v-if="entry.success === false" class="terminal-status-icon terminal-status-icon--err"><i class="fa-solid fa-xmark"></i></span>
-                        <span class="terminal-user">{{ terminalHostname }}</span>:<span class="terminal-path">{{ entry.promptPath || TERMINAL_DEFAULT_CWD }}</span><span class="terminal-dollar">$</span> <span class="terminal-cmd">{{ entry.command }}</span>
+                        <span
+                          v-if="entry.success === false"
+                          class="terminal-status-icon terminal-status-icon--err"
+                          ><i class="fa-solid fa-xmark"></i
+                        ></span>
+                        <span class="terminal-user">{{ terminalHostname }}</span
+                        >:<span class="terminal-path">{{
+                          entry.promptPath || TERMINAL_DEFAULT_CWD
+                        }}</span
+                        ><span class="terminal-dollar">$</span>
+                        <span class="terminal-cmd">{{ entry.command }}</span>
                       </div>
                       <div
                         v-for="(line, idx) in entry.systemLines"
-                        :key="'s'+idx"
+                        :key="'s' + idx"
                         class="terminal-sys-line"
-                        :class="{ 'terminal-sys-line--error': startsWithErrorPrefix(line) || isExitCodeSystemErrorLine(line) }"
+                        :class="{
+                          'terminal-sys-line--error':
+                            startsWithErrorPrefix(line) ||
+                            isExitCodeSystemErrorLine(line),
+                        }"
                       >
                         {{ line }}
                       </div>
-                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <pre
+                        v-if="entry.outputText"
+                        class="terminal-pre"
+                        :class="{ 'terminal-pre--error': entry.hasErrorOutput }"
+                        >{{ entry.outputText }}</pre
+                      >
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'write-file'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'write-file'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-write-box">
                         <div class="terminal-write-head">
                           <i class="fa-solid fa-file-pen"></i>
@@ -1368,288 +1861,680 @@ onUnmounted(() => {
                         </div>
                         <div class="terminal-write-detail">
                           <span class="terminal-write-key">path</span>
-                          <span class="terminal-write-val">{{ entry.filePath }}</span>
+                          <span class="terminal-write-val">{{
+                            entry.filePath
+                          }}</span>
                         </div>
                         <div
                           v-for="(line, idx) in entry.systemLines"
-                          :key="'s'+idx"
+                          :key="'s' + idx"
                           class="terminal-write-ok"
-                          :class="{ 'terminal-write-ok--error': startsWithErrorPrefix(line) || entry.hasErrorOutput }"
+                          :class="{
+                            'terminal-write-ok--error':
+                              startsWithErrorPrefix(line) ||
+                              entry.hasErrorOutput,
+                          }"
                         >
-                          <i :class="(startsWithErrorPrefix(line) || entry.hasErrorOutput) ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ line }}
+                          <i
+                            :class="
+                              startsWithErrorPrefix(line) ||
+                              entry.hasErrorOutput
+                                ? 'fa-solid fa-xmark'
+                                : 'fa-solid fa-check'
+                            "
+                          ></i>
+                          {{ line }}
                         </div>
                       </div>
-                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <pre
+                        v-if="entry.outputText"
+                        class="terminal-pre"
+                        :class="{ 'terminal-pre--error': entry.hasErrorOutput }"
+                        >{{ entry.outputText }}</pre
+                      >
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'read-file'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'read-file'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-write-box terminal-write-box--read">
-                        <div class="terminal-write-head terminal-write-head--read">
+                        <div
+                          class="terminal-write-head terminal-write-head--read"
+                        >
                           <i class="fa-solid fa-file-lines"></i>
                           <span>ReadFile</span>
                         </div>
                         <div class="terminal-write-detail">
                           <span class="terminal-write-key">path</span>
-                          <span class="terminal-write-val">{{ entry.filePath }}</span>
+                          <span class="terminal-write-val">{{
+                            entry.filePath
+                          }}</span>
                         </div>
                         <div
                           v-for="(line, idx) in entry.systemLines"
-                          :key="'s'+idx"
+                          :key="'s' + idx"
                           class="terminal-write-ok"
-                          :class="{ 'terminal-write-ok--error': startsWithErrorPrefix(line) || entry.hasErrorOutput }"
+                          :class="{
+                            'terminal-write-ok--error':
+                              startsWithErrorPrefix(line) ||
+                              entry.hasErrorOutput,
+                          }"
                         >
-                          <i :class="(startsWithErrorPrefix(line) || entry.hasErrorOutput) ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ line }}
+                          <i
+                            :class="
+                              startsWithErrorPrefix(line) ||
+                              entry.hasErrorOutput
+                                ? 'fa-solid fa-xmark'
+                                : 'fa-solid fa-check'
+                            "
+                          ></i>
+                          {{ line }}
                         </div>
-                        <div v-if="entry.outputText" class="terminal-readfile-output">
+                        <div
+                          v-if="entry.outputText"
+                          class="terminal-readfile-output"
+                        >
                           <div class="terminal-readfile-output-label">
                             <i class="fa-solid fa-align-left"></i>
                             <span>文件内容</span>
                           </div>
-                          <pre class="terminal-readfile-pre" :class="{ 'terminal-readfile-pre--error': entry.hasErrorOutput }">{{ formatReadFileContent(entry.outputText) }}</pre>
+                          <pre
+                            class="terminal-readfile-pre"
+                            :class="{
+                              'terminal-readfile-pre--error':
+                                entry.hasErrorOutput,
+                            }"
+                            >{{ formatReadFileContent(entry.outputText) }}</pre
+                          >
                         </div>
-                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
+                        <div
+                          v-if="entry.pending && session?.status === 'running'"
+                          class="terminal-task-pending"
+                        >
                           <span class="terminal-blink">█</span>
                         </div>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'glob'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'glob'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-tool-box terminal-tool-box--glob">
-                        <div class="terminal-tool-head terminal-tool-head--glob">
+                        <div
+                          class="terminal-tool-head terminal-tool-head--glob"
+                        >
                           <i class="fa-solid fa-folder-tree"></i>
                           <span>Glob</span>
                         </div>
                         <div class="terminal-tool-detail">
                           <span class="terminal-tool-key">pattern</span>
-                          <span class="terminal-tool-val terminal-tool-val--highlight">{{ entry.args?.pattern }}</span>
+                          <span
+                            class="terminal-tool-val terminal-tool-val--highlight"
+                            >{{ entry.args?.pattern }}</span
+                          >
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-body">
-                          <template v-for="(line, idx) in entry.outputText.split('\n')" :key="idx">
-                            <div v-if="line.trim()" :class="(/^Found \d|^No match/i).test(line) ? 'terminal-tool-info' : 'terminal-tool-file'">
-                              <i :class="(/^Found \d|^No match/i).test(line) ? 'fa-solid fa-circle-info' : 'fa-regular fa-file-code'"></i>
+                        <div
+                          v-if="!entry.pending && entry.outputText"
+                          class="terminal-tool-body"
+                        >
+                          <template
+                            v-for="(line, idx) in entry.outputText.split('\n')"
+                            :key="idx"
+                          >
+                            <div
+                              v-if="line.trim()"
+                              :class="
+                                /^Found \d|^No match/i.test(line)
+                                  ? 'terminal-tool-info'
+                                  : 'terminal-tool-file'
+                              "
+                            >
+                              <i
+                                :class="
+                                  /^Found \d|^No match/i.test(line)
+                                    ? 'fa-solid fa-circle-info'
+                                    : 'fa-regular fa-file-code'
+                                "
+                              ></i>
                               <span>{{ line }}</span>
                             </div>
                           </template>
                         </div>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'grep'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'grep'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-tool-box terminal-tool-box--grep">
-                        <div class="terminal-tool-head terminal-tool-head--grep">
+                        <div
+                          class="terminal-tool-head terminal-tool-head--grep"
+                        >
                           <i class="fa-solid fa-magnifying-glass-code"></i>
                           <span>Grep</span>
                         </div>
                         <div class="terminal-tool-detail">
                           <span class="terminal-tool-key">pattern</span>
-                          <span class="terminal-tool-val terminal-tool-val--highlight">{{ entry.args?.pattern }}</span>
+                          <span
+                            class="terminal-tool-val terminal-tool-val--highlight"
+                            >{{ entry.args?.pattern }}</span
+                          >
                         </div>
-                        <div v-if="entry.args?.path" class="terminal-tool-detail">
+                        <div
+                          v-if="entry.args?.path"
+                          class="terminal-tool-detail"
+                        >
                           <span class="terminal-tool-key">path</span>
-                          <span class="terminal-tool-val">{{ entry.args.path }}</span>
+                          <span class="terminal-tool-val">{{
+                            entry.args.path
+                          }}</span>
                         </div>
-                        <div v-if="entry.args?.output_mode" class="terminal-tool-detail">
+                        <div
+                          v-if="entry.args?.output_mode"
+                          class="terminal-tool-detail"
+                        >
                           <span class="terminal-tool-key">mode</span>
-                          <span class="terminal-tool-val">{{ entry.args.output_mode }}</span>
+                          <span class="terminal-tool-val">{{
+                            entry.args.output_mode
+                          }}</span>
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-body">
-                          <template v-for="(line, idx) in entry.outputText.split('\n')" :key="idx">
-                            <div v-if="line.trim()" :class="(/^No match/i).test(line) ? 'terminal-tool-info' : 'terminal-tool-file'">
-                              <i :class="(/^No match/i).test(line) ? 'fa-solid fa-circle-info' : 'fa-solid fa-font'"></i>
+                        <div
+                          v-if="!entry.pending && entry.outputText"
+                          class="terminal-tool-body"
+                        >
+                          <template
+                            v-for="(line, idx) in entry.outputText.split('\n')"
+                            :key="idx"
+                          >
+                            <div
+                              v-if="line.trim()"
+                              :class="
+                                /^No match/i.test(line)
+                                  ? 'terminal-tool-info'
+                                  : 'terminal-tool-file'
+                              "
+                            >
+                              <i
+                                :class="
+                                  /^No match/i.test(line)
+                                    ? 'fa-solid fa-circle-info'
+                                    : 'fa-solid fa-font'
+                                "
+                              ></i>
                               <span>{{ line }}</span>
                             </div>
                           </template>
                         </div>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'search-web'" class="terminal-entry">
-                      <div class="terminal-tool-box terminal-tool-box--search-web">
-                        <div class="terminal-tool-head terminal-tool-head--search-web">
+                    <div
+                      v-else-if="entry.toolType === 'search-web'"
+                      class="terminal-entry"
+                    >
+                      <div
+                        class="terminal-tool-box terminal-tool-box--search-web"
+                      >
+                        <div
+                          class="terminal-tool-head terminal-tool-head--search-web"
+                        >
                           <i class="fa-solid fa-globe"></i>
                           <span>SearchWeb</span>
                         </div>
                         <div class="terminal-tool-detail">
                           <span class="terminal-tool-key">query</span>
-                          <span class="terminal-tool-val terminal-tool-val--highlight">{{ entry.args?.query }}</span>
+                          <span
+                            class="terminal-tool-val terminal-tool-val--highlight"
+                            >{{ entry.args?.query }}</span
+                          >
                         </div>
                         <template v-if="!entry.pending && entry.outputText">
-                          <template v-for="results in [parseSearchResults(entry.outputText)]" :key="0">
-                            <div v-if="results.length" class="terminal-tool-body">
-                              <div v-for="(result, idx) in results" :key="idx" class="terminal-search-item">
+                          <template
+                            v-for="results in [
+                              parseSearchResults(entry.outputText),
+                            ]"
+                            :key="0"
+                          >
+                            <div
+                              v-if="results.length"
+                              class="terminal-tool-body"
+                            >
+                              <div
+                                v-for="(result, idx) in results"
+                                :key="idx"
+                                class="terminal-search-item"
+                              >
                                 <div class="terminal-search-title">
-                                  <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                                  <a v-if="result.url" :href="result.url" target="_blank" rel="noopener">{{ result.title || result.url }}</a>
+                                  <i
+                                    class="fa-solid fa-arrow-up-right-from-square"
+                                  ></i>
+                                  <a
+                                    v-if="result.url"
+                                    :href="result.url"
+                                    target="_blank"
+                                    rel="noopener"
+                                    >{{ result.title || result.url }}</a
+                                  >
                                   <span v-else>{{ result.title }}</span>
                                 </div>
-                                <div v-if="result.url" class="terminal-search-url">{{ result.url }}</div>
-                                <div v-if="result.summary" class="terminal-search-summary">{{ result.summary }}</div>
+                                <div
+                                  v-if="result.url"
+                                  class="terminal-search-url"
+                                >
+                                  {{ result.url }}
+                                </div>
+                                <div
+                                  v-if="result.summary"
+                                  class="terminal-search-summary"
+                                >
+                                  {{ result.summary }}
+                                </div>
                               </div>
                             </div>
-                            <pre v-else class="terminal-pre terminal-pre--incard" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
+                            <pre
+                              v-else
+                              class="terminal-pre terminal-pre--incard"
+                              :class="{
+                                'terminal-pre--error': entry.hasErrorOutput,
+                              }"
+                              >{{ entry.outputText }}</pre
+                            >
                           </template>
                         </template>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'fetch-url'" class="terminal-entry">
-                      <div class="terminal-tool-box terminal-tool-box--fetch-url">
-                        <div class="terminal-tool-head terminal-tool-head--fetch-url">
+                    <div
+                      v-else-if="entry.toolType === 'fetch-url'"
+                      class="terminal-entry"
+                    >
+                      <div
+                        class="terminal-tool-box terminal-tool-box--fetch-url"
+                      >
+                        <div
+                          class="terminal-tool-head terminal-tool-head--fetch-url"
+                        >
                           <i class="fa-solid fa-link"></i>
                           <span>FetchURL</span>
                         </div>
                         <div class="terminal-tool-detail">
                           <span class="terminal-tool-key">url</span>
-                          <a class="terminal-tool-link" :href="entry.args?.url" target="_blank" rel="noopener">{{ entry.args?.url }}</a>
+                          <a
+                            class="terminal-tool-link"
+                            :href="entry.args?.url"
+                            target="_blank"
+                            rel="noopener"
+                            >{{ entry.args?.url }}</a
+                          >
                         </div>
                         <template v-if="!entry.pending && entry.outputText">
-                          <template v-for="fetchData in [parseFetchResult(entry.outputText)]" :key="0">
-                            <div v-if="fetchData" class="terminal-fetch-preview">
-                              <div v-if="fetchData.title" class="terminal-fetch-title">{{ fetchData.title }}</div>
-                              <div v-if="fetchData.content" class="terminal-fetch-content">{{ fetchData.content }}</div>
+                          <template
+                            v-for="fetchData in [
+                              parseFetchResult(entry.outputText),
+                            ]"
+                            :key="0"
+                          >
+                            <div
+                              v-if="fetchData"
+                              class="terminal-fetch-preview"
+                            >
+                              <div
+                                v-if="fetchData.title"
+                                class="terminal-fetch-title"
+                              >
+                                {{ fetchData.title }}
+                              </div>
+                              <div
+                                v-if="fetchData.content"
+                                class="terminal-fetch-content"
+                              >
+                                {{ fetchData.content }}
+                              </div>
                             </div>
-                            <pre v-else class="terminal-pre terminal-pre--incard" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
+                            <pre
+                              v-else
+                              class="terminal-pre terminal-pre--incard"
+                              :class="{
+                                'terminal-pre--error': entry.hasErrorOutput,
+                              }"
+                              >{{ entry.outputText }}</pre
+                            >
                           </template>
                         </template>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'set-todo'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'set-todo'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-tool-box terminal-tool-box--todo">
-                        <div class="terminal-tool-head terminal-tool-head--todo">
+                        <div
+                          class="terminal-tool-head terminal-tool-head--todo"
+                        >
                           <i class="fa-solid fa-list-check"></i>
                           <span>SetTodoList</span>
                         </div>
-                        <div v-if="entry.args?.todos?.length" class="terminal-todo-list">
-                          <div v-for="(todo, idx) in entry.args.todos" :key="idx" class="terminal-todo-item">
-                            <i :class="todo.status === 'done' ? 'fa-solid fa-circle-check terminal-todo--done' : todo.status === 'in_progress' ? 'fa-solid fa-circle-dot terminal-todo--progress' : 'fa-regular fa-circle terminal-todo--pending'"></i>
-                            <span class="terminal-todo-title" :class="{ 'terminal-todo-title--done': todo.status === 'done' }">{{ todo.title }}</span>
-                            <span class="terminal-todo-badge" :class="'terminal-todo-badge--' + (todo.status || 'pending')">{{ todo.status }}</span>
+                        <div
+                          v-if="entry.args?.todos?.length"
+                          class="terminal-todo-list"
+                        >
+                          <div
+                            v-for="(todo, idx) in entry.args.todos"
+                            :key="idx"
+                            class="terminal-todo-item"
+                          >
+                            <i
+                              :class="
+                                todo.status === 'done'
+                                  ? 'fa-solid fa-circle-check terminal-todo--done'
+                                  : todo.status === 'in_progress'
+                                    ? 'fa-solid fa-circle-dot terminal-todo--progress'
+                                    : 'fa-regular fa-circle terminal-todo--pending'
+                              "
+                            ></i>
+                            <span
+                              class="terminal-todo-title"
+                              :class="{
+                                'terminal-todo-title--done':
+                                  todo.status === 'done',
+                              }"
+                              >{{ todo.title }}</span
+                            >
+                            <span
+                              class="terminal-todo-badge"
+                              :class="
+                                'terminal-todo-badge--' +
+                                (todo.status || 'pending')
+                              "
+                              >{{ todo.status }}</span
+                            >
                           </div>
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line" :class="{ 'terminal-tool-ok-line--error': entry.hasErrorOutput }">
-                          <i :class="entry.hasErrorOutput ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ entry.outputText }}
+                        <div
+                          v-if="!entry.pending && entry.outputText"
+                          class="terminal-tool-ok-line"
+                          :class="{
+                            'terminal-tool-ok-line--error':
+                              entry.hasErrorOutput,
+                          }"
+                        >
+                          <i
+                            :class="
+                              entry.hasErrorOutput
+                                ? 'fa-solid fa-xmark'
+                                : 'fa-solid fa-check'
+                            "
+                          ></i>
+                          {{ entry.outputText }}
                         </div>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'task'" class="terminal-entry">
+                    <div
+                      v-else-if="entry.toolType === 'task'"
+                      class="terminal-entry"
+                    >
                       <div class="terminal-tool-box terminal-tool-box--task">
-                        <div class="terminal-tool-head terminal-tool-head--task">
+                        <div
+                          class="terminal-tool-head terminal-tool-head--task"
+                        >
                           <i class="fa-solid fa-robot"></i>
                           <span>Task</span>
-                          <span v-if="entry.args?.subagent_name" class="terminal-task-badge">{{ entry.args.subagent_name }}</span>
+                          <span
+                            v-if="entry.args?.subagent_name"
+                            class="terminal-task-badge"
+                            >{{ entry.args.subagent_name }}</span
+                          >
                         </div>
-                        <div v-if="entry.args?.description" class="terminal-tool-detail">
+                        <div
+                          v-if="entry.args?.description"
+                          class="terminal-tool-detail"
+                        >
                           <span class="terminal-tool-key">desc</span>
-                          <span class="terminal-tool-val">{{ entry.args.description }}</span>
+                          <span class="terminal-tool-val">{{
+                            entry.args.description
+                          }}</span>
                         </div>
-                        <div v-if="entry.outputText" class="terminal-task-output">
+                        <div
+                          v-if="entry.outputText"
+                          class="terminal-task-output"
+                        >
                           <div class="terminal-task-output-label">
                             <i class="fa-solid fa-comment-dots"></i>
                             <span>子代理输出</span>
                           </div>
-                          <pre class="terminal-task-pre" :class="{ 'terminal-task-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
+                          <pre
+                            class="terminal-task-pre"
+                            :class="{
+                              'terminal-task-pre--error': entry.hasErrorOutput,
+                            }"
+                            >{{ entry.outputText }}</pre
+                          >
                         </div>
-                        <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
+                        <div
+                          v-if="entry.pending && session?.status === 'running'"
+                          class="terminal-task-pending"
+                        >
                           <span class="terminal-blink">█</span>
                         </div>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'str-replace'" class="terminal-entry">
-                      <div class="terminal-tool-box terminal-tool-box--str-replace">
-                        <div class="terminal-tool-head terminal-tool-head--str-replace">
+                    <div
+                      v-else-if="entry.toolType === 'str-replace'"
+                      class="terminal-entry"
+                    >
+                      <div
+                        class="terminal-tool-box terminal-tool-box--str-replace"
+                      >
+                        <div
+                          class="terminal-tool-head terminal-tool-head--str-replace"
+                        >
                           <i class="fa-solid fa-pen-to-square"></i>
                           <span>StrReplaceFile</span>
                         </div>
                         <div class="terminal-tool-detail">
                           <span class="terminal-tool-key">path</span>
-                          <span class="terminal-tool-val">{{ entry.filePath }}</span>
+                          <span class="terminal-tool-val">{{
+                            entry.filePath
+                          }}</span>
                         </div>
-                        <div v-if="getStrReplaceEdits(entry.args).length" class="terminal-diff">
-                          <div class="terminal-diff-meta">--- a/{{ entry.filePath || '(unknown)' }}</div>
-                          <div class="terminal-diff-meta">+++ b/{{ entry.filePath || '(unknown)' }}</div>
-                          <template v-for="(edit, editIdx) in getStrReplaceEdits(entry.args)" :key="`edit-${editIdx}`">
-                            <div class="terminal-diff-hunk">@@ edit {{ editIdx + 1 }} @@</div>
+                        <div
+                          v-if="getStrReplaceEdits(entry.args).length"
+                          class="terminal-diff"
+                        >
+                          <div class="terminal-diff-meta">
+                            --- a/{{ entry.filePath || "(unknown)" }}
+                          </div>
+                          <div class="terminal-diff-meta">
+                            +++ b/{{ entry.filePath || "(unknown)" }}
+                          </div>
+                          <template
+                            v-for="(edit, editIdx) in getStrReplaceEdits(
+                              entry.args,
+                            )"
+                            :key="`edit-${editIdx}`"
+                          >
+                            <div class="terminal-diff-hunk">
+                              @@ edit {{ editIdx + 1 }} @@
+                            </div>
                             <div
-                              v-for="(line, lineIdx) in buildStrReplaceDiffLines(edit)"
+                              v-for="(
+                                line, lineIdx
+                              ) in buildStrReplaceDiffLines(edit)"
                               :key="`line-${editIdx}-${lineIdx}`"
                               class="terminal-diff-line"
-                              :class="line.kind === 'old' ? 'terminal-diff-line--old' : 'terminal-diff-line--new'"
+                              :class="
+                                line.kind === 'old'
+                                  ? 'terminal-diff-line--old'
+                                  : 'terminal-diff-line--new'
+                              "
                             >
-                              <span class="terminal-diff-line-prefix">{{ line.kind === 'old' ? '-' : '+' }}</span>
-                              <code class="terminal-diff-line-code">{{ line.text || ' ' }}</code>
+                              <span class="terminal-diff-line-prefix">{{
+                                line.kind === "old" ? "-" : "+"
+                              }}</span>
+                              <code class="terminal-diff-line-code">{{
+                                line.text || " "
+                              }}</code>
                             </div>
                           </template>
                         </div>
-                        <div v-if="!entry.pending && entry.outputText" class="terminal-tool-ok-line" :class="{ 'terminal-tool-ok-line--error': entry.hasErrorOutput }">
-                          <i :class="entry.hasErrorOutput ? 'fa-solid fa-xmark' : 'fa-solid fa-check'"></i> {{ entry.outputText }}
+                        <div
+                          v-if="!entry.pending && entry.outputText"
+                          class="terminal-tool-ok-line"
+                          :class="{
+                            'terminal-tool-ok-line--error':
+                              entry.hasErrorOutput,
+                          }"
+                        >
+                          <i
+                            :class="
+                              entry.hasErrorOutput
+                                ? 'fa-solid fa-xmark'
+                                : 'fa-solid fa-check'
+                            "
+                          ></i>
+                          {{ entry.outputText }}
                         </div>
                       </div>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
 
-                    <div v-else-if="entry.toolType === 'read-media'" class="terminal-entry">
-                      <template v-for="media in [parseMediaOutput([...(entry.systemLines || []), entry.outputText || ''].join('\n'))]" :key="0">
-                        <div class="terminal-tool-box terminal-tool-box--read-media">
-                          <div class="terminal-tool-head terminal-tool-head--read-media">
+                    <div
+                      v-else-if="entry.toolType === 'read-media'"
+                      class="terminal-entry"
+                    >
+                      <template
+                        v-for="media in [
+                          parseMediaOutput(
+                            [
+                              ...(entry.systemLines || []),
+                              entry.outputText || '',
+                            ].join('\n'),
+                          ),
+                        ]"
+                        :key="0"
+                      >
+                        <div
+                          class="terminal-tool-box terminal-tool-box--read-media"
+                        >
+                          <div
+                            class="terminal-tool-head terminal-tool-head--read-media"
+                          >
                             <i class="fa-solid fa-image"></i>
                             <span>ReadMediaFile</span>
                           </div>
                           <div class="terminal-tool-detail">
                             <i
-                              v-if="!entry.pending && !entry.hasErrorOutput && (entry.outputText || entry.systemLines.length)"
+                              v-if="
+                                !entry.pending &&
+                                !entry.hasErrorOutput &&
+                                (entry.outputText || entry.systemLines.length)
+                              "
                               class="fa-solid fa-check terminal-readmedia-path-ok"
                             ></i>
                             <span class="terminal-tool-key">path</span>
-                            <span class="terminal-tool-val">{{ entry.filePath }}</span>
+                            <span class="terminal-tool-val">{{
+                              entry.filePath
+                            }}</span>
                           </div>
                           <div
-                            v-if="!entry.pending && (entry.outputText || entry.systemLines.length) && (media.prettyDimensions || media.format || media.size)"
+                            v-if="
+                              !entry.pending &&
+                              (entry.outputText || entry.systemLines.length) &&
+                              (media.prettyDimensions ||
+                                media.format ||
+                                media.size)
+                            "
                             class="terminal-media-preview"
                           >
                             <div class="terminal-media-meta">
-                              <div v-if="media.prettyDimensions" class="terminal-media-chip terminal-media-chip--spec">
+                              <div
+                                v-if="media.prettyDimensions"
+                                class="terminal-media-chip terminal-media-chip--spec"
+                              >
                                 <i class="fa-solid fa-expand"></i>
                                 <span>{{ media.prettyDimensions }}</span>
                               </div>
-                              <div v-if="media.format" class="terminal-media-chip">
+                              <div
+                                v-if="media.format"
+                                class="terminal-media-chip"
+                              >
                                 <i class="fa-solid fa-file-image"></i>
                                 <span>{{ media.format }}</span>
                               </div>
-                              <div v-if="media.size" class="terminal-media-chip">
+                              <div
+                                v-if="media.size"
+                                class="terminal-media-chip"
+                              >
                                 <i class="fa-solid fa-weight-hanging"></i>
                                 <span>{{ media.size }}</span>
                               </div>
                             </div>
                           </div>
                           <pre
-                            v-if="!entry.pending && entry.outputText && !media.isImage"
+                            v-if="
+                              !entry.pending &&
+                              entry.outputText &&
+                              !media.isImage
+                            "
                             class="terminal-pre terminal-pre--incard"
-                            :class="{ 'terminal-pre--error': entry.hasErrorOutput }"
-                          >{{ entry.outputText }}</pre>
-                          <div v-if="entry.pending && session?.status === 'running'" class="terminal-task-pending">
+                            :class="{
+                              'terminal-pre--error': entry.hasErrorOutput,
+                            }"
+                            >{{ entry.outputText }}</pre
+                          >
+                          <div
+                            v-if="
+                              entry.pending && session?.status === 'running'
+                            "
+                            class="terminal-task-pending"
+                          >
                             <span class="terminal-blink">█</span>
                           </div>
                         </div>
@@ -1659,12 +2544,32 @@ onUnmounted(() => {
                     <div v-else class="terminal-entry">
                       <div class="terminal-other-line">
                         <span class="terminal-other-icon">⚙</span>
-                        <span class="terminal-other-name">{{ entry.toolName }}</span>
+                        <span class="terminal-other-name">{{
+                          entry.toolName
+                        }}</span>
                       </div>
-                      <pre v-if="entry.rawArgs" class="terminal-pre terminal-pre--args">{{ entry.rawArgs }}</pre>
-                      <div v-for="(line, idx) in entry.systemLines" :key="'s'+idx" class="terminal-sys-line">{{ line }}</div>
-                      <pre v-if="entry.outputText" class="terminal-pre" :class="{ 'terminal-pre--error': entry.hasErrorOutput }">{{ entry.outputText }}</pre>
-                      <div v-if="entry.pending && session?.status === 'running'" class="terminal-status">
+                      <pre
+                        v-if="entry.rawArgs"
+                        class="terminal-pre terminal-pre--args"
+                        >{{ entry.rawArgs }}</pre
+                      >
+                      <div
+                        v-for="(line, idx) in entry.systemLines"
+                        :key="'s' + idx"
+                        class="terminal-sys-line"
+                      >
+                        {{ line }}
+                      </div>
+                      <pre
+                        v-if="entry.outputText"
+                        class="terminal-pre"
+                        :class="{ 'terminal-pre--error': entry.hasErrorOutput }"
+                        >{{ entry.outputText }}</pre
+                      >
+                      <div
+                        v-if="entry.pending && session?.status === 'running'"
+                        class="terminal-status"
+                      >
                         <span class="terminal-blink">█</span>
                       </div>
                     </div>
@@ -1683,16 +2588,32 @@ onUnmounted(() => {
           <div class="agent-input">
             <div class="agent-input-inner">
               <div v-if="pendingFiles.length" class="agent-pending">
-                <div v-for="(file, index) in pendingFiles" :key="`${file.name}-${index}`" class="agent-pending__item">
-                  <component :is="getAgentFileIcon(file.name, file.type)" :size="14" class="agent-file-icon" />
+                <div
+                  v-for="(file, index) in pendingFiles"
+                  :key="`${file.name}-${index}`"
+                  class="agent-pending__item"
+                >
+                  <component
+                    :is="getAgentFileIcon(file.name, file.type)"
+                    :size="14"
+                    class="agent-file-icon"
+                  />
                   <span>{{ file.name }}</span>
                   <small>{{ formatFileSize(file.size) }}</small>
-                  <button type="button" @click="removePendingFile(index)"><i class="fa-solid fa-xmark"></i></button>
+                  <button type="button" @click="removePendingFile(index)">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
                 </div>
               </div>
 
-              <div class="agent-compose" :class="{ 'agent-compose--disabled': useDisabledComposeStyle }">
-                <label class="agent-upload-btn" :class="{ disabled: sendDisabled }">
+              <div
+                class="agent-compose"
+                :class="{ 'agent-compose--disabled': useDisabledComposeStyle }"
+              >
+                <label
+                  class="agent-upload-btn"
+                  :class="{ disabled: sendDisabled }"
+                >
                   <i class="fa-solid fa-paperclip"></i>
                   <input
                     ref="fileInputRef"
@@ -1712,30 +2633,81 @@ onUnmounted(() => {
                 />
 
                 <button
-                  v-if="session?.status === 'running'"
+                  v-if="isCancelable"
                   class="agent-cancel-btn"
                   :disabled="canceling"
-                  :title="canceling ? '中断中...' : '中断'"
+                  :title="
+                    canceling
+                      ? session?.status === 'queued'
+                        ? '终止排队中...'
+                        : '中断中...'
+                      : session?.status === 'queued'
+                        ? '终止排队'
+                        : '中断'
+                  "
                   @click="handleCancel"
                 >
-                  <i :class="canceling ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-stop'"></i>
+                  <i
+                    :class="
+                      canceling
+                        ? 'fa-solid fa-spinner fa-spin'
+                        : 'fa-solid fa-stop'
+                    "
+                  ></i>
                 </button>
-                <button v-else class="agent-send-btn" :class="{ active: canSendNow }" :disabled="!canSendNow" :title="sending ? '发送中...' : '发送'" @click="handleSend">
-                  <i :class="sending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-arrow-up'"></i>
+                <button
+                  v-else
+                  class="agent-send-btn"
+                  :class="{ active: canSendNow }"
+                  :disabled="!canSendNow"
+                  :title="sending ? '发送中...' : '发送'"
+                  @click="handleSend"
+                >
+                  <i
+                    :class="
+                      sending
+                        ? 'fa-solid fa-spinner fa-spin'
+                        : 'fa-solid fa-arrow-up'
+                    "
+                  ></i>
                 </button>
               </div>
 
               <div class="agent-hint-row">
                 <p class="agent-hint">
-                  <span v-if="session?.task_status === 'completed'">任务已完成，会话已关闭。</span>
-                  <span v-else-if="session?.status === 'queued'">{{ queueAheadUsers > 0 ? `排队中，前面还有 ${queueAheadUsers} 人。` : '排队中，请稍候...' }}</span>
-                  <span v-else-if="session?.status === 'running'">代理正在执行中，可等待输出。</span>
+                  <span v-if="session?.task_status === 'completed'"
+                    >任务已完成，会话已关闭。</span
+                  >
+                  <span v-else-if="session?.status === 'queued'">{{
+                    queueAheadUsers > 0
+                      ? `排队中，${queueText}。`
+                      : "排队中，请稍候..."
+                  }}</span>
+                  <span v-else-if="session?.status === 'running'"
+                    >代理正在执行中，可等待输出。</span
+                  >
+                  <span v-else-if="needsQueue">{{
+                    queueAheadUsers > 0
+                      ? `当前需排队，${queueText}。`
+                      : "当前需排队，请稍后发送。"
+                  }}</span>
                   <span v-else-if="interactionLeft <= 0">交互次数已用尽。</span>
-                  <span v-else>单次最多 {{ maxFileCount }} 个文件，单个不超过 {{ maxFileSizeMb }} MB。</span>
+                  <span v-else
+                    >单次最多 {{ maxFileCount }} 个文件，单个不超过
+                    {{ maxFileSizeMb }} MB。</span
+                  >
                 </p>
                 <div class="agent-hint-badges">
-                  <span class="badge badge-blue">已用 {{ session?.interaction_count ?? 0 }}/{{ session?.max_interactions ?? 8 }}</span>
-                  <span class="badge" :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'">剩余 {{ interactionLeft }}</span>
+                  <span class="badge badge-blue"
+                    >已用 {{ session?.interaction_count ?? 0 }}/{{
+                      session?.max_interactions ?? 8
+                    }}</span
+                  >
+                  <span
+                    class="badge"
+                    :class="interactionLeft > 0 ? 'badge-green' : 'badge-red'"
+                    >剩余 {{ interactionLeft }}</span
+                  >
                 </div>
               </div>
             </div>
@@ -1746,15 +2718,23 @@ onUnmounted(() => {
       <!-- ── Deliverable Modal ── -->
       <Teleport to="body">
         <Transition name="modal-fade">
-          <div v-if="showDeliverableModal" class="modal-overlay" @click.self="showDeliverableModal = false">
+          <div
+            v-if="showDeliverableModal"
+            class="modal-overlay"
+            @click.self="showDeliverableModal = false"
+          >
             <div class="modal-panel">
               <div class="modal-header">
                 <h3>交付文件</h3>
                 <div class="modal-select-stats">
                   <span class="modal-count modal-count--select">
-                    <span class="modal-count-num modal-count-num--left">{{ selectedNames.size }}</span>
+                    <span class="modal-count-num modal-count-num--left">{{
+                      selectedNames.size
+                    }}</span>
                     <span class="modal-count-slash">/</span>
-                    <span class="modal-count-num modal-count-num--right">{{ deliverableCount }}</span>
+                    <span class="modal-count-num modal-count-num--right">{{
+                      deliverableCount
+                    }}</span>
                   </span>
                 </div>
                 <div class="modal-header-actions">
@@ -1764,10 +2744,19 @@ onUnmounted(() => {
                     :disabled="selectedNames.size === 0 || deletingSelected"
                     @click="handleDeleteSelected"
                   >
-                    <i :class="deletingSelected ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash'"></i>
+                    <i
+                      :class="
+                        deletingSelected
+                          ? 'fa-solid fa-spinner fa-spin'
+                          : 'fa-solid fa-trash'
+                      "
+                    ></i>
                     删除
                   </button>
-                  <button class="icon-btn modal-close-btn" @click="showDeliverableModal = false">
+                  <button
+                    class="icon-btn modal-close-btn"
+                    @click="showDeliverableModal = false"
+                  >
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 </div>
@@ -1784,27 +2773,54 @@ onUnmounted(() => {
                     v-for="item in session?.deliverables || []"
                     :key="item.name"
                     class="deliverable-item"
-                    :class="{ 'deliverable-item--selected': selectedNames.has(item.name) }"
+                    :class="{
+                      'deliverable-item--selected': selectedNames.has(
+                        item.name,
+                      ),
+                    }"
                     @click="handleDeliverableClick(item)"
                   >
                     <div class="deliverable-check">
-                      <i :class="selectedNames.has(item.name) ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>
+                      <i
+                        :class="
+                          selectedNames.has(item.name)
+                            ? 'fa-solid fa-square-check'
+                            : 'fa-regular fa-square'
+                        "
+                      ></i>
                     </div>
                     <div class="deliverable-icon">
-                      <component :is="getAgentFileIcon(item.name)" :size="18" class="agent-file-icon" />
+                      <component
+                        :is="getAgentFileIcon(item.name)"
+                        :size="18"
+                        class="agent-file-icon"
+                      />
                     </div>
                     <div class="deliverable-info">
                       <span class="deliverable-name">{{ item.name }}</span>
-                      <span class="deliverable-meta">{{ formatFileSize(item.size) }} · {{ formatFull(item.updated_at) }}</span>
+                      <span class="deliverable-meta"
+                        >{{ formatFileSize(item.size) }} ·
+                        {{ formatFull(item.updated_at) }}</span
+                      >
                     </div>
                   </div>
                 </div>
               </div>
 
               <div v-if="deliverableCount > 0" class="modal-footer">
-                <button class="modal-zip-btn" :disabled="zippingAll" @click="handleDownloadZip">
+                <button
+                  class="modal-zip-btn"
+                  :disabled="zippingAll"
+                  @click="handleDownloadZip"
+                >
                   <i class="fa-solid fa-file-zipper"></i>
-                  {{ zippingAll ? '打包中...' : (selectedNames.size > 0 ? `打包下载（${selectedNames.size} 个）` : '打包下载全部') }}
+                  {{
+                    zippingAll
+                      ? "打包中..."
+                      : selectedNames.size > 0
+                        ? `打包下载（${selectedNames.size} 个）`
+                        : "打包下载全部"
+                  }}
                 </button>
               </div>
             </div>
@@ -1830,7 +2846,7 @@ onUnmounted(() => {
 
 <style>
 @property --border-angle {
-  syntax: '<angle>';
+  syntax: "<angle>";
   initial-value: 0deg;
   inherits: false;
 }
@@ -1859,8 +2875,14 @@ onUnmounted(() => {
 /* ===== Left Sidebar (matches ChatConversationSidebar) ===== */
 
 @keyframes agent-rise {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .agent-sidebar {
@@ -1919,10 +2941,14 @@ onUnmounted(() => {
   font-size: var(--text-sm, 13px);
   color: var(--c-text, #1e293b);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.search-input::placeholder { color: var(--c-text-muted, #94a3b8); }
+.search-input::placeholder {
+  color: var(--c-text-muted, #94a3b8);
+}
 .search-input:focus {
   border-color: var(--c-accent, #2563eb);
   box-shadow: 0 0 0 3px var(--c-accent-soft, rgba(37, 99, 235, 0.15));
@@ -1934,9 +2960,16 @@ onUnmounted(() => {
   padding: 4px 0;
 }
 
-.session-list::-webkit-scrollbar { width: 4px; }
-.session-list::-webkit-scrollbar-track { background: transparent; }
-.session-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+.session-list::-webkit-scrollbar {
+  width: 4px;
+}
+.session-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.session-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
 
 .session-item {
   display: flex;
@@ -1950,7 +2983,9 @@ onUnmounted(() => {
   border: 1px solid transparent;
   background: transparent;
   text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .session-item:hover {
@@ -1960,7 +2995,7 @@ onUnmounted(() => {
 .session-item.active {
   background: var(--c-accent-light, #eff6ff);
   border-color: var(--c-accent-soft, rgba(37, 99, 235, 0.2));
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .session-item-top {
@@ -1980,7 +3015,9 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.session-item.active .session-item-title { color: #1e3a5f; }
+.session-item.active .session-item-title {
+  color: #1e3a5f;
+}
 
 .session-item-time {
   font-size: var(--text-xs, 11px);
@@ -2007,14 +3044,29 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.session-dot--running { background: #3b82f6; animation: dotPulse 1.5s ease-in-out infinite; }
-.session-dot--queued { background: #f59e0b; animation: dotPulse 1.5s ease-in-out infinite; }
-.session-dot--done { background: #22c55e; }
-.session-dot--canceled { background: #94a3b8; }
+.session-dot--running {
+  background: #3b82f6;
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+.session-dot--queued {
+  background: #f59e0b;
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+.session-dot--done {
+  background: #22c55e;
+}
+.session-dot--canceled {
+  background: #94a3b8;
+}
 
 @keyframes dotPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .session-empty {
@@ -2033,7 +3085,9 @@ onUnmounted(() => {
   opacity: 0.15;
 }
 
-.session-empty p { margin: 0; }
+.session-empty p {
+  margin: 0;
+}
 
 /* ===== Right Main ===== */
 
@@ -2062,7 +3116,10 @@ onUnmounted(() => {
   opacity: 0.15;
 }
 
-.agent-empty-state p { margin: 0; font-size: 14px; }
+.agent-empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
 
 /* ===== Header (matches ChatHeaderPanel) ===== */
 
@@ -2084,7 +3141,9 @@ onUnmounted(() => {
   gap: 12px;
 }
 
-.back-btn { margin-left: -8px; }
+.back-btn {
+  margin-left: -8px;
+}
 
 .header-avatar {
   width: 40px;
@@ -2122,8 +3181,14 @@ onUnmounted(() => {
   line-height: 1.3;
 }
 
-.header-status.status-running { color: #3b82f6; font-weight: 500; }
-.header-status.status-queued { color: #d97706; font-weight: 500; }
+.header-status.status-running {
+  color: #3b82f6;
+  font-weight: 500;
+}
+.header-status.status-queued {
+  color: #d97706;
+  font-weight: 500;
+}
 
 .header-actions {
   display: flex;
@@ -2180,9 +3245,16 @@ onUnmounted(() => {
   gap: 20px;
 }
 
-.chat-scroll::-webkit-scrollbar { width: 6px; }
-.chat-scroll::-webkit-scrollbar-track { background: transparent; }
-.chat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
 
 .chat-empty {
   color: #94a3b8;
@@ -2207,8 +3279,12 @@ onUnmounted(() => {
 
 /* --- User Bubble --- */
 
-.chat-bubble-row { display: flex; }
-.chat-bubble-row--right { justify-content: flex-end; }
+.chat-bubble-row {
+  display: flex;
+}
+.chat-bubble-row--right {
+  justify-content: flex-end;
+}
 
 .chat-bubble-row--right {
   width: min(60%, 980px);
@@ -2229,7 +3305,9 @@ onUnmounted(() => {
   color: #fff;
 }
 
-.chat-bubble--user :deep(*) { color: #fff !important; }
+.chat-bubble--user :deep(*) {
+  color: #fff !important;
+}
 
 .chat-bubble-files {
   display: flex;
@@ -2249,8 +3327,12 @@ onUnmounted(() => {
   gap: 4px;
 }
 
-.chat-file-chip small { opacity: 0.7; }
-.agent-file-icon { flex-shrink: 0; }
+.chat-file-chip small {
+  opacity: 0.7;
+}
+.agent-file-icon {
+  flex-shrink: 0;
+}
 
 /* --- AI Intermediate (snap-scroll) --- */
 
@@ -2286,7 +3368,7 @@ onUnmounted(() => {
 }
 
 .chat-ai-snap-outer--glow::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
@@ -2312,7 +3394,9 @@ onUnmounted(() => {
 }
 
 @keyframes borderTrace {
-  to { --border-angle: 360deg; }
+  to {
+    --border-angle: 360deg;
+  }
 }
 
 .chat-ai-snap-outer--glow .chat-ai-snap {
@@ -2351,7 +3435,9 @@ onUnmounted(() => {
   border-radius: 12px;
 }
 
-.chat-ai-snap::-webkit-scrollbar { width: 0; }
+.chat-ai-snap::-webkit-scrollbar {
+  width: 0;
+}
 
 .chat-ai-snap-item {
   min-height: 64px;
@@ -2401,12 +3487,20 @@ onUnmounted(() => {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-.skeleton-line--long { width: 80%; }
-.skeleton-line--short { width: 50%; }
+.skeleton-line--long {
+  width: 80%;
+}
+.skeleton-line--short {
+  width: 50%;
+}
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ===== Terminal ===== */
@@ -2432,7 +3526,10 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.terminal-dots { display: flex; gap: 7px; }
+.terminal-dots {
+  display: flex;
+  gap: 7px;
+}
 
 .terminal-dot {
   width: 12px;
@@ -2440,14 +3537,22 @@ onUnmounted(() => {
   border-radius: 50%;
 }
 
-.terminal-dot--red    { background: #ff5f56; }
-.terminal-dot--yellow { background: #ffbd2e; }
-.terminal-dot--green  { background: #27c93f; }
+.terminal-dot--red {
+  background: #ff5f56;
+}
+.terminal-dot--yellow {
+  background: #ffbd2e;
+}
+.terminal-dot--green {
+  background: #27c93f;
+}
 
 .terminal-hostname {
   font-size: 12px;
   color: #8b949e;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", "Menlo",
+    monospace;
   font-weight: 500;
 }
 
@@ -2458,19 +3563,38 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", "Menlo",
+    monospace;
 }
 
-.terminal-body::-webkit-scrollbar { width: 6px; }
-.terminal-body::-webkit-scrollbar-track { background: #0d1117; }
-.terminal-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
-.terminal-body::-webkit-scrollbar-thumb:hover { background: #484f58; }
+.terminal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.terminal-body::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+.terminal-body::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+.terminal-body::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
 
-.terminal-status { color: #8b949e; font-size: 13px; }
+.terminal-status {
+  color: #8b949e;
+  font-size: 13px;
+}
 
 @keyframes termBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .terminal-blink {
@@ -2486,8 +3610,14 @@ onUnmounted(() => {
 }
 
 @keyframes termFade {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .terminal-status-icon {
@@ -2498,7 +3628,9 @@ onUnmounted(() => {
   margin-right: 6px;
 }
 
-.terminal-status-icon--err { color: #f85149; }
+.terminal-status-icon--err {
+  color: #f85149;
+}
 
 .terminal-prompt-line {
   font-size: 13px;
@@ -2506,10 +3638,20 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-.terminal-user { color: #3fb950; font-weight: 600; }
-.terminal-path { color: #58a6ff; }
-.terminal-dollar { color: #3fb950; }
-.terminal-cmd { color: #f0f6fc; }
+.terminal-user {
+  color: #3fb950;
+  font-weight: 600;
+}
+.terminal-path {
+  color: #58a6ff;
+}
+.terminal-dollar {
+  color: #3fb950;
+}
+.terminal-cmd {
+  color: #f0f6fc;
+  margin-left: 6px;
+}
 
 .terminal-sys-line {
   color: #d29922;
@@ -2532,8 +3674,13 @@ onUnmounted(() => {
   padding-left: 2px;
 }
 
-.terminal-pre--args { color: #79c0ff; font-size: 11px; }
-.terminal-pre--error { color: #fca5a5; }
+.terminal-pre--args {
+  color: #79c0ff;
+  font-size: 11px;
+}
+.terminal-pre--error {
+  color: #fca5a5;
+}
 
 .terminal-write-box {
   border: 1px solid #30363d;
@@ -2553,9 +3700,15 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.terminal-write-head i { font-size: 13px; }
-.terminal-write-head--read { color: #58a6ff; }
-.terminal-write-box--read { border-color: #1f3a5f; }
+.terminal-write-head i {
+  font-size: 13px;
+}
+.terminal-write-head--read {
+  color: #58a6ff;
+}
+.terminal-write-box--read {
+  border-color: #1f3a5f;
+}
 
 .terminal-write-detail {
   padding: 6px 12px;
@@ -2565,8 +3718,14 @@ onUnmounted(() => {
   align-items: baseline;
 }
 
-.terminal-write-key { color: #8b949e; flex-shrink: 0; }
-.terminal-write-val { color: #79c0ff; word-break: break-all; }
+.terminal-write-key {
+  color: #8b949e;
+  flex-shrink: 0;
+}
+.terminal-write-val {
+  color: #79c0ff;
+  word-break: break-all;
+}
 
 .terminal-write-ok {
   padding: 4px 12px 6px;
@@ -2574,8 +3733,12 @@ onUnmounted(() => {
   color: #3fb950;
 }
 
-.terminal-write-ok i { margin-right: 4px; }
-.terminal-write-ok--error { color: #fda4af; }
+.terminal-write-ok i {
+  margin-right: 4px;
+}
+.terminal-write-ok--error {
+  color: #fda4af;
+}
 
 .terminal-other-line {
   display: flex;
@@ -2584,8 +3747,13 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.terminal-other-icon { color: #d29922; }
-.terminal-other-name { color: #d29922; font-weight: 600; }
+.terminal-other-icon {
+  color: #d29922;
+}
+.terminal-other-name {
+  color: #d29922;
+  font-weight: 600;
+}
 
 /* --- Terminal setup spinner --- */
 
@@ -2598,7 +3766,9 @@ onUnmounted(() => {
   padding: 4px 0;
 }
 
-.terminal-setup-text { color: #58a6ff; }
+.terminal-setup-text {
+  color: #58a6ff;
+}
 
 .terminal-setup-spinner {
   color: #3fb950;
@@ -2624,8 +3794,12 @@ onUnmounted(() => {
   margin-bottom: 0.25em;
 }
 
-:deep(.rich-text) p:first-child { margin-top: 0; }
-:deep(.rich-text) p:last-child { margin-bottom: 0; }
+:deep(.rich-text) p:first-child {
+  margin-top: 0;
+}
+:deep(.rich-text) p:last-child {
+  margin-bottom: 0;
+}
 
 :deep(.rich-text) ul,
 :deep(.rich-text) ol {
@@ -2633,15 +3807,27 @@ onUnmounted(() => {
   margin: 0.25em 0;
 }
 
-:deep(.rich-text) ul { list-style-type: disc; }
-:deep(.rich-text) ol { list-style-type: decimal; }
-:deep(.rich-text) ul ul { list-style-type: circle; }
-:deep(.rich-text) ul ul ul { list-style-type: square; }
+:deep(.rich-text) ul {
+  list-style-type: disc;
+}
+:deep(.rich-text) ol {
+  list-style-type: decimal;
+}
+:deep(.rich-text) ul ul {
+  list-style-type: circle;
+}
+:deep(.rich-text) ul ul ul {
+  list-style-type: square;
+}
 
-:deep(.rich-text) li { margin: 0.1em 0; }
+:deep(.rich-text) li {
+  margin: 0.1em 0;
+}
 
 :deep(.rich-text) li > ul,
-:deep(.rich-text) li > ol { margin: 0; }
+:deep(.rich-text) li > ol {
+  margin: 0;
+}
 
 :deep(.rich-text) blockquote {
   border-left: 3px solid var(--c-accent, #2563eb);
@@ -2652,7 +3838,9 @@ onUnmounted(() => {
   color: var(--c-text-secondary, #475569);
 }
 
-:deep(.rich-text) blockquote p { margin: 0.15em 0; }
+:deep(.rich-text) blockquote p {
+  margin: 0.15em 0;
+}
 
 :deep(.rich-text) pre,
 :deep(.rich-text) pre.hljs-pre {
@@ -2671,7 +3859,7 @@ onUnmounted(() => {
 
 :deep(.rich-text) pre code,
 :deep(.rich-text) pre.hljs-pre code {
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   background: transparent;
   padding: 0;
   border-radius: 0;
@@ -2680,7 +3868,7 @@ onUnmounted(() => {
 }
 
 :deep(.rich-text) code {
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
   border-radius: 4px;
@@ -2694,7 +3882,7 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   color: #9ca3af;
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   user-select: none;
   letter-spacing: 0.03em;
 }
@@ -2712,7 +3900,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   line-height: 0;
 }
 
@@ -2721,9 +3911,16 @@ onUnmounted(() => {
   color: #111827;
 }
 
-:deep(.code-copy-btn .icon-check) { display: none; }
-:deep(.code-copy-btn.copied .icon-copy) { display: none; }
-:deep(.code-copy-btn.copied .icon-check) { display: flex; color: #16a34a; }
+:deep(.code-copy-btn .icon-check) {
+  display: none;
+}
+:deep(.code-copy-btn.copied .icon-copy) {
+  display: none;
+}
+:deep(.code-copy-btn.copied .icon-check) {
+  display: flex;
+  color: #16a34a;
+}
 
 :deep(.rich-text) table {
   width: 100%;
@@ -2743,8 +3940,12 @@ onUnmounted(() => {
   border-bottom: 2px solid var(--c-text-muted, #94a3b8);
 }
 
-:deep(.rich-text) td { border-bottom: 1px solid var(--c-border, #e2e8f0); }
-:deep(.rich-text) tr:last-child td { border-bottom: none; }
+:deep(.rich-text) td {
+  border-bottom: 1px solid var(--c-border, #e2e8f0);
+}
+:deep(.rich-text) tr:last-child td {
+  border-bottom: none;
+}
 
 :deep(.rich-text) hr {
   border: none;
@@ -2760,7 +3961,7 @@ onUnmounted(() => {
   border-radius: 8px;
   display: block;
   margin: 0 auto;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 :deep(.bubble-other .rich-text) {
@@ -2773,7 +3974,9 @@ onUnmounted(() => {
   text-decoration: underline;
 }
 
-:deep(.bubble-own .rich-text) { color: white !important; }
+:deep(.bubble-own .rich-text) {
+  color: white !important;
+}
 
 :deep(.bubble-own .rich-text) a {
   color: #bfdbfe;
@@ -2859,8 +4062,16 @@ onUnmounted(() => {
   background: #f8fafc;
 }
 
-.agent-pending__item small { color: #64748b; }
-.agent-pending__item button { border: none; background: transparent; color: #64748b; padding: 0; cursor: pointer; }
+.agent-pending__item small {
+  color: #64748b;
+}
+.agent-pending__item button {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  padding: 0;
+  cursor: pointer;
+}
 
 .agent-compose {
   display: flex;
@@ -2869,7 +4080,9 @@ onUnmounted(() => {
   border: 1.5px solid var(--c-border, #e2e8f0);
   border-radius: 24px;
   padding: 4px;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -2914,13 +4127,22 @@ onUnmounted(() => {
   justify-content: center;
   color: var(--c-text-secondary, #64748b);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
   font-size: 15px;
 }
 
-.agent-upload-btn:hover { background: var(--c-border, #e2e8f0); }
-.agent-upload-btn.disabled { opacity: 0.5; cursor: not-allowed; }
-.agent-upload-btn input { display: none; }
+.agent-upload-btn:hover {
+  background: var(--c-border, #e2e8f0);
+}
+.agent-upload-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.agent-upload-btn input {
+  display: none;
+}
 
 .agent-textarea {
   flex: 1;
@@ -2939,7 +4161,9 @@ onUnmounted(() => {
   line-height: 20px;
 }
 
-.agent-textarea::placeholder { color: var(--c-text-muted, #94a3b8); }
+.agent-textarea::placeholder {
+  color: var(--c-text-muted, #94a3b8);
+}
 
 .agent-send-btn {
   width: 38px;
@@ -2954,7 +4178,10 @@ onUnmounted(() => {
   background: var(--c-border, #e2e8f0);
   color: var(--c-text-muted, #94a3b8);
   cursor: not-allowed;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
   min-width: unset;
 }
 
@@ -2964,8 +4191,13 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.agent-send-btn.active:hover { background: #1d4ed8; transform: scale(1.05); }
-.agent-send-btn.active:active { transform: scale(0.95); }
+.agent-send-btn.active:hover {
+  background: #1d4ed8;
+  transform: scale(1.05);
+}
+.agent-send-btn.active:active {
+  transform: scale(0.95);
+}
 
 .agent-cancel-btn {
   width: 38px;
@@ -2984,8 +4216,13 @@ onUnmounted(() => {
   min-width: unset;
 }
 
-.agent-cancel-btn:hover:not(:disabled) { background: #fecaca; }
-.agent-cancel-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.agent-cancel-btn:hover:not(:disabled) {
+  background: #fecaca;
+}
+.agent-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .agent-hint-row {
   display: flex;
@@ -3017,9 +4254,18 @@ onUnmounted(() => {
   border-radius: 999px;
 }
 
-.badge-blue { background: #dbeafe; color: #1d4ed8; }
-.badge-green { background: #dcfce7; color: #16a34a; }
-.badge-red { background: #fee2e2; color: #dc2626; }
+.badge-blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.badge-green {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.badge-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
 
 /* ===== Deliverable Modal ===== */
 
@@ -3050,11 +4296,15 @@ onUnmounted(() => {
 }
 
 .modal-fade-enter-from,
-.modal-fade-leave-to { opacity: 0; }
+.modal-fade-leave-to {
+  opacity: 0;
+}
 
 .modal-fade-enter-active .modal-panel,
 .modal-fade-leave-active .modal-panel {
-  transition: transform 0.22s ease, opacity 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
 }
 
 .modal-fade-enter-from .modal-panel {
@@ -3151,10 +4401,15 @@ onUnmounted(() => {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
-.modal-action-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+.modal-action-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
 
 .modal-action-btn--danger {
   background: #fee2e2;
@@ -3162,8 +4417,15 @@ onUnmounted(() => {
   color: #dc2626;
 }
 
-.modal-action-btn--danger:hover { background: #fecaca; border-color: #f87171; color: #b91c1c; }
-.modal-action-btn--danger:disabled { opacity: 0.45; cursor: not-allowed; }
+.modal-action-btn--danger:hover {
+  background: #fecaca;
+  border-color: #f87171;
+  color: #b91c1c;
+}
+.modal-action-btn--danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .modal-body {
   padding: 16px 20px;
@@ -3181,8 +4443,14 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.modal-empty-icon { font-size: 32px; opacity: 0.15; }
-.modal-empty p { margin: 0; font-size: 13px; }
+.modal-empty-icon {
+  font-size: 32px;
+  opacity: 0.15;
+}
+.modal-empty p {
+  margin: 0;
+  font-size: 13px;
+}
 
 .deliverable-list {
   display: flex;
@@ -3198,7 +4466,9 @@ onUnmounted(() => {
   border-radius: 10px;
   border: 1px solid var(--c-border, #e2e8f0);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
   user-select: none;
 }
 
@@ -3280,11 +4550,19 @@ onUnmounted(() => {
   color: #334155;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
-.modal-zip-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-.modal-zip-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal-zip-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+.modal-zip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ===== Tool Cards (unified) ===== */
 
@@ -3305,25 +4583,59 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.terminal-tool-head i { font-size: 13px; }
+.terminal-tool-head i {
+  font-size: 13px;
+}
 
-.terminal-tool-head--glob { color: #fbbf24; }
-.terminal-tool-head--grep { color: #fb923c; }
-.terminal-tool-head--search-web { color: #34d399; }
-.terminal-tool-head--fetch-url { color: #22d3ee; }
-.terminal-tool-head--todo { color: #a78bfa; }
-.terminal-tool-head--task { color: #f0abfc; }
-.terminal-tool-head--str-replace { color: #d2a8ff; }
-.terminal-tool-head--read-media { color: #fb7185; }
+.terminal-tool-head--glob {
+  color: #fbbf24;
+}
+.terminal-tool-head--grep {
+  color: #fb923c;
+}
+.terminal-tool-head--search-web {
+  color: #34d399;
+}
+.terminal-tool-head--fetch-url {
+  color: #22d3ee;
+}
+.terminal-tool-head--todo {
+  color: #a78bfa;
+}
+.terminal-tool-head--task {
+  color: #f0abfc;
+}
+.terminal-tool-head--str-replace {
+  color: #d2a8ff;
+}
+.terminal-tool-head--read-media {
+  color: #fb7185;
+}
 
-.terminal-tool-box--glob { border-color: #3d3520; }
-.terminal-tool-box--grep { border-color: #3d2e20; }
-.terminal-tool-box--search-web { border-color: #1a3d2e; }
-.terminal-tool-box--fetch-url { border-color: #1a3040; }
-.terminal-tool-box--todo { border-color: #2d2540; }
-.terminal-tool-box--task { border-color: #3d2040; }
-.terminal-tool-box--str-replace { border-color: #2d2540; }
-.terminal-tool-box--read-media { border-color: #3d2030; }
+.terminal-tool-box--glob {
+  border-color: #3d3520;
+}
+.terminal-tool-box--grep {
+  border-color: #3d2e20;
+}
+.terminal-tool-box--search-web {
+  border-color: #1a3d2e;
+}
+.terminal-tool-box--fetch-url {
+  border-color: #1a3040;
+}
+.terminal-tool-box--todo {
+  border-color: #2d2540;
+}
+.terminal-tool-box--task {
+  border-color: #3d2040;
+}
+.terminal-tool-box--str-replace {
+  border-color: #2d2540;
+}
+.terminal-tool-box--read-media {
+  border-color: #3d2030;
+}
 
 .terminal-tool-detail {
   padding: 6px 12px;
@@ -3333,16 +4645,27 @@ onUnmounted(() => {
   align-items: baseline;
 }
 
-.terminal-tool-key { color: #8b949e; flex-shrink: 0; }
-.terminal-tool-val { color: #79c0ff; word-break: break-all; }
-.terminal-tool-val--highlight { color: #ffa657; font-weight: 500; }
+.terminal-tool-key {
+  color: #8b949e;
+  flex-shrink: 0;
+}
+.terminal-tool-val {
+  color: #79c0ff;
+  word-break: break-all;
+}
+.terminal-tool-val--highlight {
+  color: #ffa657;
+  font-weight: 500;
+}
 
 .terminal-tool-link {
   color: #58a6ff;
   text-decoration: none;
   word-break: break-all;
 }
-.terminal-tool-link:hover { text-decoration: underline; }
+.terminal-tool-link:hover {
+  text-decoration: underline;
+}
 
 .terminal-tool-body {
   padding: 4px 12px 8px;
@@ -3361,7 +4684,10 @@ onUnmounted(() => {
   padding: 3px 0;
 }
 
-.terminal-tool-info i { color: #58a6ff; font-size: 11px; }
+.terminal-tool-info i {
+  color: #58a6ff;
+  font-size: 11px;
+}
 
 .terminal-tool-file {
   display: flex;
@@ -3372,7 +4698,10 @@ onUnmounted(() => {
   padding: 3px 0;
 }
 
-.terminal-tool-file i { color: #8b949e; font-size: 11px; }
+.terminal-tool-file i {
+  color: #8b949e;
+  font-size: 11px;
+}
 
 .terminal-tool-empty {
   padding: 8px 12px;
@@ -3388,8 +4717,12 @@ onUnmounted(() => {
   border-top: 1px solid #21262d;
 }
 
-.terminal-tool-ok-line i { margin-right: 4px; }
-.terminal-tool-ok-line--error { color: #fda4af; }
+.terminal-tool-ok-line i {
+  margin-right: 4px;
+}
+.terminal-tool-ok-line--error {
+  color: #fda4af;
+}
 
 .terminal-pre--incard {
   margin: 0;
@@ -3405,7 +4738,9 @@ onUnmounted(() => {
   border-bottom: 1px solid #21262d;
 }
 
-.terminal-search-item:last-child { border-bottom: none; }
+.terminal-search-item:last-child {
+  border-bottom: none;
+}
 
 .terminal-search-title {
   display: flex;
@@ -3414,7 +4749,11 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.terminal-search-title i { color: #34d399; font-size: 10px; flex-shrink: 0; }
+.terminal-search-title i {
+  color: #34d399;
+  font-size: 10px;
+  flex-shrink: 0;
+}
 
 .terminal-search-title a {
   color: #58a6ff;
@@ -3422,7 +4761,9 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.terminal-search-title a:hover { text-decoration: underline; }
+.terminal-search-title a:hover {
+  text-decoration: underline;
+}
 
 .terminal-search-url {
   font-size: 11px;
@@ -3485,12 +4826,25 @@ onUnmounted(() => {
   padding: 4px 0;
 }
 
-.terminal-todo--done { color: #3fb950; }
-.terminal-todo--progress { color: #58a6ff; }
-.terminal-todo--pending { color: #d29922; }
+.terminal-todo--done {
+  color: #3fb950;
+}
+.terminal-todo--progress {
+  color: #58a6ff;
+}
+.terminal-todo--pending {
+  color: #d29922;
+}
 
-.terminal-todo-title { color: #c9d1d9; flex: 1; min-width: 0; }
-.terminal-todo-title--done { text-decoration: line-through; color: #8b949e; }
+.terminal-todo-title {
+  color: #c9d1d9;
+  flex: 1;
+  min-width: 0;
+}
+.terminal-todo-title--done {
+  text-decoration: line-through;
+  color: #8b949e;
+}
 
 .terminal-todo-badge {
   font-size: 10px;
@@ -3500,10 +4854,22 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.terminal-todo-badge--done { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
-.terminal-todo-badge--in_progress { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
-.terminal-todo-badge--pending { background: rgba(210, 153, 34, 0.12); color: #d29922; }
-.terminal-todo-badge--canceled { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+.terminal-todo-badge--done {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+.terminal-todo-badge--in_progress {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
+.terminal-todo-badge--pending {
+  background: rgba(210, 153, 34, 0.12);
+  color: #d29922;
+}
+.terminal-todo-badge--canceled {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
 
 /* --- ReadFile output --- */
 
@@ -3521,7 +4887,10 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.terminal-readfile-output-label i { color: #58a6ff; font-size: 10px; }
+.terminal-readfile-output-label i {
+  color: #58a6ff;
+  font-size: 10px;
+}
 
 .terminal-readfile-pre {
   margin: 0;
@@ -3533,15 +4902,30 @@ onUnmounted(() => {
   line-height: 1.5;
   max-height: 240px;
   overflow-y: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", "Menlo",
+    monospace;
 }
 
-.terminal-readfile-pre--error { color: #fca5a5; }
-.terminal-readfile-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
+.terminal-readfile-pre--error {
+  color: #fca5a5;
+}
+.terminal-readfile-pre--error::before {
+  content: "✗ ";
+  color: #f87171;
+  font-weight: 700;
+}
 
-.terminal-readfile-pre::-webkit-scrollbar { width: 4px; }
-.terminal-readfile-pre::-webkit-scrollbar-track { background: #0d1117; }
-.terminal-readfile-pre::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+.terminal-readfile-pre::-webkit-scrollbar {
+  width: 4px;
+}
+.terminal-readfile-pre::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+.terminal-readfile-pre::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
+}
 
 /* --- Task badge + output --- */
 
@@ -3570,7 +4954,10 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.terminal-task-output-label i { color: #c9aef5; font-size: 10px; }
+.terminal-task-output-label i {
+  color: #c9aef5;
+  font-size: 10px;
+}
 
 .terminal-task-pre {
   margin: 0;
@@ -3582,11 +4969,19 @@ onUnmounted(() => {
   line-height: 1.5;
   max-height: 240px;
   overflow-y: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", "Menlo",
+    monospace;
 }
 
-.terminal-task-pre--error { color: #fca5a5; }
-.terminal-task-pre--error::before { content: "✗ "; color: #f87171; font-weight: 700; }
+.terminal-task-pre--error {
+  color: #fca5a5;
+}
+.terminal-task-pre--error::before {
+  content: "✗ ";
+  color: #f87171;
+  font-weight: 700;
+}
 
 .terminal-task-pending {
   padding: 6px 12px 8px;
@@ -3601,7 +4996,9 @@ onUnmounted(() => {
   border-top: 1px solid #21262d;
   max-height: 280px;
   overflow-y: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", "Menlo",
+    monospace;
 }
 
 .terminal-diff-meta {
@@ -3640,8 +5037,12 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
-.terminal-diff-line--old .terminal-diff-line-prefix { color: #f85149; }
-.terminal-diff-line--new .terminal-diff-line-prefix { color: #3fb950; }
+.terminal-diff-line--old .terminal-diff-line-prefix {
+  color: #f85149;
+}
+.terminal-diff-line--new .terminal-diff-line-prefix {
+  color: #3fb950;
+}
 
 .terminal-diff-line-code {
   flex: 1;
@@ -3653,12 +5054,23 @@ onUnmounted(() => {
   white-space: pre-wrap;
 }
 
-.terminal-diff-line--old .terminal-diff-line-code { color: #ffa198; }
-.terminal-diff-line--new .terminal-diff-line-code { color: #7ee787; }
+.terminal-diff-line--old .terminal-diff-line-code {
+  color: #ffa198;
+}
+.terminal-diff-line--new .terminal-diff-line-code {
+  color: #7ee787;
+}
 
-.terminal-diff::-webkit-scrollbar { width: 4px; }
-.terminal-diff::-webkit-scrollbar-track { background: #0d1117; }
-.terminal-diff::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+.terminal-diff::-webkit-scrollbar {
+  width: 4px;
+}
+.terminal-diff::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+.terminal-diff::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
+}
 
 .terminal-diff-line-code::selection {
   background: rgba(56, 139, 253, 0.35);
@@ -3702,19 +5114,36 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.terminal-media-chip i { color: #fb7185; font-size: 10px; }
+.terminal-media-chip i {
+  color: #fb7185;
+  font-size: 10px;
+}
 
 /* ===== Responsive ===== */
 
 @media (max-width: 768px) {
-  .agent-sidebar { width: 100%; }
-  .sidebar-hidden { display: none; }
-  .main-hidden { display: none; }
+  .agent-sidebar {
+    width: 100%;
+  }
+  .sidebar-hidden {
+    display: none;
+  }
+  .main-hidden {
+    display: none;
+  }
 
-  .agent-header { padding: 12px 16px; }
-  .chat-scroll { padding: 16px; }
-  .agent-input { padding: 12px 16px; }
-  .agent-input-inner { width: 100%; }
+  .agent-header {
+    padding: 12px 16px;
+  }
+  .chat-scroll {
+    padding: 16px;
+  }
+  .agent-input {
+    padding: 12px 16px;
+  }
+  .agent-input-inner {
+    width: 100%;
+  }
 
   .chat-ai-snap-wrap,
   .terminal,

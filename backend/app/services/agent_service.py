@@ -420,6 +420,11 @@ def _take_cancel_requested(session_id: str) -> bool:
         return True
 
 
+def _is_cancel_requested(session_id: str) -> bool:
+    with _RUNTIME_LOCK:
+        return session_id in _CANCEL_REQUESTED_SESSIONS
+
+
 def _try_interrupt_container_process(container_id: str | None) -> bool:
     if not container_id:
         return False
@@ -449,12 +454,11 @@ def interrupt_agent_session(db: Session, session: AgentSession) -> bool:
     process: subprocess.Popen | None = None
     container_id = session.container_id
     with _RUNTIME_LOCK:
+        _CANCEL_REQUESTED_SESSIONS.add(session.id)
         process = _RUNNING_EXEC.get(session.id)
         container_id = _RUNNING_CONTAINER.get(session.id) or container_id
-        if process:
-            _CANCEL_REQUESTED_SESSIONS.add(session.id)
 
-    requested = False
+    requested = True
     if process:
         try:
             if process.stdin and not process.stdin.closed:
@@ -472,6 +476,31 @@ def interrupt_agent_session(db: Session, session: AgentSession) -> bool:
 
     if _try_interrupt_container_process(container_id):
         requested = True
+
+    # Escalate to force-stop to guarantee cancellation.
+    if process and process.poll() is None:
+        try:
+            process.wait(timeout=2)
+        except Exception:
+            pass
+    if process and process.poll() is None:
+        try:
+            process.terminate()
+            requested = True
+            process.wait(timeout=2)
+        except Exception:
+            logger.warning('failed to terminate process for session=%s', session.id, exc_info=True)
+    if process and process.poll() is None:
+        try:
+            process.kill()
+            requested = True
+        except Exception:
+            logger.warning('failed to kill process for session=%s', session.id, exc_info=True)
+
+    if container_id:
+        _stop_container(container_id)
+        requested = True
+        session.container_id = None
 
     if requested:
         session.last_activity_at = utcnow()
@@ -549,24 +578,15 @@ def _cleanup_user_idle_containers(user_id: int) -> int:
 
 
 def _count_queue_ahead_users_locked(user_id: int, stop_at_session_id: str | None = None) -> int:
-    ahead: set[int] = set()
-    now = utcnow()
-    if _RUNNING_SESSION_ID and _ACTIVE_OWNER_USER_ID is not None and _ACTIVE_OWNER_USER_ID != user_id:
-        ahead.add(_ACTIVE_OWNER_USER_ID)
-    if (
-        _ACTIVE_OWNER_USER_ID is not None
-        and _OWNER_GRACE_UNTIL is not None
-        and now < _OWNER_GRACE_UNTIL
-        and _ACTIVE_OWNER_USER_ID != user_id
-    ):
-        ahead.add(_ACTIVE_OWNER_USER_ID)
+    ahead = 0
+    if _RUNNING_SESSION_ID is not None:
+        ahead += 1
 
     for item in _QUEUE_ITEMS:
         if stop_at_session_id and item.session_id == stop_at_session_id:
             break
-        if item.user_id != user_id:
-            ahead.add(item.user_id)
-    return len(ahead)
+        ahead += 1
+    return ahead
 
 
 def get_agent_queue_info(session_id: str, user_id: int) -> tuple[bool, int]:
@@ -604,6 +624,22 @@ def enqueue_agent_run(
         _QUEUED_SESSION_IDS.add(session_id)
         _QUEUE_COND.notify_all()
         return ahead
+
+
+def dequeue_agent_run(session_id: str) -> bool:
+    with _QUEUE_COND:
+        if session_id not in _QUEUED_SESSION_IDS:
+            return False
+        for idx, item in enumerate(_QUEUE_ITEMS):
+            if item.session_id != session_id:
+                continue
+            _QUEUE_ITEMS.pop(idx)
+            _QUEUED_SESSION_IDS.discard(session_id)
+            _QUEUE_COND.notify_all()
+            return True
+        _QUEUED_SESSION_IDS.discard(session_id)
+        _QUEUE_COND.notify_all()
+        return False
 
 
 def _dequeue_next_run_locked() -> tuple[QueuedAgentRun | None, int | None, float | None]:
@@ -666,7 +702,28 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
             db.add(session)
             db.commit()
 
+            if _is_cancel_requested(session_id):
+                session.status = 'idle'
+                session.last_error = None
+                session.last_activity_at = utcnow()
+                db.add(session)
+                create_agent_message(db, session_id=session_id, role='system', content='已中断当前执行。')
+                db.commit()
+                return
+
             _prepare_container_for_session(db, session)
+
+            if _is_cancel_requested(session_id):
+                session = db.get(AgentSession, session_id)
+                if not session:
+                    return
+                session.status = 'idle'
+                session.last_error = None
+                session.last_activity_at = utcnow()
+                db.add(session)
+                create_agent_message(db, session_id=session_id, role='system', content='已中断当前执行。')
+                db.commit()
+                return
 
             prompt = _build_prompt(user_prompt, attachments)
             prompt_quoted = shlex.quote(prompt)

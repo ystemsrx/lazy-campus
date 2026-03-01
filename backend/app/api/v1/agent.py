@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -22,6 +23,7 @@ from app.schemas.agent import (
     AgentAvailabilityOut,
     AgentBatchGrantOut,
     AgentBatchGrantRequest,
+    AgentCancelOut,
     AgentDeliverableDeleteBody,
     AgentDeliverableDeleteOut,
     AgentDeliverableOut,
@@ -37,6 +39,7 @@ from app.services.agent_service import (
     MAX_AGENT_FILES_PER_MESSAGE,
     MAX_AGENT_INTERACTIONS,
     create_agent_message,
+    dequeue_agent_run,
     delete_deliverables,
     ensure_session_workspace,
     get_agent_queue_info,
@@ -81,7 +84,8 @@ def _can_send(session: AgentSession, task: Task) -> bool:
 
 
 def _session_to_start_out(session: AgentSession, task: Task, remaining_count: int) -> AgentStartOut:
-    queue_waiting, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
+    queued, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
+    queue_waiting = queued or queue_ahead_users > 0
     return AgentStartOut(
         session_id=session.id,
         task_id=task.id,
@@ -100,7 +104,8 @@ def _session_to_start_out(session: AgentSession, task: Task, remaining_count: in
 
 
 def _session_to_detail_out(session: AgentSession, task: Task, remaining_count: int) -> AgentSessionDetailOut:
-    queue_waiting, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
+    queued, queue_ahead_users = get_agent_queue_info(session.id, session.user_id)
+    queue_waiting = queued or queue_ahead_users > 0
     return AgentSessionDetailOut(
         session_id=session.id,
         task_id=task.id,
@@ -138,6 +143,63 @@ def _message_to_out(msg: AgentMessage) -> AgentMessageOut:
         attachments=attachments,
         created_at=msg.created_at,
     )
+
+
+def _parse_message_attachments(msg: AgentMessage | None) -> list[dict]:
+    if not msg or not msg.attachments_json:
+        return []
+    try:
+        parsed = json.loads(msg.attachments_json)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _resolve_upload_path(user_id: int, session_id: str, relative_path: str | None) -> Path | None:
+    if not relative_path:
+        return None
+    root = uploads_dir(user_id, session_id).resolve()
+    candidate = (root.parent / relative_path).resolve()
+    if not str(candidate).startswith(str(root.parent)):
+        return None
+    return candidate
+
+
+def _delete_message_uploads(user_id: int, session_id: str, attachments: list[dict]) -> None:
+    for att in attachments:
+        path = _resolve_upload_path(user_id, session_id, str(att.get('workspace_path') or ''))
+        if not path:
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            continue
+
+
+def _rollback_queued_user_message(db: Session, session: AgentSession, user: User) -> tuple[int | None, str | None, list[dict]]:
+    latest_user_message = (
+        db.query(AgentMessage)
+        .filter(AgentMessage.session_id == session.id, AgentMessage.role == 'user')
+        .order_by(desc(AgentMessage.id))
+        .first()
+    )
+    if not latest_user_message:
+        return None, None, []
+
+    removed_message_id = int(latest_user_message.id)
+    restored_content = latest_user_message.content or ''
+    attachments = _parse_message_attachments(latest_user_message)
+    _delete_message_uploads(user.id, session.id, attachments)
+    db.delete(latest_user_message)
+
+    if int(session.interaction_count or 0) > 0:
+        session.interaction_count = int(session.interaction_count or 0) - 1
+
+    session.status = 'idle'
+    session.last_error = None
+    session.last_activity_at = datetime.utcnow()
+    db.add(session)
+    return removed_message_id, restored_content, attachments
 
 
 def _get_owned_session(db: Session, user_id: int, session_id: str) -> AgentSession:
@@ -394,25 +456,41 @@ async def send_agent_message(
     )
 
 
-@router.post('/sessions/{session_id}/cancel')
+@router.post('/sessions/{session_id}/cancel', response_model=AgentCancelOut)
 def cancel_running_agent_session(
     session_id: str,
     user: User = Depends(require_completed_user),
     db: Session = Depends(get_db),
-) -> dict[str, bool]:
+) -> AgentCancelOut:
     session = _get_owned_session(db, user.id, session_id)
     task = db.get(Task, session.task_id)
     if not task:
         raise HTTPException(status_code=404, detail='关联任务不存在')
     if task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
-        return {'canceled': False}
+        return AgentCancelOut(canceled=False, mode='none')
+
+    if session.status == 'queued':
+        dequeued = dequeue_agent_run(session.id)
+        if dequeued:
+            removed_message_id, restored_content, restored_attachments = _rollback_queued_user_message(db, session, user)
+            db.commit()
+            return AgentCancelOut(
+                canceled=True,
+                mode='queued',
+                removed_message_id=removed_message_id,
+                restored_content=restored_content,
+                restored_attachments=restored_attachments,
+            )
+
+        db.refresh(session)
+
     if session.status != 'running':
-        return {'canceled': False}
+        return AgentCancelOut(canceled=False, mode='none')
 
     canceled = interrupt_agent_session(db, session)
     if canceled:
         db.commit()
-    return {'canceled': canceled}
+    return AgentCancelOut(canceled=canceled, mode='running' if canceled else 'none')
 
 
 @router.get('/sessions/{session_id}/deliverables', response_model=list[AgentDeliverableOut])

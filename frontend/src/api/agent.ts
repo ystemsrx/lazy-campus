@@ -1,5 +1,6 @@
 import api from './client'
 import type {
+  AgentCancelResult,
   AgentAdminConfig,
   AgentAdminSessionList,
   AgentAvailability,
@@ -74,7 +75,7 @@ export async function downloadDeliverableZip(sessionId: string, names: string[] 
 }
 
 export async function cancelAgentSession(sessionId: string) {
-  const { data } = await api.post<{ canceled: boolean }>(`/agent/sessions/${sessionId}/cancel`)
+  const { data } = await api.post<AgentCancelResult>(`/agent/sessions/${sessionId}/cancel`)
   return data
 }
 
