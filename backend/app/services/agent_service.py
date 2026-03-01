@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import os
 import re
 import shlex
 import shutil
@@ -469,10 +470,19 @@ def interrupt_agent_session(db: Session, session: AgentSession) -> bool:
             logger.warning('failed to write Ctrl+C to session=%s', session.id, exc_info=True)
 
         try:
-            process.send_signal(signal.SIGINT)
+            interrupt_signal = signal.SIGINT
+            if os.name == 'nt' and hasattr(signal, 'CTRL_BREAK_EVENT'):
+                interrupt_signal = signal.CTRL_BREAK_EVENT
+            process.send_signal(interrupt_signal)
             requested = True
+        except ValueError:
+            logger.info(
+                'interrupt signal not supported for session=%s on platform=%s; fallback to terminate/kill',
+                session.id,
+                os.name,
+            )
         except Exception:
-            logger.warning('failed to send SIGINT to session=%s', session.id, exc_info=True)
+            logger.warning('failed to send interrupt signal to session=%s', session.id, exc_info=True)
 
     if _try_interrupt_container_process(container_id):
         requested = True
@@ -751,16 +761,19 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
                 f'"$KIMI_BIN" --print -p {prompt_quoted} --output-format=stream-json --session {kimi_session_quoted}',
             ]
 
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding=PROCESS_ENCODING,
-                errors='replace',
-                bufsize=1,
-            )
+            popen_kwargs: dict[str, Any] = {
+                'stdin': subprocess.PIPE,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'text': True,
+                'encoding': PROCESS_ENCODING,
+                'errors': 'replace',
+                'bufsize': 1,
+            }
+            if os.name == 'nt':
+                popen_kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+            process = subprocess.Popen(cmd, **popen_kwargs)
             _register_running_exec(session.id, str(session.container_id or ''), process)
 
             has_explicit_agent_error = False
