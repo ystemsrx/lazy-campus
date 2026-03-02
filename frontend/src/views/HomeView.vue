@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import HomeHallSection from '../components/home/HomeHallSection.vue'
 import HomeHeaderBar from '../components/home/HomeHeaderBar.vue'
@@ -19,6 +19,7 @@ import {
   genderLabel,
   statusOf,
 } from '../composables/home/model'
+import { fetchConversations } from '../api/chat'
 import { useHomeMarketplace } from '../composables/home/useHomeMarketplace'
 import { useHomeTabSync } from '../composables/home/useHomeTabSync'
 import { useHomeTaskDrawer } from '../composables/home/useHomeTaskDrawer'
@@ -26,6 +27,7 @@ import { useHomeWorkerDrawer } from '../composables/home/useHomeWorkerDrawer'
 import { useAuthStore } from '../stores/auth'
 import { useNotificationStore } from '../stores/notifications'
 import type { Task } from '../types/api'
+import type { Conversation } from '../types/chat'
 import { extractError } from '../utils/error'
 import { formatFull, formatShort, isExpired, nowLocal } from '../utils/time'
 
@@ -40,6 +42,8 @@ const me = computed(() => auth.user)
 const { activeTab } = useHomeTabSync(route, router)
 
 const showMyPanel = ref(false)
+const unreadChatConversationCount = ref(0)
+let unreadChatPollTimer: ReturnType<typeof setInterval> | null = null
 
 const { toast, showToast, clearToast } = useAppToast()
 
@@ -243,9 +247,49 @@ function openAgentTasks() {
   router.push('/agent-tasks')
 }
 
+function countUnreadConversations(conversations: Conversation[]) {
+  return conversations.filter((conversation) => conversation.unread_count > 0).length
+}
+
+async function loadUnreadChatConversationCount() {
+  if (!auth.isAuthenticated) {
+    unreadChatConversationCount.value = 0
+    return
+  }
+  try {
+    const conversations = await fetchConversations()
+    unreadChatConversationCount.value = countUnreadConversations(conversations)
+  } catch {
+    // keep previous badge count on transient errors
+  }
+}
+
+function startUnreadChatPolling() {
+  if (!auth.isAuthenticated || unreadChatPollTimer) return
+  loadUnreadChatConversationCount().catch(() => {})
+  unreadChatPollTimer = setInterval(() => {
+    loadUnreadChatConversationCount().catch(() => {})
+  }, 10000)
+}
+
+function stopUnreadChatPolling() {
+  if (!unreadChatPollTimer) return
+  clearInterval(unreadChatPollTimer)
+  unreadChatPollTimer = null
+}
+
 watch(() => [route.path, route.query.task, route.query.publish, loading.value] as const, ([path, taskQuery, publishQuery, isLoading]) => {
   if (path !== '/home' || isLoading || (!taskQuery && !publishQuery)) return
   consumeRouteQueries()
+})
+
+watch(() => auth.isAuthenticated, (isAuthenticatedNow) => {
+  if (isAuthenticatedNow) {
+    startUnreadChatPolling()
+  } else {
+    stopUnreadChatPolling()
+    unreadChatConversationCount.value = 0
+  }
 })
 
 let bootstrapped = false
@@ -255,6 +299,7 @@ onMounted(() => {
     bootstrapped = true
     consumeRouteQueries()
   })
+  startUnreadChatPolling()
 })
 
 onActivated(() => {
@@ -263,11 +308,18 @@ onActivated(() => {
     refreshAgentAvailability().catch(() => {})
     if (auth.isAuthenticated) loadMyTasks().catch(() => {})
   }
+  startUnreadChatPolling()
+  loadUnreadChatConversationCount().catch(() => {})
 })
 
 onDeactivated(() => {
+  stopUnreadChatPolling()
   closeTaskDrawer()
   closeWorkerDrawer()
+})
+
+onUnmounted(() => {
+  stopUnreadChatPolling()
 })
 </script>
 
@@ -281,6 +333,7 @@ onDeactivated(() => {
     :display-name="auth.displayName"
     :avatar-url="me?.avatar_url"
     :gender="me?.gender ?? null"
+    :unread-chat-conversation-count="unreadChatConversationCount"
     @publish="showPostModal = true"
     @open-my-panel="openMyPanel"
     @open-settings="openSettings"

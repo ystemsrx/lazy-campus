@@ -889,6 +889,24 @@
   gap: 1px;
 }
 
+.terminal-tool-body--search-web {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.terminal-tool-body--search-web::-webkit-scrollbar {
+  width: 4px;
+}
+
+.terminal-tool-body--search-web::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+.terminal-tool-body--search-web::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
+}
+
 .terminal-tool-info {
   display: flex;
   align-items: center;

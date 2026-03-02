@@ -15,6 +15,7 @@ const props = defineProps<{
   displayName: string
   avatarUrl?: string | null
   gender?: 'male' | 'female' | null
+  unreadChatConversationCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -179,8 +180,13 @@ onUnmounted(() => {
               <button class="hv-user-dropdown__item" @click="onOpenReports">
                 <i class="fa-solid fa-flag"></i> 举报与申诉
               </button>
-              <button class="hv-user-dropdown__item" @click="onOpenChat">
-                <i class="fa-regular fa-comment-dots"></i> 我的消息
+              <button class="hv-user-dropdown__item hv-user-dropdown__item--with-badge" @click="onOpenChat">
+                <span class="hv-user-dropdown__item-content">
+                  <i class="fa-regular fa-comment-dots"></i> 我的消息
+                </span>
+                <span v-if="(props.unreadChatConversationCount ?? 0) > 0" class="hv-user-dropdown__badge">
+                  {{ (props.unreadChatConversationCount ?? 0) > 99 ? '99+' : (props.unreadChatConversationCount ?? 0) }}
+                </span>
               </button>
               <button class="hv-user-dropdown__item" @click="onOpenAgentTasks">
                 <span class="hv-ai-star">✨</span> 代理任务
@@ -340,6 +346,31 @@ onUnmounted(() => {
   width: 16px;
   text-align: center;
   color: var(--c-text-muted);
+}
+
+.hv-user-dropdown__item--with-badge {
+  justify-content: space-between;
+}
+
+.hv-user-dropdown__item-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hv-user-dropdown__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f43f5e;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .hv-ai-star {

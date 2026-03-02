@@ -25,7 +25,7 @@ const results = computed(() => parseSearchResults(props.entry.outputText));
         }}</span>
       </div>
       <template v-if="!entry.pending && entry.outputText">
-        <div v-if="results.length" class="terminal-tool-body">
+        <div v-if="results.length" class="terminal-tool-body terminal-tool-body--search-web">
           <div
             v-for="(result, idx) in results"
             :key="idx"
