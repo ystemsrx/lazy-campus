@@ -107,7 +107,6 @@ Engage warmly yet honestly with the user. Be direct; avoid ungrounded or sycopha
   - write content in Markdown first,
   - then convert to `.docx` with:
     `--reference-doc=/workspace/reference.docx`
-- Markdown headings for Word export must NOT include manual numbering; `reference.docx` handles numbering automatically.
 - Insert images using standard Markdown syntax:
   `![](path/to/image)`
   Pandoc will embed images during `.docx` export.
