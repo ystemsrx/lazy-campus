@@ -15,11 +15,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models.agent import AgentMessage, AgentSession
 from app.models.task import Task
+
+try:
+    from redis import Redis
+except Exception:  # pragma: no cover - optional dependency at runtime
+    Redis = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +61,71 @@ _QUEUED_SESSION_IDS: set[str] = set()
 _RUNNING_SESSION_ID: str | None = None
 _ACTIVE_OWNER_USER_ID: int | None = None
 _OWNER_GRACE_UNTIL: datetime | None = None
+_REDIS_CLIENT: Redis | None = None
+_REDIS_CLIENT_LOCK = threading.Lock()
+_REDIS_RETRY_UNTIL_TS = 0.0
+_REDIS_DISABLED_LOGGED = False
+
+AGENT_QUEUE_REDIS_RETRY_SECONDS = 5
+AGENT_QUEUE_REDIS_POLL_SECONDS = 1.0
+AGENT_QUEUE_RUNNING_TTL_SECONDS = 120
+AGENT_QUEUE_RUNNING_HEARTBEAT_SECONDS = 20
+
+_QUEUE_KEY_PREFIX = (settings.agent_queue_key_prefix or 'campus_task:agent_queue').strip() or 'campus_task:agent_queue'
+_REDIS_QUEUE_LIST_KEY = f'{_QUEUE_KEY_PREFIX}:pending'
+_REDIS_QUEUE_PAYLOADS_KEY = f'{_QUEUE_KEY_PREFIX}:payloads'
+_REDIS_QUEUE_RUNNING_KEY = f'{_QUEUE_KEY_PREFIX}:running'
+
+_REDIS_ENQUEUE_SCRIPT = """
+if redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2]) == 1 then
+  redis.call('RPUSH', KEYS[2], ARGV[1])
+  return 1
+end
+return 0
+"""
+
+_REDIS_DEQUEUE_SCRIPT = """
+local removed = redis.call('HDEL', KEYS[1], ARGV[1])
+if removed == 0 then
+  return 0
+end
+redis.call('LREM', KEYS[2], 0, ARGV[1])
+return 1
+"""
+
+_REDIS_POP_NEXT_SCRIPT = """
+if redis.call('GET', KEYS[3]) then
+  return {'__BUSY__'}
+end
+while true do
+  local session_id = redis.call('LPOP', KEYS[2])
+  if not session_id then
+    return {'__EMPTY__'}
+  end
+  local payload = redis.call('HGET', KEYS[1], session_id)
+  redis.call('HDEL', KEYS[1], session_id)
+  if payload then
+    redis.call('SET', KEYS[3], session_id, 'EX', ARGV[1])
+    return {session_id, payload}
+  end
+end
+"""
+
+_REDIS_TOUCH_RUNNING_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+  return 1
+end
+return 0
+"""
+
+_REDIS_CLEAR_RUNNING_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+  return 1
+end
+return 0
+"""
 
 
 @dataclass
@@ -587,7 +658,7 @@ def _cleanup_user_idle_containers(user_id: int) -> int:
     return cleaned
 
 
-def _count_queue_ahead_users_locked(user_id: int, stop_at_session_id: str | None = None) -> int:
+def _count_queue_ahead_users_locked(stop_at_session_id: str | None = None) -> int:
     ahead = 0
     if _RUNNING_SESSION_ID is not None:
         ahead += 1
@@ -599,21 +670,185 @@ def _count_queue_ahead_users_locked(user_id: int, stop_at_session_id: str | None
     return ahead
 
 
-def get_agent_queue_info(session_id: str, user_id: int) -> tuple[bool, int]:
-    with _QUEUE_LOCK:
-        queued = False
-        for item in _QUEUE_ITEMS:
-            if item.session_id == session_id:
-                queued = True
-                break
-        ahead = _count_queue_ahead_users_locked(
-            user_id,
-            stop_at_session_id=session_id if queued else None,
+def _is_redis_queue_configured() -> bool:
+    return bool((settings.redis_url or '').strip()) and Redis is not None
+
+
+def _mark_redis_client_unavailable(exc: Exception | None = None) -> None:
+    global _REDIS_CLIENT, _REDIS_RETRY_UNTIL_TS
+    _REDIS_CLIENT = None
+    _REDIS_RETRY_UNTIL_TS = time.time() + AGENT_QUEUE_REDIS_RETRY_SECONDS
+    if exc:
+        logger.warning('agent queue redis unavailable: %s', exc)
+
+
+def _get_redis_client() -> Redis | None:
+    global _REDIS_CLIENT, _REDIS_DISABLED_LOGGED
+    if not _is_redis_queue_configured():
+        if not _REDIS_DISABLED_LOGGED:
+            if not (settings.redis_url or '').strip():
+                logger.info('agent queue redis disabled: REDIS_URL is empty')
+            elif Redis is None:
+                logger.warning('agent queue redis disabled: redis package is not installed')
+            _REDIS_DISABLED_LOGGED = True
+        return None
+
+    if _REDIS_CLIENT is not None:
+        return _REDIS_CLIENT
+    if time.time() < _REDIS_RETRY_UNTIL_TS:
+        return None
+
+    with _REDIS_CLIENT_LOCK:
+        if _REDIS_CLIENT is not None:
+            return _REDIS_CLIENT
+        if time.time() < _REDIS_RETRY_UNTIL_TS:
+            return None
+        try:
+            client = Redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                health_check_interval=30,
+            )
+            client.ping()
+            _REDIS_CLIENT = client
+            logger.info('agent queue redis connected, key_prefix=%s', _QUEUE_KEY_PREFIX)
+            return _REDIS_CLIENT
+        except Exception as exc:
+            _mark_redis_client_unavailable(exc)
+            return None
+
+
+def _serialize_queue_payload(
+    session_id: str,
+    user_id: int,
+    user_prompt: str,
+    attachments: list[dict[str, Any]],
+) -> str:
+    payload = {
+        'session_id': session_id,
+        'user_id': user_id,
+        'user_prompt': user_prompt,
+        'attachments': attachments,
+        'queued_at': utcnow().isoformat(),
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _deserialize_queue_payload(session_id: str, payload_raw: str) -> QueuedAgentRun | None:
+    try:
+        payload = json.loads(payload_raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    parsed_session_id = str(payload.get('session_id') or '').strip() or session_id
+    try:
+        user_id = int(payload.get('user_id'))
+    except (TypeError, ValueError):
+        return None
+    user_prompt = str(payload.get('user_prompt') or '')
+    attachments_raw = payload.get('attachments')
+    attachments = attachments_raw if isinstance(attachments_raw, list) else []
+
+    queued_at = utcnow()
+    raw_queued_at = payload.get('queued_at')
+    if isinstance(raw_queued_at, str) and raw_queued_at.strip():
+        try:
+            queued_at = datetime.fromisoformat(raw_queued_at)
+        except ValueError:
+            queued_at = utcnow()
+
+    return QueuedAgentRun(
+        session_id=parsed_session_id,
+        user_id=user_id,
+        user_prompt=user_prompt,
+        attachments=attachments,
+        queued_at=queued_at,
+    )
+
+
+def _queue_info_from_snapshot(
+    session_id: str,
+    queue_session_ids: list[str],
+    running_session_id: str | None,
+) -> tuple[bool, int]:
+    running_count = 1 if running_session_id else 0
+    for idx, current_session_id in enumerate(queue_session_ids):
+        if current_session_id == session_id:
+            return True, running_count + idx
+    return False, running_count + len(queue_session_ids)
+
+
+def _get_agent_queue_info_from_redis(redis_client: Redis, session_id: str) -> tuple[bool, int]:
+    queue_session_ids = [str(item) for item in redis_client.lrange(_REDIS_QUEUE_LIST_KEY, 0, -1) if str(item).strip()]
+    running_raw = redis_client.get(_REDIS_QUEUE_RUNNING_KEY)
+    running_session_id = str(running_raw).strip() if isinstance(running_raw, str) else None
+    if running_session_id == '':
+        running_session_id = None
+    return _queue_info_from_snapshot(session_id, queue_session_ids, running_session_id)
+
+
+def _get_agent_queue_info_from_db(session_id: str) -> tuple[bool, int]:
+    with SessionLocal() as db:
+        queued_rows = (
+            db.query(AgentSession.id)
+            .filter(AgentSession.status == 'queued')
+            .order_by(AgentSession.last_activity_at.asc(), AgentSession.created_at.asc(), AgentSession.id.asc())
+            .all()
         )
-        return queued, ahead
+        queued_session_ids = [str(row[0]) for row in queued_rows if row and row[0]]
+
+        running_row = (
+            db.query(AgentSession.id)
+            .filter(AgentSession.status == 'running')
+            .order_by(AgentSession.last_activity_at.asc(), AgentSession.created_at.asc(), AgentSession.id.asc())
+            .first()
+        )
+        running_session_id = str(running_row[0]) if running_row and running_row[0] else None
+
+    return _queue_info_from_snapshot(session_id, queued_session_ids, running_session_id)
 
 
-def enqueue_agent_run(
+def _is_redis_running_session(session_id: str) -> bool:
+    redis_client = _get_redis_client()
+    if redis_client is None:
+        return False
+    try:
+        running_raw = redis_client.get(_REDIS_QUEUE_RUNNING_KEY)
+        return isinstance(running_raw, str) and running_raw.strip() == session_id
+    except Exception as exc:
+        _mark_redis_client_unavailable(exc)
+        return False
+
+
+def is_agent_session_running(session_id: str) -> bool:
+    if _is_redis_running_session(session_id):
+        return True
+
+    with SessionLocal() as db:
+        row = (
+            db.query(AgentSession.id)
+            .filter(AgentSession.id == session_id, AgentSession.status == 'running')
+            .first()
+        )
+        return bool(row)
+
+
+def get_agent_queue_info(session_id: str, user_id: int) -> tuple[bool, int]:
+    _ = user_id  # keep signature for existing call sites
+    redis_client = _get_redis_client()
+    if redis_client is not None:
+        try:
+            return _get_agent_queue_info_from_redis(redis_client, session_id)
+        except Exception as exc:
+            _mark_redis_client_unavailable(exc)
+    return _get_agent_queue_info_from_db(session_id)
+
+
+def _enqueue_agent_run_in_memory(
     session_id: str,
     user_id: int,
     user_prompt: str,
@@ -621,9 +856,9 @@ def enqueue_agent_run(
 ) -> int:
     with _QUEUE_COND:
         if session_id in _QUEUED_SESSION_IDS:
-            return _count_queue_ahead_users_locked(user_id, stop_at_session_id=session_id)
+            return _count_queue_ahead_users_locked(stop_at_session_id=session_id)
 
-        ahead = _count_queue_ahead_users_locked(user_id)
+        ahead = _count_queue_ahead_users_locked()
         _QUEUE_ITEMS.append(QueuedAgentRun(
             session_id=session_id,
             user_id=user_id,
@@ -636,7 +871,62 @@ def enqueue_agent_run(
         return ahead
 
 
-def dequeue_agent_run(session_id: str) -> bool:
+def _enqueue_agent_run_redis(
+    redis_client: Redis,
+    session_id: str,
+    user_id: int,
+    user_prompt: str,
+    attachments: list[dict[str, Any]],
+) -> int:
+    payload = _serialize_queue_payload(
+        session_id=session_id,
+        user_id=user_id,
+        user_prompt=user_prompt,
+        attachments=attachments,
+    )
+    redis_client.eval(
+        _REDIS_ENQUEUE_SCRIPT,
+        2,
+        _REDIS_QUEUE_PAYLOADS_KEY,
+        _REDIS_QUEUE_LIST_KEY,
+        session_id,
+        payload,
+    )
+    queued, ahead = _get_agent_queue_info_from_redis(redis_client, session_id)
+    if queued:
+        return ahead
+    # Redis state had stale payload/list inconsistency; fallback to DB snapshot.
+    _, db_ahead = _get_agent_queue_info_from_db(session_id)
+    return db_ahead
+
+
+def enqueue_agent_run(
+    session_id: str,
+    user_id: int,
+    user_prompt: str,
+    attachments: list[dict[str, Any]],
+) -> int:
+    redis_client = _get_redis_client()
+    if redis_client is not None:
+        try:
+            return _enqueue_agent_run_redis(
+                redis_client,
+                session_id=session_id,
+                user_id=user_id,
+                user_prompt=user_prompt,
+                attachments=attachments,
+            )
+        except Exception as exc:
+            _mark_redis_client_unavailable(exc)
+    return _enqueue_agent_run_in_memory(
+        session_id=session_id,
+        user_id=user_id,
+        user_prompt=user_prompt,
+        attachments=attachments,
+    )
+
+
+def _dequeue_agent_run_in_memory(session_id: str) -> bool:
     with _QUEUE_COND:
         if session_id not in _QUEUED_SESSION_IDS:
             return False
@@ -650,6 +940,87 @@ def dequeue_agent_run(session_id: str) -> bool:
         _QUEUED_SESSION_IDS.discard(session_id)
         _QUEUE_COND.notify_all()
         return False
+
+
+def _dequeue_agent_run_redis(redis_client: Redis, session_id: str) -> bool:
+    removed = redis_client.eval(
+        _REDIS_DEQUEUE_SCRIPT,
+        2,
+        _REDIS_QUEUE_PAYLOADS_KEY,
+        _REDIS_QUEUE_LIST_KEY,
+        session_id,
+    )
+    return bool(int(removed or 0))
+
+
+def dequeue_agent_run(session_id: str) -> bool:
+    redis_client = _get_redis_client()
+    if redis_client is not None:
+        try:
+            return _dequeue_agent_run_redis(redis_client, session_id)
+        except Exception as exc:
+            _mark_redis_client_unavailable(exc)
+    return _dequeue_agent_run_in_memory(session_id)
+
+
+def _pop_next_agent_run_redis(redis_client: Redis) -> QueuedAgentRun | None:
+    raw = redis_client.eval(
+        _REDIS_POP_NEXT_SCRIPT,
+        3,
+        _REDIS_QUEUE_PAYLOADS_KEY,
+        _REDIS_QUEUE_LIST_KEY,
+        _REDIS_QUEUE_RUNNING_KEY,
+        str(AGENT_QUEUE_RUNNING_TTL_SECONDS),
+    )
+    if not isinstance(raw, list) or not raw:
+        return None
+    if raw[0] in {'__BUSY__', '__EMPTY__'}:
+        return None
+    if len(raw) < 2:
+        return None
+    session_id = str(raw[0])
+    payload_raw = str(raw[1])
+    run = _deserialize_queue_payload(session_id, payload_raw)
+    if run is not None:
+        return run
+    _clear_redis_running_session(session_id)
+    return None
+
+
+def _touch_redis_running_session(session_id: str) -> None:
+    redis_client = _get_redis_client()
+    if redis_client is None:
+        return
+    try:
+        redis_client.eval(
+            _REDIS_TOUCH_RUNNING_SCRIPT,
+            1,
+            _REDIS_QUEUE_RUNNING_KEY,
+            session_id,
+            str(AGENT_QUEUE_RUNNING_TTL_SECONDS),
+        )
+    except Exception as exc:
+        _mark_redis_client_unavailable(exc)
+
+
+def _clear_redis_running_session(session_id: str) -> None:
+    redis_client = _get_redis_client()
+    if redis_client is None:
+        return
+    try:
+        redis_client.eval(
+            _REDIS_CLEAR_RUNNING_SCRIPT,
+            1,
+            _REDIS_QUEUE_RUNNING_KEY,
+            session_id,
+        )
+    except Exception as exc:
+        _mark_redis_client_unavailable(exc)
+
+
+def _redis_running_heartbeat_loop(session_id: str, stop_event: threading.Event) -> None:
+    while not stop_event.wait(AGENT_QUEUE_RUNNING_HEARTBEAT_SECONDS):
+        _touch_redis_running_session(session_id)
 
 
 def _dequeue_next_run_locked() -> tuple[QueuedAgentRun | None, int | None, float | None]:
@@ -685,6 +1056,19 @@ def _dequeue_next_run_locked() -> tuple[QueuedAgentRun | None, int | None, float
 
 def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[str, Any]]) -> None:
     AGENT_RUN_LOCK.acquire()
+    heartbeat_stop_event: threading.Event | None = None
+    heartbeat_thread: threading.Thread | None = None
+
+    if _is_redis_running_session(session_id):
+        _touch_redis_running_session(session_id)
+        heartbeat_stop_event = threading.Event()
+        heartbeat_thread = threading.Thread(
+            target=_redis_running_heartbeat_loop,
+            args=(session_id, heartbeat_stop_event),
+            daemon=True,
+            name=f'agent-redis-heartbeat-{session_id[:8]}',
+        )
+        heartbeat_thread.start()
 
     try:
         with SessionLocal() as db:
@@ -846,6 +1230,11 @@ def _run_agent_once(session_id: str, user_prompt: str, attachments: list[dict[st
         else:
             _append_system_error(session_id, f'代理执行失败：{exc}')
     finally:
+        if heartbeat_stop_event is not None:
+            heartbeat_stop_event.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=1)
+        _clear_redis_running_session(session_id)
         _take_cancel_requested(session_id)
         AGENT_RUN_LOCK.release()
 
@@ -854,6 +1243,26 @@ def _agent_queue_loop() -> None:
     global _RUNNING_SESSION_ID, _OWNER_GRACE_UNTIL
 
     while True:
+        redis_client = _get_redis_client()
+        if redis_client is not None:
+            try:
+                next_run = _pop_next_agent_run_redis(redis_client)
+            except Exception as exc:
+                _mark_redis_client_unavailable(exc)
+                time.sleep(AGENT_QUEUE_REDIS_POLL_SECONDS)
+                continue
+
+            if not next_run:
+                time.sleep(AGENT_QUEUE_REDIS_POLL_SECONDS)
+                continue
+
+            _run_agent_once(
+                session_id=next_run.session_id,
+                user_prompt=next_run.user_prompt,
+                attachments=next_run.attachments,
+            )
+            continue
+
         next_run: QueuedAgentRun | None = None
         expired_owner: int | None = None
         wait_seconds: float | None = None
@@ -862,9 +1271,9 @@ def _agent_queue_loop() -> None:
             next_run, expired_owner, wait_seconds = _dequeue_next_run_locked()
             if next_run is None and expired_owner is None:
                 if wait_seconds is None:
-                    _QUEUE_COND.wait()
+                    _QUEUE_COND.wait(timeout=AGENT_QUEUE_REDIS_POLL_SECONDS)
                 else:
-                    _QUEUE_COND.wait(timeout=wait_seconds)
+                    _QUEUE_COND.wait(timeout=min(wait_seconds, AGENT_QUEUE_REDIS_POLL_SECONDS))
                 continue
 
         if expired_owner is not None:

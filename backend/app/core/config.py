@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24 * 30  # 30天
 
     database_url: str = 'sqlite:///./campus_task.db'
+    redis_url: str = ''
+    agent_queue_key_prefix: str = 'campus_task:agent_queue'
     backend_public_url_dev: str = 'http://127.0.0.1:8000'
     backend_public_url_prod: str = 'https://api.example.com'
     frontend_public_url_dev: str = 'http://localhost:5173'

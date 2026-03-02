@@ -43,6 +43,7 @@ from app.services.agent_service import (
     delete_deliverables,
     ensure_session_workspace,
     get_agent_queue_info,
+    is_agent_session_running,
     interrupt_agent_session,
     list_deliverables,
     release_session_container_now,
@@ -66,7 +67,7 @@ def _normalize_queued_status(db: Session, session: AgentSession) -> AgentSession
     if session.status != 'queued':
         return session
     queued, _ = get_agent_queue_info(session.id, session.user_id)
-    if queued:
+    if queued or is_agent_session_running(session.id):
         return session
     session.status = 'idle'
     session.last_error = None
