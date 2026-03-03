@@ -24,6 +24,7 @@ const emit = defineEmits<{
     >
       <div
         class="chat-ai-snap"
+        :data-round-id="props.roundId"
         @scroll="
           emit('snap-scroll', {
             event: $event,

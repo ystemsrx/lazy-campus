@@ -114,11 +114,17 @@ const queuedDraft = ref<{ text: string; files: File[] } | null>(null);
 const chatScrollRef = ref<HTMLDivElement | null>(null);
 const terminalStickToBottomMap = ref(new Map<number, boolean>());
 const snapIndices = ref(new Map<number, number>());
+const snapStickToBottomMap = ref(new Map<number, boolean>());
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let pollBusy = false;
 let lastMessageId = 0;
 let sessionPollTimer: ReturnType<typeof setInterval> | null = null;
+let activeSessionRequestId = 0;
+
+function isStaleSessionRequest(targetSessionId: string, requestId: number): boolean {
+  return requestId !== activeSessionRequestId || targetSessionId !== sessionId.value;
+}
 
 const interactionLeft = computed(() => {
   if (!session.value) return 0;
@@ -271,6 +277,9 @@ function handleSnapScroll(payload: {
   const el = payload.event.target as HTMLElement;
   const idx = Math.min(Math.round(el.scrollTop / 64), payload.total - 1);
   snapIndices.value = new Map(snapIndices.value.set(payload.roundId, idx));
+  snapStickToBottomMap.value = new Map(
+    snapStickToBottomMap.value.set(payload.roundId, isNearBottom(el)),
+  );
 }
 
 function handleTerminalScroll(payload: { event: Event; roundId: number }) {
@@ -290,7 +299,17 @@ function scrollToBottomOnEnter() {
 
     root.querySelectorAll(".chat-ai-snap").forEach((el) => {
       const snapEl = el as HTMLElement;
+      const roundId = Number(snapEl.dataset.roundId || "0");
+      const total = snapEl.querySelectorAll(".chat-ai-snap-item").length;
       snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: "auto" });
+      if (roundId > 0) {
+        snapStickToBottomMap.value = new Map(
+          snapStickToBottomMap.value.set(roundId, true),
+        );
+        if (total > 0) {
+          snapIndices.value = new Map(snapIndices.value.set(roundId, total - 1));
+        }
+      }
     });
 
     root.querySelectorAll(".terminal-body").forEach((el) => {
@@ -306,37 +325,69 @@ function scrollToBottomOnEnter() {
 
 function resetViewState() {
   loading.value = true;
+  session.value = null;
   messages.value = [];
   lastMessageId = 0;
   inputText.value = "";
   pendingFiles.value = [];
   queuedDraft.value = null;
+  terminalStickToBottomMap.value = new Map();
+  snapStickToBottomMap.value = new Map();
+  snapIndices.value = new Map();
+  selectedNames.value = new Set();
+  showDeliverableModal.value = false;
 }
 
-async function refreshAvailability() {
+async function refreshAvailability(
+  targetSessionId = sessionId.value,
+  requestId = activeSessionRequestId,
+) {
   try {
-    availability.value = await fetchAgentAvailability();
+    const nextAvailability = await fetchAgentAvailability();
+    if (isStaleSessionRequest(targetSessionId, requestId)) return;
+    availability.value = nextAvailability;
   } catch {
+    if (isStaleSessionRequest(targetSessionId, requestId)) return;
     availability.value = null;
   }
 }
 
-async function refreshSession() {
-  session.value = await fetchAgentSession(sessionId.value);
+async function refreshSession(
+  targetSessionId = sessionId.value,
+  requestId = activeSessionRequestId,
+) {
+  const nextSession = await fetchAgentSession(targetSessionId);
+  if (isStaleSessionRequest(targetSessionId, requestId)) return;
+  session.value = nextSession;
 }
 
-async function refreshMessages() {
-  const newMessages = await fetchAgentMessages(sessionId.value, lastMessageId);
+async function refreshMessages(
+  targetSessionId = sessionId.value,
+  requestId = activeSessionRequestId,
+) {
+  const afterId = lastMessageId;
+  const newMessages = await fetchAgentMessages(targetSessionId, afterId);
+  if (isStaleSessionRequest(targetSessionId, requestId)) return;
   if (newMessages.length === 0) return;
-  messages.value.push(...newMessages);
-  lastMessageId = newMessages[newMessages.length - 1].id;
+  const nextMessages =
+    afterId === lastMessageId
+      ? newMessages
+      : newMessages.filter((msg) => msg.id > lastMessageId);
+  if (nextMessages.length === 0) return;
+  messages.value.push(...nextMessages);
+  lastMessageId = nextMessages[nextMessages.length - 1].id;
 }
 
 async function pollSession() {
-  if (pollBusy || !sessionId.value) return;
+  const targetSessionId = sessionId.value;
+  const requestId = activeSessionRequestId;
+  if (pollBusy || !targetSessionId) return;
   pollBusy = true;
   try {
-    await Promise.all([refreshSession(), refreshMessages()]);
+    await Promise.all([
+      refreshSession(targetSessionId, requestId),
+      refreshMessages(targetSessionId, requestId),
+    ]);
   } catch {
     /* ignore */
   } finally {
@@ -358,18 +409,26 @@ function stopPolling() {
 }
 
 async function bootstrap() {
-  if (!sessionId.value) {
+  const targetSessionId = sessionId.value;
+  const requestId = ++activeSessionRequestId;
+  if (!targetSessionId) {
+    resetViewState();
     loading.value = false;
     return;
   }
   resetViewState();
   try {
-    await Promise.all([refreshAvailability(), refreshSession()]);
-    await refreshMessages();
+    await Promise.all([
+      refreshAvailability(targetSessionId, requestId),
+      refreshSession(targetSessionId, requestId),
+    ]);
+    await refreshMessages(targetSessionId, requestId);
   } catch (error) {
+    if (isStaleSessionRequest(targetSessionId, requestId)) return;
     showToast(extractError(error, "加载代理会话失败"), "error");
     router.push("/agent");
   } finally {
+    if (isStaleSessionRequest(targetSessionId, requestId)) return;
     loading.value = false;
     scrollToBottomOnEnter();
   }
@@ -522,7 +581,18 @@ watch(
 
       chatScrollRef.value.querySelectorAll(".chat-ai-snap").forEach((el) => {
         const snapEl = el as HTMLElement;
+        const roundId = Number(snapEl.dataset.roundId || "0");
+        const shouldStick =
+          snapStickToBottomMap.value.get(roundId) ?? isNearBottom(snapEl);
+        if (!shouldStick) return;
+        const total = snapEl.querySelectorAll(".chat-ai-snap-item").length;
         snapEl.scrollTo({ top: snapEl.scrollHeight, behavior: "smooth" });
+        snapStickToBottomMap.value = new Map(
+          snapStickToBottomMap.value.set(roundId, true),
+        );
+        if (total > 0) {
+          snapIndices.value = new Map(snapIndices.value.set(roundId, total - 1));
+        }
       });
 
       chatScrollRef.value.querySelectorAll(".terminal-body").forEach((el) => {
@@ -563,6 +633,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  activeSessionRequestId += 1;
   window.removeEventListener("resize", checkMobile);
   stopPolling();
   if (brailleTimer) clearInterval(brailleTimer);
