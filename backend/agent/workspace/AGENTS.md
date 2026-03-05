@@ -11,7 +11,7 @@ This environment is used to execute automated tasks, including but not limited t
 - Data scraping, cleaning, and analysis
 - Text processing and content generation
 
-**Principle:** The Agent should prioritize using existing tools and dependencies available in the environment to complete tasks and avoid reinventing the wheel. New dependencies should only be introduced when truly necessary.
+**Principle:** The Agent should prioritize using existing tools/skills and dependencies available in the environment to complete tasks and avoid reinventing the wheel. New dependencies should only be introduced when truly necessary.
 
 ---
 
@@ -83,41 +83,62 @@ Engage warmly yet honestly with the user. Be direct; avoid ungrounded or sycopha
 - For long-running or resource-heavy tasks, warn the user in advance about expected CPU/memory/disk/network impact.
 - Keep execution reproducible: ensure key commands, parameters, and input/output paths are traceable in the workflow.
 
-### 3.5 Creativity-Intensive Tasks
+### 3.5 Writing and Creativity-Intensive Tasks
 
-- For tasks requiring substantial creativity (e.g., creative writing, solution ideation, design concepts, paper drafting), run the `brainstorming` skill first, then execute drafting/generation.
+- **Before starting any writing task** (e.g., essays, reports, emails, paper drafts, creative content, solution ideation, design concepts, or any substantial text generation), you **must** invoke the `brainstorming` skill first.
 - Use brainstorming results to improve requirement understanding, idea diversity, and output quality.
+- Be ashamed of guessing when uncertain; be proud of searching the web to verify information before responding.
 
 ### 3.6 Document Read/Write Rules
 
-- If a user uploads a Word file, require `.docx` format.
-  - If the file is not `.docx`, instruct the user to convert it first (no in-environment format conversion support).
-- To read or edit a `.docx` file, use this workflow:
-  1. Convert `.docx` to Markdown:
-     `pandoc input.docx -o output.md --extract-media=./media`
-  2. Edit the generated Markdown.
-     - For math, use `$...$` for inline formulas and `$$...$$` for display formulas.
-  3. Convert Markdown back to `.docx` and deliver it.
-  4. Always include the reference style file:
-     `--reference-doc=reference.docx`
-- For writing/document-generation requests, default deliverable format is `.docx` (not PDF) unless the user says otherwise.
-- For writing tasks, use `scientific-skills` and `humanizer` when appropriate to balance rigor and fluency.
-- Before writing a paper or report, first check whether `scientific-skills` contains relevant discipline-specific writing standards and requirements for the target field; if available, follow them.
-- When generating deliverable documents:
-  - write content in Markdown first,
-  - then convert to `.docx` with:
-    `--reference-doc=/workspace/reference.docx`
-- Insert images using standard Markdown syntax:
-  `![](path/to/image)`
-  Pandoc will embed images during `.docx` export.
-- If the user asks for fine-grained font/style tuning, politely decline and explain that export is template-based and does not support detailed style customization.
+#### 3.6.1 Reading Files
+
+- **Word (`.docx`)**: Convert to Markdown first, then read/edit:
+  ```
+  pandoc input.docx -o output.md --extract-media=./media
+  ```
+- **Image files** (photos, screenshots, PDF): Use the `ReadMediaFile` tool directly.
+- **PDF files**: Use **Markitdown** or **PyPDF2** for programmatic parsing, or **agent-browser** for screenshot-based inspection.
+
+#### 3.6.2 Writing and Generating Documents
+
+**Default output format**: `.docx` (not PDF), unless the user specifies otherwise.
+
+**Workflow** — always follow this sequence:
+
+1. Write content in Markdown.
+   - For math: `$...$` (inline), `$$...$$` (display).
+   - For images: `![](path/to/image)` — Pandoc will embed them during export.
+   - For flowcharts: generate chart images with `mermaid` + `mermaid-cli` (mmdc), then insert via Markdown image syntax.
+2. Convert Markdown to `.docx` with the reference style template:
+   ```
+   pandoc output.md -o output.docx --reference-doc=/workspace/reference.docx
+   ```
+
+**Academic writing**: Before writing a paper or report, check whether `scientific-skills` contains discipline-specific standards for the target field; if available, follow them.
+
+**Post-processing**: After completing any writing task, **apply the `humanizer` skill** to the output before delivering it.
+
+#### 3.6.3 Upload and Format Requirements
+
+- Uploaded Word files must be in `.docx` format. If a `.doc` file is uploaded, instruct the user to convert it first (no in-environment format conversion support).
 - If the user requests PDF output, provide `.docx` and ask the user to export PDF locally.
-- To read image files (e.g., uploaded photos, screenshots, diagrams), use the `ReadMediaFile` tool directly to view and extract information.
-- To read PDF files, use one of:
-  - programmatic parsing with **Markitdown** or **PyPDF2**,
-  - screenshot-based inspection via **agent-browser**.
-- For tasks requiring flowcharts, prefer `mermaid` + `mermaid-cli` (mmdc) to generate chart images, then insert them into the document for clarity and compatibility.
-- Be ashamed of guessing when uncertain; be proud of searching the web to verify information before responding.
+- If the user asks for fine-grained font/style tuning, politely decline — export is template-based and does not support detailed style customization.
+
+### 3.7 Image Generation
+
+The `image-gen` skill is a powerful text-to-image and image-to-image tool backed by an advanced generation model capable of producing virtually any visual content, including clear and legible text within images.
+
+**When to use:**
+
+- **Enhancing reports and documents** — When embedding images in text-based outputs would improve accuracy or clarity, use `image-gen` to generate them.
+- **Repairing or resizing images** — For blurry, low-quality, or improperly sized images, use `image-gen` to upscale, sharpen, or reformat them.
+- **Diagrams and charts** — When Mermaid or Python charting libraries cannot achieve the desired visual result, fall back to `image-gen` for diagram generation.
+
+**Prompt guidelines:**
+
+- Write image prompts that are **clear, specific, and complete** — include subject, style, composition, and any text to render.
+- Avoid overly verbose prompts; aim for concise descriptions that capture all essential details.
 
 ---
 

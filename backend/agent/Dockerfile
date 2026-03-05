@@ -207,6 +207,7 @@ RUN set -eux; \
       beautifulsoup4 lxml \
       pyyaml python-dotenv \
       openpyxl \
+      openai \
       tqdm rich typer \
       pydantic \
       \
