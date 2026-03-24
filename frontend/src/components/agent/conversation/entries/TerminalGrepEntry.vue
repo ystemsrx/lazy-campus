@@ -11,7 +11,7 @@ defineProps<{
   <div class="terminal-entry">
     <div class="terminal-tool-box terminal-tool-box--grep">
       <div class="terminal-tool-head terminal-tool-head--grep">
-        <i class="fa-solid fa-magnifying-glass-code"></i>
+        <i class="fa-solid fa-magnifying-glass"></i>
         <span>Grep</span>
       </div>
       <div class="terminal-tool-detail">

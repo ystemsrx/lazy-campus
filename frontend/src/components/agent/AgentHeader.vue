@@ -6,6 +6,8 @@ defineProps<{
   statusText: string;
   isRunning: boolean;
   isQueued: boolean;
+  isStalled: boolean;
+  isError: boolean;
   deliverableCount: number;
 }>();
 
@@ -32,6 +34,8 @@ const emit = defineEmits<{
           :class="{
             'status-running': isRunning,
             'status-queued': isQueued,
+            'status-stalled': isStalled,
+            'status-error': isError,
           }"
         >
           {{ statusText }}
@@ -116,6 +120,16 @@ const emit = defineEmits<{
 .header-status.status-queued {
   color: #d97706;
   font-weight: 500;
+}
+
+.header-status.status-stalled {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.header-status.status-error {
+  color: #dc2626;
+  font-weight: 600;
 }
 
 .header-actions {

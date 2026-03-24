@@ -3,12 +3,14 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
+from jose import JWTError
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_admin, require_completed_user
+from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.agent import AgentMessage, AgentSession
 from app.models.enums import TaskStatus
@@ -54,6 +56,12 @@ from app.services.agent_service import (
     uploads_dir,
     zip_deliverables,
 )
+from app.services.agent_gateway_service import (
+    get_kimi_fetch_target,
+    get_kimi_provider_target,
+    get_kimi_search_target,
+    proxy_agent_gateway_request,
+)
 from app.services.auth_service import get_agent_enabled, set_agent_enabled
 from app.utils.user_display import display_name
 
@@ -93,12 +101,14 @@ def _session_to_start_out(session: AgentSession, task: Task, remaining_count: in
         task_title=task.title,
         task_status=task.status,
         status=session.status,
+        last_error=session.last_error,
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
         can_send=_can_send(session, task),
         queue_waiting=queue_waiting,
         queue_ahead_users=queue_ahead_users,
+        last_activity_at=session.last_activity_at,
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
@@ -113,12 +123,14 @@ def _session_to_detail_out(session: AgentSession, task: Task, remaining_count: i
         task_title=task.title,
         task_status=task.status,
         status=session.status,
+        last_error=session.last_error,
         interaction_count=session.interaction_count,
         max_interactions=session.max_interactions,
         remaining_count=remaining_count,
         can_send=_can_send(session, task),
         queue_waiting=queue_waiting,
         queue_ahead_users=queue_ahead_users,
+        last_activity_at=session.last_activity_at,
         created_at=session.created_at,
         updated_at=session.updated_at,
         deliverables=[AgentDeliverableOut(**item) for item in list_deliverables(session.user_id, session.id)],
@@ -212,6 +224,44 @@ def _get_owned_session(db: Session, user_id: int, session_id: str) -> AgentSessi
     return session
 
 
+def _extract_bearer_token(authorization: str | None) -> str:
+    raw = (authorization or '').strip()
+    if not raw:
+        raise HTTPException(status_code=401, detail='缺少网关认证信息')
+    scheme, _, token = raw.partition(' ')
+    if scheme.lower() != 'bearer' or not token.strip():
+        raise HTTPException(status_code=401, detail='网关认证格式无效')
+    return token.strip()
+
+
+def _require_agent_gateway_session(db: Session, authorization: str | None) -> AgentSession:
+    token = _extract_bearer_token(authorization)
+    try:
+        payload = decode_token(token)
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail='网关认证已失效或无效') from exc
+
+    if payload.get('kind') != 'agent_gateway':
+        raise HTTPException(status_code=401, detail='网关认证已失效或无效')
+
+    session_id = str(payload.get('sid') or '').strip()
+    try:
+        user_id = int(payload.get('uid'))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail='网关认证已失效或无效') from exc
+
+    session = db.get(AgentSession, session_id)
+    if not session or session.user_id != user_id:
+        raise HTTPException(status_code=403, detail='网关会话不存在或无权限')
+    if session.status != 'running' or not session.container_id:
+        raise HTTPException(status_code=403, detail='网关会话未处于执行中')
+
+    task = db.get(Task, session.task_id)
+    if not task or task.status in (TaskStatus.COMPLETED, TaskStatus.CANCELED):
+        raise HTTPException(status_code=403, detail='关联任务已结束，禁止继续访问上游')
+    return session
+
+
 @router.get('/me/availability', response_model=AgentAvailabilityOut)
 def get_my_agent_availability(
     user: User = Depends(require_completed_user),
@@ -224,6 +274,38 @@ def get_my_agent_availability(
         max_files=MAX_AGENT_FILES_PER_MESSAGE,
         max_file_size_mb=MAX_AGENT_FILE_SIZE // (1024 * 1024),
     )
+
+
+@router.api_route('/gateway/kimi', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+@router.api_route('/gateway/kimi/{path:path}', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+async def proxy_kimi_provider(
+    request: Request,
+    path: str = '',
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent_gateway_session(db, authorization)
+    return await proxy_agent_gateway_request(request, get_kimi_provider_target(path))
+
+
+@router.api_route('/gateway/search', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+async def proxy_kimi_search(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent_gateway_session(db, authorization)
+    return await proxy_agent_gateway_request(request, get_kimi_search_target())
+
+
+@router.api_route('/gateway/fetch', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'])
+async def proxy_kimi_fetch(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent_gateway_session(db, authorization)
+    return await proxy_agent_gateway_request(request, get_kimi_fetch_target())
 
 
 @router.get('/me/sessions', response_model=AgentMySessionListOut)
@@ -253,6 +335,7 @@ def list_my_agent_sessions(
             task_title=t.title,
             task_status=t.status,
             status=s.status,
+            last_error=s.last_error,
             interaction_count=s.interaction_count,
             max_interactions=s.max_interactions,
             can_send=_can_send(s, t),

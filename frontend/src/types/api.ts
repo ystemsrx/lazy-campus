@@ -594,12 +594,14 @@ export interface AgentSessionStart {
   task_title: string
   task_status: string
   status: string
+  last_error: string | null
   interaction_count: number
   max_interactions: number
   remaining_count: number
   can_send: boolean
   queue_waiting: boolean
   queue_ahead_users: number
+  last_activity_at: string
   created_at: string
   updated_at: string
 }
@@ -629,6 +631,7 @@ export interface AgentMySessionItem {
   task_title: string
   task_status: string
   status: string
+  last_error: string | null
   interaction_count: number
   max_interactions: number
   can_send: boolean

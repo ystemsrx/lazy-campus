@@ -12,11 +12,14 @@ export interface StrReplaceDiffLine {
 
 export interface MediaOutputInfo {
   imagePath: string;
+  videoPath: string;
   format: string;
   size: string;
   dimensions: string;
   prettyDimensions: string;
   isImage: boolean;
+  isVideo: boolean;
+  shouldHideRawOutput: boolean;
   description: string;
 }
 

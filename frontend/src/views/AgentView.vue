@@ -20,7 +20,10 @@ import {
   fetchMyAgentSessions,
   sendAgentMessage,
 } from "../api/agent";
-import { buildConversationRounds, isNearBottom } from "../components/agent/agentViewUtils";
+import {
+  buildConversationRounds,
+  isNearBottom,
+} from "../components/agent/agentViewUtils";
 import { useAppToast } from "../composables/useAppToast";
 import { useQuickTaskPublish } from "../composables/useQuickTaskPublish";
 import { useAuthStore } from "../stores/auth";
@@ -31,7 +34,7 @@ import type {
   AgentSessionDetail,
 } from "../types/api";
 import { extractError } from "../utils/error";
-import { nowLocal } from "../utils/time";
+import { nowLocal, parseUTC } from "../utils/time";
 
 const route = useRoute();
 const router = useRouter();
@@ -122,8 +125,13 @@ let lastMessageId = 0;
 let sessionPollTimer: ReturnType<typeof setInterval> | null = null;
 let activeSessionRequestId = 0;
 
-function isStaleSessionRequest(targetSessionId: string, requestId: number): boolean {
-  return requestId !== activeSessionRequestId || targetSessionId !== sessionId.value;
+function isStaleSessionRequest(
+  targetSessionId: string,
+  requestId: number,
+): boolean {
+  return (
+    requestId !== activeSessionRequestId || targetSessionId !== sessionId.value
+  );
 }
 
 const interactionLeft = computed(() => {
@@ -173,11 +181,46 @@ const queueText = computed(() =>
   queueAheadUsers.value > 0 ? `前方还有 ${queueAheadUsers.value} 人` : "",
 );
 
+const RUNNING_STALE_HINT_SECONDS = 120;
+
+function formatElapsedSilence(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return remainMinutes > 0
+    ? `${hours} 小时 ${remainMinutes} 分钟`
+    : `${hours} 小时`;
+}
+
+const runningSilentSeconds = computed(() => {
+  if (session.value?.status !== "running" || !session.value.last_activity_at)
+    return 0;
+  const lastActivity = parseUTC(session.value.last_activity_at).getTime();
+  return Math.max(0, Math.floor((Date.now() - lastActivity) / 1000));
+});
+
+const isSessionStalled = computed(
+  () => runningSilentSeconds.value >= RUNNING_STALE_HINT_SECONDS,
+);
+
+const runningSilenceText = computed(() =>
+  isSessionStalled.value
+    ? `已 ${formatElapsedSilence(runningSilentSeconds.value)} 无新内容`
+    : "",
+);
+
 const sessionStatusText = computed(() => {
   if (!session.value) return "空闲";
   if (isTaskTerminal.value)
     return session.value.task_status === "completed" ? "已完成" : "已取消";
-  if (session.value.status === "running") return "正在执行...";
+  if (session.value.status === "error")
+    return session.value.last_error || "执行失败，可重新发送";
+  if (session.value.status === "running")
+    return isSessionStalled.value
+      ? `正在执行，但 ${runningSilenceText.value}`
+      : "正在执行...";
   if (session.value.status === "queued")
     return queueAheadUsers.value > 0
       ? `排队中，${queueText.value}`
@@ -193,12 +236,16 @@ const composePlaceholder = computed(() => {
     return "任务已取消，会话已关闭。";
   if (session.value.task_status === "completed")
     return "任务已完成，会话已关闭。";
+  if (session.value.status === "error")
+    return session.value.last_error || "上一次执行失败，可重新发送新的指令。";
   if (session.value.status === "queued")
     return queueAheadUsers.value > 0
       ? `排队中，${queueText.value}。`
       : "排队中，请稍候...";
   if (session.value.status === "running")
-    return "代理正在执行中，可中断后继续输入。";
+    return isSessionStalled.value
+      ? `代理已长时间没有返回新内容，${runningSilenceText.value}。`
+      : "代理正在执行中，可中断后继续输入。";
   if (needsQueue.value)
     return queueAheadUsers.value > 0
       ? `当前需排队，${queueText.value}。`
@@ -215,7 +262,9 @@ const canSendNow = computed(() => {
 });
 
 const maxFileCount = computed(() => availability.value?.max_files ?? 5);
-const maxFileSizeMb = computed(() => availability.value?.max_file_size_mb ?? 50);
+const maxFileSizeMb = computed(
+  () => availability.value?.max_file_size_mb ?? 50,
+);
 
 const showDeliverableModal = ref(false);
 const zippingAll = ref(false);
@@ -226,7 +275,9 @@ const deliverableCount = computed(
   () => session.value?.deliverables.length ?? 0,
 );
 
-const conversationRounds = computed(() => buildConversationRounds(messages.value));
+const conversationRounds = computed(() =>
+  buildConversationRounds(messages.value),
+);
 
 const showPendingRoundSkeleton = computed(() => {
   if (!session.value || session.value.status !== "running") return false;
@@ -307,7 +358,9 @@ function scrollToBottomOnEnter() {
           snapStickToBottomMap.value.set(roundId, true),
         );
         if (total > 0) {
-          snapIndices.value = new Map(snapIndices.value.set(roundId, total - 1));
+          snapIndices.value = new Map(
+            snapIndices.value.set(roundId, total - 1),
+          );
         }
       }
     });
@@ -591,7 +644,9 @@ watch(
           snapStickToBottomMap.value.set(roundId, true),
         );
         if (total > 0) {
-          snapIndices.value = new Map(snapIndices.value.set(roundId, total - 1));
+          snapIndices.value = new Map(
+            snapIndices.value.set(roundId, total - 1),
+          );
         }
       });
 
@@ -680,7 +735,10 @@ onUnmounted(() => {
         @select-session="selectSession"
       />
 
-      <main class="agent-main" :class="{ 'main-hidden': !sessionId && isMobile }">
+      <main
+        class="agent-main"
+        :class="{ 'main-hidden': !sessionId && isMobile }"
+      >
         <div v-if="!sessionId" class="agent-empty-state">
           <i class="fa-solid fa-robot agent-empty-icon"></i>
           <p>从左侧选择一个代理会话</p>
@@ -694,6 +752,8 @@ onUnmounted(() => {
             :status-text="sessionStatusText"
             :is-running="session?.status === 'running'"
             :is-queued="session?.status === 'queued' || needsQueue"
+            :is-stalled="isSessionStalled"
+            :is-error="session?.status === 'error'"
             :deliverable-count="deliverableCount"
             @back="router.push('/agent')"
             @open-deliverables="showDeliverableModal = true"

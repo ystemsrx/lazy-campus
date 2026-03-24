@@ -61,7 +61,7 @@ const media = computed(() =>
         </div>
       </div>
       <pre
-        v-if="!entry.pending && entry.outputText && !media.isImage"
+        v-if="!entry.pending && entry.outputText && !media.shouldHideRawOutput"
         class="terminal-pre terminal-pre--incard"
         :class="{
           'terminal-pre--error': entry.hasErrorOutput,

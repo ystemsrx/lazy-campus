@@ -2,6 +2,8 @@ FROM python:3.13-slim-bookworm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+ARG TARGETARCH
+
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai \
     LANG=zh_CN.UTF-8 \
@@ -68,6 +70,8 @@ RUN set -eux; \
       \
       # pdf2image 依赖（pdftoppm/pdftocairo）
       poppler-utils \
+      imagemagick \
+      pdftk \
     ; \
     \
     # 配置时区
@@ -99,6 +103,32 @@ RUN set -eux; \
            /var/log/*.log /var/log/apt/* \
            /usr/share/doc/* /usr/share/man/* /usr/share/info/* \
            /usr/share/lintian/* /usr/share/linda/*
+
+# ============================================================
+# 1.4) 安装静态版 FFmpeg / FFprobe
+#      - 按架构下载预编译静态包，避免依赖系统编解码库
+# ============================================================
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "${arch}" in \
+      amd64|x86_64) ffmpeg_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" ;; \
+      arm64|aarch64) ffmpeg_url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz" ;; \
+      *) echo "Unsupported architecture for static ffmpeg: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    tmpdir="$(mktemp -d)"; \
+    curl -LfsS "${ffmpeg_url}" -o "${tmpdir}/ffmpeg-static.tar.xz"; \
+    tar -xJf "${tmpdir}/ffmpeg-static.tar.xz" -C "${tmpdir}"; \
+    ffmpeg_bin="$(find "${tmpdir}" -type f -path '*/bin/ffmpeg' | head -n 1)"; \
+    ffprobe_bin="$(find "${tmpdir}" -type f -path '*/bin/ffprobe' | head -n 1)"; \
+    test -n "${ffmpeg_bin}"; \
+    test -n "${ffprobe_bin}"; \
+    install -m 0755 "${ffmpeg_bin}" /usr/local/bin/ffmpeg; \
+    install -m 0755 "${ffprobe_bin}" /usr/local/bin/ffprobe; \
+    ffplay_bin="$(find "${tmpdir}" -type f -path '*/bin/ffplay' | head -n 1 || true)"; \
+    if [ -n "${ffplay_bin}" ]; then install -m 0755 "${ffplay_bin}" /usr/local/bin/ffplay; fi; \
+    ffmpeg -version; \
+    ffprobe -version; \
+    rm -rf "${tmpdir}"
 
 # ============================================================
 # 1.5) 额外字体：从构建上下文 fonts/ 复制进镜像
@@ -216,8 +246,7 @@ RUN set -eux; \
       pydicom \
       PyPDF2 \
       pypdf \
-      python-pptx \
-      "markitdown[all]"; \
+      python-pptx; \
     \
     # 字体自检（不影响构建成功与否）
     fc-list | grep -i "times new roman" | head -n 5 || true; \

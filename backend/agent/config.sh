@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Kimi CLI runtime bootstrap.
-# 可在这里注入代理运行时需要的环境变量（例如代理地址、模型参数等）。
-# 实际敏感配置建议写入同目录的 .env（由 docker --env-file 注入）。
+# 容器内不应直接持有真实上游 API Key。
+# 执行前由后端通过 docker exec 临时注入网关地址与短时 token。
 
 export KIMI_NON_INTERACTIVE=1
 
@@ -43,16 +43,18 @@ if [ -z "${KIMI_CLI_BIN}" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-KIMI_EFFECTIVE_API_KEY="${KIMI_CODE_API_KEY:-${KIMI_API_KEY:-}}"
-if [ -z "${KIMI_EFFECTIVE_API_KEY}" ]; then
-  echo "KIMI_CODE_API_KEY or KIMI_API_KEY is required." >&2
+AGENT_GATEWAY_BASE_URL="${AGENT_GATEWAY_BASE_URL:-}"
+if [ -z "${AGENT_GATEWAY_BASE_URL}" ]; then
+  echo "AGENT_GATEWAY_BASE_URL is required." >&2
   return 1 2>/dev/null || exit 1
 fi
-if [ "${KIMI_EFFECTIVE_API_KEY}" = "please_set_me" ] || [ "${KIMI_EFFECTIVE_API_KEY}" = "your_kimi_api_key_here" ]; then
-  echo "Kimi API key is placeholder. Please update backend/agent/.env." >&2
+AGENT_GATEWAY_TOKEN="${AGENT_GATEWAY_TOKEN:-}"
+if [ -z "${AGENT_GATEWAY_TOKEN}" ]; then
+  echo "AGENT_GATEWAY_TOKEN is required." >&2
   return 1 2>/dev/null || exit 1
 fi
-export KIMI_EFFECTIVE_API_KEY
+export AGENT_GATEWAY_BASE_URL
+export AGENT_GATEWAY_TOKEN
 
 # ---- helpers: sanitize env values ----
 _strip_wrapping_quotes() {
@@ -79,9 +81,10 @@ _to_toml_bool() {
 
 # ---- runtime params ----
 KIMI_MODEL="$(_strip_wrapping_quotes "${KIMI_MODEL:-kimi-for-coding}")"
-KIMI_BASE_URL="$(_strip_wrapping_quotes "${KIMI_BASE_URL:-https://api.kimi.com/coding/v1}")"
-KIMI_SEARCH_URL="$(_strip_wrapping_quotes "${KIMI_SEARCH_URL:-${KIMI_BASE_URL}/search}")"
-KIMI_FETCH_URL="$(_strip_wrapping_quotes "${KIMI_FETCH_URL:-${KIMI_BASE_URL}/fetch}")"
+KIMI_GATEWAY_ROOT="$(_strip_wrapping_quotes "${AGENT_GATEWAY_BASE_URL%/}")"
+KIMI_BASE_URL="${KIMI_GATEWAY_ROOT}/kimi"
+KIMI_SEARCH_URL="${KIMI_GATEWAY_ROOT}/search"
+KIMI_FETCH_URL="${KIMI_GATEWAY_ROOT}/fetch"
 KIMI_DEFAULT_THINKING="$(_to_toml_bool "${KIMI_DEFAULT_THINKING:-false}")"
 KIMI_DEFAULT_YOLO="$(_to_toml_bool "${KIMI_DEFAULT_YOLO:-true}")"
 
@@ -96,7 +99,7 @@ default_yolo = ${KIMI_DEFAULT_YOLO}
 [providers."kimi-code"]
 type = "kimi"
 base_url = "${KIMI_BASE_URL}"
-api_key = "${KIMI_EFFECTIVE_API_KEY}"
+api_key = "${AGENT_GATEWAY_TOKEN}"
 
 # IMPORTANT:
 # Model keys that contain '.' must be quoted in TOML, otherwise they become nested tables.
@@ -113,11 +116,11 @@ reserved_context_size = 50000
 
 [services.moonshot_search]
 base_url = "${KIMI_SEARCH_URL}"
-api_key = "${KIMI_EFFECTIVE_API_KEY}"
+api_key = "${AGENT_GATEWAY_TOKEN}"
 custom_headers = { "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36", "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8", "Accept-Language" = "zh-CN,zh;q=0.9,en;q=0.8" }
 
 [services.moonshot_fetch]
 base_url = "${KIMI_FETCH_URL}"
-api_key = "${KIMI_EFFECTIVE_API_KEY}"
+api_key = "${AGENT_GATEWAY_TOKEN}"
 custom_headers = { "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36", "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8", "Accept-Language" = "zh-CN,zh;q=0.9,en;q=0.8" }
 EOF

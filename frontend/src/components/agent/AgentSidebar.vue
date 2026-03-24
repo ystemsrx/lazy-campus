@@ -73,6 +73,10 @@ const searchModel = computed({
             class="session-dot session-dot--done"
           ></span>
           <span
+            v-else-if="sessionStatusDot(s) === 'error'"
+            class="session-dot session-dot--error"
+          ></span>
+          <span
             v-else-if="sessionStatusDot(s) === 'canceled'"
             class="session-dot session-dot--canceled"
           ></span>
@@ -276,6 +280,10 @@ const searchModel = computed({
 
 .session-dot--done {
   background: #22c55e;
+}
+
+.session-dot--error {
+  background: #ef4444;
 }
 
 .session-dot--canceled {

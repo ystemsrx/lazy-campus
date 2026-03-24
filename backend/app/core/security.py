@@ -23,6 +23,18 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
+def create_agent_gateway_token(session_id: str, user_id: int) -> str:
+    expires_delta = timedelta(minutes=settings.agent_gateway_token_expire_minutes)
+    expire = datetime.now(timezone.utc) + expires_delta
+    payload: dict[str, Any] = {
+        'kind': 'agent_gateway',
+        'sid': session_id,
+        'uid': user_id,
+        'exp': expire,
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
 def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
 

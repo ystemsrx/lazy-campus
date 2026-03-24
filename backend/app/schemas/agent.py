@@ -19,12 +19,14 @@ class AgentStartOut(BaseModel):
     task_title: str
     task_status: str
     status: str
+    last_error: str | None = None
     interaction_count: int
     max_interactions: int
     remaining_count: int
     can_send: bool
     queue_waiting: bool = False
     queue_ahead_users: int = 0
+    last_activity_at: datetime
     created_at: datetime
     updated_at: datetime
 
@@ -74,12 +76,14 @@ class AgentSessionDetailOut(BaseModel):
     task_title: str
     task_status: str
     status: str
+    last_error: str | None = None
     interaction_count: int
     max_interactions: int
     remaining_count: int
     can_send: bool
     queue_waiting: bool = False
     queue_ahead_users: int = 0
+    last_activity_at: datetime
     created_at: datetime
     updated_at: datetime
     deliverables: list[AgentDeliverableOut] = Field(default_factory=list)
@@ -91,6 +95,7 @@ class AgentMySessionItem(BaseModel):
     task_title: str
     task_status: str
     status: str
+    last_error: str | None = None
     interaction_count: int
     max_interactions: int
     can_send: bool

@@ -13,6 +13,7 @@ const TERMINAL_HOME_CWD = "/root";
 export function sessionStatusDot(s: AgentMySessionItem): string {
   if (s.status === "running") return "running";
   if (s.status === "queued") return "queued";
+  if (s.status === "error") return "error";
   if (s.task_status === "completed") return "done";
   if (s.task_status === "canceled") return "canceled";
   return "";
@@ -217,32 +218,47 @@ function formatMediaDimensions(raw: string): string {
 }
 
 export function parseMediaOutput(text: string): MediaOutputInfo {
+  const imageTagPath = text.match(/<image\s+path="([^"]+)"/)?.[1] || "";
+  const videoTagPath = text.match(/<video\s+path="([^"]+)"/)?.[1] || "";
   const imagePath =
-    text.match(/<image\s+path="([^"]+)"/)?.[1] ||
+    imageTagPath ||
     text.match(/Loaded image file\s+`([^`]+)`/i)?.[1] ||
+    "";
+  const videoPath =
+    videoTagPath ||
+    text.match(/Loaded video file\s+`([^`]+)`/i)?.[1] ||
     "";
   const format = text.match(/\(([a-z]+\/[a-z0-9.+-]+)/i)?.[1] || "";
   const size = text.match(/,\s*([\d.]+\s*(?:bytes|KB|MB|GB))/i)?.[1] || "";
   const dimensions =
-    text.match(/original size\s+(\d+\s*[x×]\s*\d+)/i)?.[1] || "";
+    text.match(/(?:original size|resolution|dimensions?)\s+(\d+\s*[x×]\s*\d+)/i)?.[1] ||
+    "";
   const prettyDimensions = formatMediaDimensions(dimensions);
   const description =
     text
       .replace(/<image[\s\S]*?<\/image>/g, "")
+      .replace(/<video[\s\S]*?<\/video>/g, "")
       .replace(/`[^`]+`/g, "")
       .trim()
       .split(".")[0] || "";
   const isImage =
     /image\//i.test(format) ||
     /loaded image file/i.test(text) ||
-    Boolean(prettyDimensions);
+    Boolean(imageTagPath);
+  const isVideo =
+    /video\//i.test(format) ||
+    /loaded video file/i.test(text) ||
+    Boolean(videoTagPath);
   return {
     imagePath,
+    videoPath,
     format,
     size,
     dimensions,
     prettyDimensions,
     isImage,
+    isVideo,
+    shouldHideRawOutput: isImage || isVideo,
     description,
   };
 }
