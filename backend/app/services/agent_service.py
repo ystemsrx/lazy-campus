@@ -369,7 +369,6 @@ def _start_container(user_id: int, session_id: str) -> str:
         '--pids-limit=128',
         '--ulimit',
         'nofile=1024:1024',
-        '--cap-drop=ALL',
         '-v',
         f'{AGENT_CONFIG_FILE}:/config.sh:ro',
         '-v',

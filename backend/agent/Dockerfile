@@ -49,6 +49,7 @@ RUN set -eux; \
       git openssh-client \
       sudo \
       jq unzip zip xz-utils \
+      gzip \
       bc file dnsutils \
       tini \
       build-essential cmake pkg-config \
