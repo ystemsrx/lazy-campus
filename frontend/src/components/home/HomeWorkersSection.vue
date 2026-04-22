@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppDropdown from '../AppDropdown.vue'
+import HomeCategoryChipsBar from './HomeCategoryChipsBar.vue'
 import HomeAvatar from './ui/HomeAvatar.vue'
 import HomeEmptyState from './ui/HomeEmptyState.vue'
 
@@ -111,27 +112,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Mobile: sticky chips bar -->
-    <div v-if="categories.length" class="hv-mob-bar">
-      <div class="hv-mob-bar__chips">
-        <button
-          class="hv-chip"
-          :class="{ 'hv-chip--active': selectedCategory === null }"
-          @click="setCategory(null)"
-        >
-          全部 ({{ totalWorkerCount }})
-        </button>
-        <button
-          v-for="c in categories"
-          :key="c.id"
-          class="hv-chip"
-          :class="{ 'hv-chip--active': selectedCategory === c.id }"
-          @click="setCategory(c.id)"
-        >
-          {{ c.name }} ({{ c.worker_count }})
-        </button>
-      </div>
-    </div>
+    <HomeCategoryChipsBar
+      v-if="categories.length"
+      :categories="categories"
+      :selected-category="selectedCategory"
+      :total-count="totalWorkerCount"
+      count-key="worker_count"
+      @update:selected-category="setCategory"
+    />
 
     <div class="hv-workers-layout">
       <!-- desktop: sidebar -->
@@ -338,38 +326,6 @@ onUnmounted(() => {
 
 .hv-sort-check {
   font-size: 12px;
-}
-
-/* ---- mobile sticky bar (hidden on desktop) ---- */
-.hv-mob-bar {
-  display: none;
-}
-
-.hv-chip {
-  flex-shrink: 0;
-  padding: 6px 16px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--c-border);
-  background: var(--c-surface);
-  color: var(--c-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  font-family: var(--font-sans);
-  white-space: nowrap;
-  transition: all var(--dur-fast) var(--ease);
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .hv-chip:hover {
-    border-color: var(--c-text-muted);
-  }
-}
-
-.hv-chip--active {
-  background: var(--c-accent);
-  color: var(--c-text-inverse);
-  border-color: var(--c-accent);
 }
 
 /* ---- layout: sidebar + content ---- */
@@ -677,6 +633,10 @@ onUnmounted(() => {
 
 /* ---- mobile ---- */
 @media (max-width: 900px) {
+  .hv-workers-toolbar {
+    margin-bottom: 8px;
+  }
+
   .hv-sidebar {
     display: none;
   }
@@ -688,32 +648,6 @@ onUnmounted(() => {
   .hv-sort-mobile-wrap {
     display: block;
     margin-left: auto;
-  }
-
-  .hv-mob-bar {
-    display: flex;
-    position: -webkit-sticky;
-    position: sticky;
-    top: 60px;
-    z-index: 30;
-    background: var(--c-bg);
-    margin: 0 -16px;
-    border-bottom: 1px solid var(--c-border-light);
-  }
-
-  .hv-mob-bar__chips {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding: 6px 16px;
-  }
-
-  .hv-mob-bar__chips::-webkit-scrollbar {
-    display: none;
   }
 
   .hv-workers-layout {
